@@ -23,6 +23,11 @@ import { uuid } from '../mock-data/servers';
 import { clamp, round } from '../telemetry/random';
 import { config } from '../config';
 
+/** Coerce any value to a finite number, falling back to `fallback`. */
+function toFinite(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
 /* ------------------------------------------------------------------ */
 /* Proxmox VE REST API response shapes (subset we consume)             */
 /* ------------------------------------------------------------------ */
@@ -291,14 +296,14 @@ export class ProxmoxMetricsProvider {
       location: 'Proxmox Cluster',
       cpuModel,
       cpuCores: node.maxcpu || cpuinfo.cpus || 1,
-      ramTotalGb: round(node.maxmem / 1e9, 1),
-      diskTotalGb: round(node.maxdisk / 1e9, 1),
+      ramTotalGb: round(toFinite(node.maxmem) / 1e9, 1),
+      diskTotalGb: round(toFinite(node.maxdisk) / 1e9, 1),
       sensors: this.sensorConfigs(detail.sensors),
       profile: {
         baseCpu: clamp((node.cpu ?? 0) * 100, 0, 100),
         cpuAmplitude: 0,
         cpuNoise: 0,
-        baseRamGb: round(node.mem / 1e9, 1),
+        baseRamGb: round(toFinite(node.mem) / 1e9, 1),
         ramDriftGb: 0,
         baseTemp: this.nodeTempC(detail.sensors),
         tempVariance: 0,
@@ -317,8 +322,8 @@ export class ProxmoxMetricsProvider {
     const node = detail.node;
     const online = node.status === 'online';
     const cpuPct = clamp((node.cpu ?? 0) * 100, 0, 100);
-    const ramPct = node.maxmem > 0 ? (node.mem / node.maxmem) * 100 : 0;
-    const diskPct = node.maxdisk > 0 ? (node.disk / node.maxdisk) * 100 : 0;
+    const ramPct = toFinite(node.maxmem) > 0 ? (toFinite(node.mem) / toFinite(node.maxmem)) * 100 : 0;
+    const diskPct = toFinite(node.maxdisk) > 0 ? (toFinite(node.disk) / toFinite(node.maxdisk)) * 100 : 0;
     const load = detail.status.loadavg?.[0] ?? detail.rrd[detail.rrd.length - 1]?.load1 ?? 0;
     const tempC = this.nodeTempC(detail.sensors);
     const netUpMbps = this.rrdMbps(detail.rrd, 'netout');
@@ -344,8 +349,8 @@ export class ProxmoxMetricsProvider {
       load: round(load, 2),
       uptimeSeconds: node.uptime ?? detail.status.uptime ?? 0,
       cpu: round(cpuPct, 1),
-      ramUsedGb: round(node.mem / 1e9, 1),
-      diskUsedGb: round(node.disk / 1e9, 1),
+      ramUsedGb: round(toFinite(node.mem) / 1e9, 1),
+      diskUsedGb: round(toFinite(node.disk) / 1e9, 1),
       tempC: round(tempC, 1),
       netUpMbps: round(netUpMbps, 1),
       netDownMbps: round(netDownMbps, 1),
@@ -369,21 +374,21 @@ export class ProxmoxMetricsProvider {
     const snapshots: MetricSnapshot[] = [...this.runtimes.values()].map((r) => ({
       serverId: r.spec.id,
       timestamp: now,
-      cpu: r.cpu,
-      cpuCores: r.spec.cpuCores,
-      ramUsedGb: r.ramUsedGb,
-      ramTotalGb: r.spec.ramTotalGb,
-      diskUsedGb: r.diskUsedGb,
-      diskTotalGb: r.spec.diskTotalGb,
-      tempC: r.tempC,
-      netUpMbps: r.netUpMbps,
-      netDownMbps: r.netDownMbps,
-      load: r.load,
-      uptimeSeconds: r.uptimeSeconds,
-      processes: r.processes,
+      cpu: toFinite(r.cpu),
+      cpuCores: toFinite(r.spec.cpuCores, 1),
+      ramUsedGb: toFinite(r.ramUsedGb),
+      ramTotalGb: toFinite(r.spec.ramTotalGb, 1),
+      diskUsedGb: toFinite(r.diskUsedGb),
+      diskTotalGb: toFinite(r.spec.diskTotalGb, 1),
+      tempC: toFinite(r.tempC),
+      netUpMbps: toFinite(r.netUpMbps),
+      netDownMbps: toFinite(r.netDownMbps),
+      load: toFinite(r.load),
+      uptimeSeconds: toFinite(r.uptimeSeconds),
+      processes: toFinite(r.processes),
       status: r.status,
       reachability: r.reachability,
-      health: r.health,
+      health: toFinite(r.health),
       sensors: r.sensors,
     }));
 
