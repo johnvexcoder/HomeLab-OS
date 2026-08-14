@@ -95,7 +95,7 @@ export default function ServerDetailPage() {
             <span
               className={cn(
                 'absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-surface-elevated',
-                server.status === 'online' ? 'bg-accent' : server.status === 'degraded' ? 'bg-warn' : 'bg-crit',
+                server.status === 'online' ? 'bg-success' : server.status === 'degraded' ? 'bg-warn' : 'bg-crit',
               )}
             />
           </div>

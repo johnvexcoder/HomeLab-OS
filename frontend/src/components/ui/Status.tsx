@@ -1,17 +1,20 @@
 import { cn } from '@/lib/utils';
-import type { ServerStatus, Reachability, Severity } from '@/types';
+import type { Severity } from '@/types';
 
 export function StatusDot({
   status,
   className,
   pulse = true,
 }: {
-  status: ServerStatus;
+  status: string;
   className?: string;
   pulse?: boolean;
 }) {
   const color =
-    status === 'online' ? 'bg-accent' : status === 'degraded' ? 'bg-warn' : 'bg-crit';
+    status === 'online' ? 'bg-success'
+      : status === 'degraded' ? 'bg-warn'
+        : status === 'offline' ? 'bg-crit'
+          : 'bg-text-muted';
 
   return (
     <span className={cn('relative flex h-2.5 w-2.5', className)}>
@@ -23,9 +26,12 @@ export function StatusDot({
   );
 }
 
-export function ReachDot({ reachability }: { reachability: Reachability }) {
+export function ReachDot({ reachability }: { reachability: string }) {
   const color =
-    reachability === 'accessible' ? 'bg-accent' : reachability === 'degraded' ? 'bg-warn' : 'bg-crit';
+    reachability === 'accessible' ? 'bg-success'
+      : reachability === 'degraded' ? 'bg-warn'
+        : reachability === 'unreachable' ? 'bg-crit'
+          : 'bg-text-muted';
   return <span className={cn('h-2 w-2 rounded-full', color)} />;
 }
 
