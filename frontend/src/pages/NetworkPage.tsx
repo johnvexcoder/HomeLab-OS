@@ -1,0 +1,103 @@
+import { useNetwork } from '@/hooks/useQueries';
+import { NetworkMap } from '@/components/dashboard/NetworkMap';
+import { Card } from '@/components/ui/Card';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { StatusDot } from '@/components/ui/Status';
+import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
+import { formatMbps } from '@/lib/utils';
+
+export default function NetworkPage() {
+  const { topology } = useNetwork();
+
+  const links = topology?.links ?? [];
+  const totalDown = links.reduce((a, l) => a + l.throughputMbps, 0);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Network</h1>
+        <p className="mt-1 text-sm text-text-muted">Topology, link health and throughput</p>
+      </div>
+
+      <NetworkMap />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Link table */}
+        <Card className="lg:col-span-2">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary">Link Status</h3>
+            <span className="text-xs text-text-muted">{links.length} links</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-surface-border text-[10px] uppercase tracking-widest text-text-muted">
+                  <th className="py-2 pr-4 font-medium">Link</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Latency</th>
+                  <th className="py-2 pr-4 font-medium">Throughput</th>
+                  <th className="py-2 pr-4 font-medium">Packet Loss</th>
+                  <th className="py-2 font-medium">Jitter</th>
+                </tr>
+              </thead>
+              <tbody>
+                {links.map((l) => (
+                  <tr key={l.id} className="border-b border-surface-border/50 text-text-secondary last:border-0">
+                    <td className="py-2.5 pr-4 font-mono text-xs">{l.source} → {l.target}</td>
+                    <td className="py-2.5 pr-4">
+                      <span className="flex items-center gap-1.5 text-xs font-medium">
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: l.status === 'healthy' ? 'var(--accent)' : l.status === 'warning' ? '#F59E0B' : '#EF4444' }}
+                        />
+                        {l.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-4 tabular">
+                      <AnimatedNumber value={l.latencyMs} decimals={1} /> <span className="text-xs text-text-muted">ms</span>
+                    </td>
+                    <td className="py-2.5 pr-4 tabular">{formatMbps(l.throughputMbps)}</td>
+                    <td className="py-2.5 pr-4 tabular">{l.packetLoss.toFixed(1)}%</td>
+                    <td className="py-2.5 tabular">
+                      <AnimatedNumber value={l.jitterMs} decimals={1} /> <span className="text-xs text-text-muted">ms</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Hosts */}
+        <Card>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary">Hosts</h3>
+            <span className="text-xs text-text-muted">L2/L3 devices</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {(topology?.nodes ?? []).map((node) => (
+              <div
+                key={node.id}
+                className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5"
+              >
+                <span className="text-xl">{NETWORK_NODE_ICONS_FRONTEND[node.type]}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold text-text-primary">{node.label}</div>
+                  <div className="text-[11px] text-text-muted">{node.ip ?? node.type}</div>
+                </div>
+                <StatusDot status={node.status} />
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 rounded-xl border border-surface-border/70 bg-surface-input p-3">
+            <div className="text-[10px] uppercase tracking-widest text-text-muted">Aggregate throughput</div>
+            <div className="mt-1 font-display text-2xl font-bold tabular text-accent">
+              <AnimatedNumber value={totalDown} />
+              <span className="ml-1 text-sm font-normal text-text-muted">Mb/s</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: homelab-backend
+    restart: unless-stopped
+    environment:
+      - PORT=4000
+      - HOST=0.0.0.0
+      - CORS_ORIGIN=http://localhost:3000
+      - DATA_DIR=/data
+      - MOCK_MODE=true
+    volumes:
+      - homelab-data:/data
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_BACKEND_URL: "/api"
+        VITE_WS_URL: "ws://localhost:4000"
+    container_name: homelab-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  homelab-data:
