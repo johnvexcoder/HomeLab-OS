@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer } from 'node:http';
-import { Simulator } from '../services/simulator';
+import type { TelemetryBroadcaster } from '../providers/types';
 import type { MetricSnapshot, Notification } from '../types';
 import { loadSessionByCookieHeader, type SessionUser } from '../security/session';
 import { getBoolSetting } from '../security/settings';
@@ -41,7 +41,7 @@ type PushMessage =
  * Connections are closed GRACEFULLY (close frame + FIN) on timeout so proxies
  * never observe a reset socket.
  */
-export function attachWebSocket(httpServer: HttpServer, simulator: Simulator): WebSocketServer {
+export function attachWebSocket(httpServer: HttpServer, broadcaster: TelemetryBroadcaster): WebSocketServer {
   const wss = new WebSocketServer({
     server: httpServer,
     path: '/ws',
@@ -79,11 +79,11 @@ export function attachWebSocket(httpServer: HttpServer, simulator: Simulator): W
     send(client, { type: 'connected', data: { timestamp: Date.now(), user: user ? { username: user.username, role: user.role } : null } });
   });
 
-  simulator.onTick((snapshots: MetricSnapshot[]) => {
+  broadcaster.onTick((snapshots: MetricSnapshot[]) => {
     broadcast(clients, { type: 'telemetry', data: snapshots.map((s) => ({ ...s, sensors: applySensorFlags(s.sensors) })) });
   });
 
-  simulator.onNotifications((notifications: Notification[]) => {
+  broadcaster.onNotifications((notifications: Notification[]) => {
     broadcast(clients, { type: 'notifications', data: notifications });
   });
 

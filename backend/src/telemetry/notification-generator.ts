@@ -12,6 +12,11 @@ export class NotificationGenerator {
   private lastHighCpuAt: Record<string, number> = {};
   private lastTempWarnAt: Record<string, number> = {};
   private lastRandomAt = 0;
+  private readonly ambient: boolean;
+
+  constructor(options?: { ambient?: boolean }) {
+    this.ambient = options?.ambient ?? true;
+  }
 
   generate(snapshots: MetricSnapshot[], now: number): Notification[] {
     const out: Notification[] = [];
@@ -39,8 +44,12 @@ export class NotificationGenerator {
       }
     }
 
-    // Random ambient noise every 45-120s
-    if (now - this.lastRandomAt > randomInt(Math.random, 45, 120) * 1000) {
+    // Random ambient noise every 45-120s (simulation only — real providers
+    // disable this so no fake mock-server notifications appear)
+    if (
+      this.ambient &&
+      now - this.lastRandomAt > randomInt(Math.random, 45, 120) * 1000
+    ) {
       this.lastRandomAt = now;
       const tpl = pick(Math.random, NOTIFICATION_TEMPLATES);
       const serverId = pick(Math.random, ['pve0', 'docker01', 'nas01', 'gateway', 'switch01']);

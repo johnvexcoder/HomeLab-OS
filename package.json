@@ -1,6 +1,6 @@
 {
   "name": "homelab-os",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "private": true,
   "description": "John Vex Coder HomeLab OS - a premium self-hosted infrastructure dashboard",
   "license": "MIT",

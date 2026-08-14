@@ -1,19 +1,16 @@
 import { Router, type Request, type Response } from 'express';
-import { Simulator } from '../services/simulator';
-import { MockMetricsProvider } from '../providers/mockMetricsProvider';
+import type { MetricsProvider } from '../providers/types';
 import { MockNotificationsProvider } from '../providers/mockNotificationsProvider';
 import type { HistoryRange } from '../providers/types';
 import type { ServerRuntime } from '../types';
 import { config } from '../config';
-import { SERVER_SPECS } from '../mock-data/servers';
 import { NETWORK_NODE_ICONS } from '../mock-data/network';
 import { requireAuth, requirePermission, requireAuthOrGuest } from '../security/middleware';
 import { featureEnabled, applySensorFlags } from '../security/features';
 import { listQuickActions } from '../services/quickActions';
 
 export interface ApiContext {
-  simulator: Simulator;
-  metrics: MockMetricsProvider;
+  metrics: MetricsProvider;
   notifications: MockNotificationsProvider;
 }
 
@@ -31,6 +28,8 @@ export function createRouter(ctx: ApiContext): Router {
     res.json({
       status: 'ok',
       mockMode: config.mockMode,
+      provider: metrics.getSourceName?.() ?? (config.mockMode ? 'mock' : 'proxmox'),
+      lastPollError: metrics.getLastPollError?.() ?? null,
       bootStats: metrics.getBootStats(),
       timestamp: Date.now(),
     });
@@ -107,20 +106,23 @@ export function createRouter(ctx: ApiContext): Router {
     const q = String(req.query.q ?? '').trim().toLowerCase();
     if (!q) return res.json({ servers: [], notifications: [], actions: [] });
 
-    const serverHits = SERVER_SPECS.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.os.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.ip.includes(q),
-    ).map((s) => ({
-      type: 'server' as const,
-      id: s.id,
-      title: s.name,
-      subtitle: `${s.os} · ${s.ip}`,
-      logo: s.logo,
-      route: `/servers/${s.id}`,
-    }));
+    const serverHits = metrics
+      .getServers()
+      .filter(
+        (s) =>
+          s.spec.name.toLowerCase().includes(q) ||
+          s.spec.os.toLowerCase().includes(q) ||
+          s.spec.description.toLowerCase().includes(q) ||
+          s.spec.ip.includes(q),
+      )
+      .map((s) => ({
+        type: 'server' as const,
+        id: s.spec.id,
+        title: s.spec.name,
+        subtitle: `${s.spec.os} · ${s.spec.ip}`,
+        logo: s.spec.logo,
+        route: `/servers/${s.spec.id}`,
+      }));
 
     const notificationHits = notifications
       .list(50)

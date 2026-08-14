@@ -1,0 +1,650 @@
+import https from 'node:https';
+import type {
+  BootStats,
+  ClusterInfo,
+  GlobalHealth,
+  MetricSnapshot,
+  NetworkLink,
+  NetworkNode,
+  Notification,
+  QuickStat,
+  Reachability,
+  SensorConfig,
+  SensorReading,
+  ServerRuntime,
+  ServerSpec,
+  ServerStatus,
+} from '../types';
+import type { HistoryPoint, HistoryRange, StatsHistoryPoint } from './types';
+import { insertMetrics, countMetrics } from '../db/database';
+import { historyForServer, statsHistoryFor } from './history';
+import { NotificationGenerator } from '../telemetry/notification-generator';
+import { uuid } from '../mock-data/servers';
+import { clamp, round } from '../telemetry/random';
+import { config } from '../config';
+
+/* ------------------------------------------------------------------ */
+/* Proxmox VE REST API response shapes (subset we consume)             */
+/* ------------------------------------------------------------------ */
+
+interface PveNode {
+  node: string;
+  status: string;
+  cpu: number; // 0..1 utilization
+  maxcpu: number;
+  mem: number;
+  maxmem: number;
+  disk: number;
+  maxdisk: number;
+  uptime: number;
+  level: string;
+  id: string;
+}
+
+interface PveNodeStatus {
+  cpuinfo?: { 'model name'?: string; cpus?: number; cores?: number; sockets?: number };
+  kversion?: string;
+  pveversion?: string;
+  loadavg?: number[];
+  memory?: { total: number; used: number; free: number };
+  uptime?: number;
+}
+
+interface PveGuest {
+  vmid: number;
+  name: string;
+  status: string;
+  cpu?: number;
+  cpus?: number;
+  mem?: number;
+  maxmem?: number;
+  disk?: number;
+  maxdisk?: number;
+  uptime?: number;
+  template?: number;
+}
+
+interface PveRrdPoint {
+  time: number;
+  load1?: number;
+  netin?: number; // bytes/s
+  netout?: number; // bytes/s
+}
+
+interface PveSensor {
+  name: string;
+  type: 'temperature' | 'fan' | 'power' | 'voltage' | 'current';
+  value: number;
+  unit: string;
+}
+
+interface PveNetworkIface {
+  iface: string;
+  type: string;
+  active?: number;
+  address?: string;
+}
+
+interface PollDetail {
+  node: PveNode;
+  status: PveNodeStatus;
+  qemu: PveGuest[];
+  lxc: PveGuest[];
+  rrd: PveRrdPoint[];
+  sensors: PveSensor[];
+  network: PveNetworkIface[];
+}
+
+type TickListener = (snapshots: MetricSnapshot[]) => void;
+type NotificationListener = (notifications: Notification[]) => void;
+
+/**
+ * Real Proxmox VE provider. Polls the Proxmox REST API on an interval,
+ * discovers nodes + guests, samples node status/RRD/sensors, persists the
+ * snapshots to SQLite (same pipeline as the simulator) and broadcasts them
+ * over the existing WebSocket. No agent — the backend talks to Proxmox API.
+ *
+ * Set MOCK_MODE=false plus PROXMOX_HOST / PROXMOX_TOKEN_ID /
+ * PROXMOX_TOKEN_SECRET to activate.
+ */
+export class ProxmoxMetricsProvider {
+  private readonly host = config.proxmox.host;
+  private readonly tokenId = config.proxmox.tokenId;
+  private readonly tokenSecret = config.proxmox.tokenSecret;
+  private readonly verifyTls = config.proxmox.verifyTls;
+  private readonly pollIntervalMs = config.proxmox.pollIntervalMs;
+
+  private readonly runtimes = new Map<string, ServerRuntime>();
+  private readonly guests = new Map<string, Array<{ id: string; name: string; running: boolean }>>();
+  private readonly tickListeners: TickListener[] = [];
+  private readonly notifListeners: NotificationListener[] = [];
+  private readonly generator = new NotificationGenerator({ ambient: false });
+  private readonly startedAt = Date.now();
+
+  private interval: NodeJS.Timeout | null = null;
+  private polling = false;
+  private lastPollError: string | null = null;
+
+  constructor() {
+    if (!this.host || !this.tokenId || !this.tokenSecret) {
+      throw new Error(
+        'Proxmox provider requires PROXMOX_HOST, PROXMOX_TOKEN_ID and PROXMOX_TOKEN_SECRET (set MOCK_MODE=false).',
+      );
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Lifecycle                                                        */
+  /* ---------------------------------------------------------------- */
+
+  async start(): Promise<void> {
+    await this.poll();
+    this.interval = setInterval(() => {
+      void this.poll();
+    }, this.pollIntervalMs);
+  }
+
+  stop(): void {
+    if (this.interval) clearInterval(this.interval);
+    this.interval = null;
+  }
+
+  onTick(listener: TickListener): void {
+    this.tickListeners.push(listener);
+  }
+
+  onNotifications(listener: NotificationListener): void {
+    this.notifListeners.push(listener);
+  }
+
+  getSourceName(): string {
+    return 'proxmox';
+  }
+
+  getLastPollError(): string | null {
+    return this.lastPollError;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Polling                                                          */
+  /* ---------------------------------------------------------------- */
+
+  private async poll(): Promise<void> {
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      const nodes = await this.api<PveNode[]>('/nodes');
+      const details = await Promise.all(nodes.map((n) => this.pollNode(n)));
+      for (const detail of details) this.applyDetail(detail);
+      this.lastPollError = null;
+      this.emitTick();
+    } catch (err) {
+      this.lastPollError = err instanceof Error ? err.message : String(err);
+      console.error(`[proxmox] poll failed: ${this.lastPollError}`);
+      this.markAllUnreachable();
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  private async pollNode(node: PveNode): Promise<PollDetail> {
+    const name = encodeURIComponent(node.node);
+    const [status, qemu, lxc, rrd, sensors, network] = await Promise.all([
+      this.api<PveNodeStatus>(`/nodes/${name}/status`).catch(() => ({})),
+      this.api<PveGuest[]>(`/nodes/${name}/qemu`).catch(() => []),
+      this.api<PveGuest[]>(`/nodes/${name}/lxc`).catch(() => []),
+      this.api<PveRrdPoint[]>(`/nodes/${name}/rrddata?timeframe=hour&cf=AVERAGE`).catch(() => []),
+      this.api<PveSensor[]>(`/nodes/${name}/sensors`).catch(() => []),
+      this.api<PveNetworkIface[]>(`/nodes/${name}/network`).catch(() => []),
+    ]);
+    return { node, status, qemu, lxc, rrd, sensors, network };
+  }
+
+  private applyDetail(detail: PollDetail): void {
+    const spec = this.buildSpec(detail);
+    const runtime = this.buildRuntime(detail, spec);
+    this.runtimes.set(spec.id, runtime);
+    this.guests.set(
+      spec.id,
+      [...detail.qemu, ...detail.lxc].map((g) => ({
+        id: `${g.vmid}`,
+        name: g.name || `${g.vmid}`,
+        running: g.status === 'running',
+      })),
+    );
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Proxmox API                                                      */
+  /* ---------------------------------------------------------------- */
+
+  private api<T>(path: string): Promise<T> {
+    const base = /^https?:\/\//i.test(this.host) ? this.host.replace(/\/+$/, '') : `https://${this.host}`;
+    const url = `${base}/api2/json${path}`;
+
+    return new Promise<T>((resolve, reject) => {
+      const req = https.request(
+        url,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `PVEAPIToken=${this.tokenId}=${this.tokenSecret}`,
+            Accept: 'application/json',
+          },
+          rejectUnauthorized: this.verifyTls,
+          timeout: 15_000,
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+          res.on('end', () => {
+            let body: { data?: T; errors?: unknown; message?: string } | null = null;
+            try {
+              body = data ? JSON.parse(data) : null;
+            } catch {
+              body = null;
+            }
+            if (res.statusCode && res.statusCode >= 400) {
+              const detail = body?.errors
+                ? JSON.stringify(body.errors)
+                : body?.message ?? data.slice(0, 200);
+              return reject(new Error(`PVE ${res.statusCode} ${path}: ${detail}`));
+            }
+            resolve((body?.data ?? body) as T);
+          });
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy(new Error('PVE request timed out'));
+      });
+      req.end();
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Mapping                                                          */
+  /* ---------------------------------------------------------------- */
+
+  private buildSpec(detail: PollDetail): ServerSpec {
+    const node = detail.node;
+    const cpuinfo = detail.status.cpuinfo ?? {};
+    const cpuModel = cpuinfo['model name'] ?? 'Unknown CPU';
+    const id = `pve-${node.node}`;
+    const lxcCount = detail.lxc.filter((g) => g.status === 'running').length;
+    const qemuCount = detail.qemu.filter((g) => g.status === 'running').length;
+
+    return {
+      id,
+      serverId: uuid(`pve:${node.node}`),
+      hostname: node.node,
+      name: node.node,
+      logo: '🟩',
+      os: `${detail.status.kversion ?? 'Linux'}${detail.status.pveversion ? ` / ${detail.status.pveversion}` : ''}`,
+      description: 'Proxmox VE node',
+      role: 'hypervisor',
+      capabilities: lxcCount > 0 ? ['virtualization', 'containerization'] : ['virtualization'],
+      clusterId: 'proxmox-cluster',
+      ip: this.nodeIp(detail.network),
+      location: 'Proxmox Cluster',
+      cpuModel,
+      cpuCores: node.maxcpu || cpuinfo.cpus || 1,
+      ramTotalGb: round(node.maxmem / 1e9, 1),
+      diskTotalGb: round(node.maxdisk / 1e9, 1),
+      sensors: this.sensorConfigs(detail.sensors),
+      profile: {
+        baseCpu: clamp((node.cpu ?? 0) * 100, 0, 100),
+        cpuAmplitude: 0,
+        cpuNoise: 0,
+        baseRamGb: round(node.mem / 1e9, 1),
+        ramDriftGb: 0,
+        baseTemp: this.nodeTempC(detail.sensors),
+        tempVariance: 0,
+        baseNetUpMbps: round(this.rrdMbps(detail.rrd, 'netout'), 1),
+        baseNetDownMbps: round(this.rrdMbps(detail.rrd, 'netin'), 1),
+        netBurstRate: 0,
+        processes: 0,
+        containers: lxcCount,
+        vms: qemuCount,
+        reliability: 1,
+      },
+    };
+  }
+
+  private buildRuntime(detail: PollDetail, spec: ServerSpec): ServerRuntime {
+    const node = detail.node;
+    const online = node.status === 'online';
+    const cpuPct = clamp((node.cpu ?? 0) * 100, 0, 100);
+    const ramPct = node.maxmem > 0 ? (node.mem / node.maxmem) * 100 : 0;
+    const diskPct = node.maxdisk > 0 ? (node.disk / node.maxdisk) * 100 : 0;
+    const load = detail.status.loadavg?.[0] ?? detail.rrd[detail.rrd.length - 1]?.load1 ?? 0;
+    const tempC = this.nodeTempC(detail.sensors);
+    const netUpMbps = this.rrdMbps(detail.rrd, 'netout');
+    const netDownMbps = this.rrdMbps(detail.rrd, 'netin');
+
+    const status: ServerStatus = !online ? 'offline' : cpuPct > 90 || ramPct > 95 ? 'degraded' : 'online';
+    const reachability: Reachability = !online ? 'unreachable' : 'accessible';
+    const health = clamp(100 - (cpuPct > 85 ? 15 : 0) - (ramPct > 90 ? 15 : 0) - (diskPct > 92 ? 10 : 0), 0, 100);
+
+    const prev = this.runtimes.get(spec.id);
+    const push = (key: keyof ServerRuntime['history'], val: number): number[] => {
+      const arr = prev?.history[key] ? [...prev.history[key]] : [];
+      arr.push(val);
+      if (arr.length > 360) arr.shift();
+      return arr;
+    };
+
+    return {
+      spec,
+      status,
+      reachability,
+      health: round(health, 1),
+      load: round(load, 2),
+      uptimeSeconds: node.uptime ?? detail.status.uptime ?? 0,
+      cpu: round(cpuPct, 1),
+      ramUsedGb: round(node.mem / 1e9, 1),
+      diskUsedGb: round(node.disk / 1e9, 1),
+      tempC: round(tempC, 1),
+      netUpMbps: round(netUpMbps, 1),
+      netDownMbps: round(netDownMbps, 1),
+      processes: 0,
+      lastSeen: Date.now(),
+      sensors: this.sensorReadings(detail.sensors),
+      history: {
+        cpu: push('cpu', round(cpuPct, 1)),
+        ram: push('ram', round(ramPct, 1)),
+        disk: push('disk', round(diskPct, 1)),
+        temp: push('temp', round(tempC, 1)),
+        netUp: push('netUp', round(netUpMbps, 1)),
+        netDown: push('netDown', round(netDownMbps, 1)),
+        load: push('load', round(load, 2)),
+      },
+    };
+  }
+
+  private emitTick(): void {
+    const now = Date.now();
+    const snapshots: MetricSnapshot[] = [...this.runtimes.values()].map((r) => ({
+      serverId: r.spec.id,
+      timestamp: now,
+      cpu: r.cpu,
+      cpuCores: r.spec.cpuCores,
+      ramUsedGb: r.ramUsedGb,
+      ramTotalGb: r.spec.ramTotalGb,
+      diskUsedGb: r.diskUsedGb,
+      diskTotalGb: r.spec.diskTotalGb,
+      tempC: r.tempC,
+      netUpMbps: r.netUpMbps,
+      netDownMbps: r.netDownMbps,
+      load: r.load,
+      uptimeSeconds: r.uptimeSeconds,
+      processes: r.processes,
+      status: r.status,
+      reachability: r.reachability,
+      health: r.health,
+      sensors: r.sensors,
+    }));
+
+    if (snapshots.length > 0) insertMetrics(snapshots);
+
+    const notifications = this.generator.generate(snapshots, now);
+    this.tickListeners.forEach((l) => l(snapshots));
+    if (notifications.length > 0) this.notifListeners.forEach((l) => l(notifications));
+  }
+
+  private markAllUnreachable(): void {
+    const now = Date.now();
+    for (const [id, r] of this.runtimes) {
+      this.runtimes.set(id, { ...r, status: 'offline', reachability: 'unreachable', health: 0, lastSeen: now });
+    }
+    if (this.runtimes.size > 0) this.emitTick();
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Small mappers                                                    */
+  /* ---------------------------------------------------------------- */
+
+  private nodeIp(ifaces: PveNetworkIface[]): string {
+    const active = ifaces.find((i) => i.active === 1 && i.address) ?? ifaces.find((i) => i.address);
+    if (!active?.address) return '';
+    return active.address.split('/')[0];
+  }
+
+  private nodeTempC(sensors: PveSensor[]): number {
+    const temps = sensors.filter((s) => s.type === 'temperature');
+    if (temps.length === 0) return 0;
+    return Math.max(...temps.map((s) => s.value));
+  }
+
+  private rrdMbps(rrd: PveRrdPoint[], field: 'netin' | 'netout'): number {
+    for (let i = rrd.length - 1; i >= 0; i--) {
+      const v = rrd[i]?.[field];
+      if (typeof v === 'number' && v > 0) return (v * 8) / 1e6;
+    }
+    return 0;
+  }
+
+  private sensorConfigs(sensors: PveSensor[]): SensorConfig[] {
+    const out: SensorConfig[] = [];
+    for (const s of sensors) {
+      const mapped = mapSensor(s);
+      if (!mapped) continue;
+      out.push({ ...mapped, base: s.value, variance: 0 });
+    }
+    return out;
+  }
+
+  private sensorReadings(sensors: PveSensor[]): SensorReading[] {
+    const out: SensorReading[] = [];
+    for (const s of sensors) {
+      const mapped = mapSensor(s);
+      if (!mapped) continue;
+      out.push({
+        kind: mapped.kind,
+        label: mapped.label,
+        unit: mapped.unit,
+        value: round(s.value, 1),
+        available: true,
+        warningThreshold: mapped.warningThreshold,
+        criticalThreshold: mapped.criticalThreshold,
+      });
+    }
+    return out;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* MetricsProvider contract                                         */
+  /* ---------------------------------------------------------------- */
+
+  getServers(): ServerRuntime[] {
+    return [...this.runtimes.values()];
+  }
+
+  getServer(id: string): ServerRuntime | undefined {
+    return this.runtimes.get(id);
+  }
+
+  getHistory(serverId: string, range: HistoryRange): HistoryPoint[] {
+    return historyForServer(serverId, range);
+  }
+
+  getStatsHistory(range: HistoryRange): StatsHistoryPoint[] {
+    return statsHistoryFor(range, this.getServers());
+  }
+
+  getGlobalHealth(): GlobalHealth {
+    const servers = this.getServers();
+    const online = servers.filter((s) => s.status === 'online').length;
+    const degraded = servers.filter((s) => s.status === 'degraded').length;
+    const offline = servers.filter((s) => s.status === 'offline').length;
+
+    const avgCpu = servers.length ? servers.reduce((a, s) => a + s.cpu, 0) / servers.length : 0;
+    const avgRam = servers.length
+      ? servers.reduce((a, s) => a + (s.spec.ramTotalGb > 0 ? (s.ramUsedGb / s.spec.ramTotalGb) * 100 : 0), 0) / servers.length
+      : 0;
+    const score = servers.length ? servers.reduce((a, s) => a + s.health, 0) / servers.length : 0;
+
+    return {
+      score: round(clamp(score, 0, 100), 1),
+      status: offline > 0 ? 'offline' : degraded > 0 ? 'degraded' : 'online',
+      totalServers: servers.length,
+      onlineServers: online,
+      degradedServers: degraded,
+      offlineServers: offline,
+      activeAlerts: 0,
+      avgCpu: round(avgCpu, 1),
+      avgRam: round(avgRam, 1),
+      totalUptimePercent: round(
+        servers.length
+          ? (servers.reduce((a, s) => a + (s.status === 'online' ? 1 : s.status === 'degraded' ? 0.6 : 0), 0) / servers.length) * 100
+          : 0,
+        1,
+      ),
+    };
+  }
+
+  getQuickStats(): QuickStat[] {
+    const h = this.getGlobalHealth();
+    const servers = this.getServers();
+    const totalUptimeDays = servers.reduce((a, s) => a + s.uptimeSeconds / 86400, 0);
+    const totalRamUsed = servers.reduce((a, s) => a + s.ramUsedGb, 0);
+    const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
+    const totalNet = servers.reduce((a, s) => a + s.netDownMbps, 0);
+    const guests = [...this.guests.values()].flat();
+    const running = guests.filter((g) => g.running).length;
+
+    return [
+      { id: 'servers', label: 'Nodes', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
+      { id: 'online', label: 'Online', value: h.onlineServers, unit: '', delta: 0, tone: 'good' },
+      { id: 'containers', label: 'VMs & CTs', value: running, unit: '', delta: 0, tone: 'neutral' },
+      { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0, tone: h.avgCpu > 70 ? 'warn' : 'good' },
+      { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0, tone: 'good' },
+      { id: 'network', label: 'Network', value: round(totalNet / 1000, 2), unit: 'Gb/s', delta: 0, tone: 'neutral' },
+      { id: 'uptime', label: 'Uptime', value: round(totalUptimeDays, 0), unit: 'days', delta: 0, tone: 'good' },
+    ];
+  }
+
+  getNetwork(): { nodes: NetworkNode[]; links: NetworkLink[] } {
+    const nodes: NetworkNode[] = [];
+    const links: NetworkLink[] = [];
+
+    nodes.push({ id: 'internet', label: 'Internet', type: 'internet', status: 'online', x: 6, y: 50, health: 100 });
+
+    const servers = this.getServers();
+    const rows = Math.max(1, Math.ceil(servers.length / 2));
+    servers.forEach((s, i) => {
+      const colIdx = Math.floor(i / rows);
+      const rowIdx = i % rows;
+      const x = 30 + colIdx * 36;
+      const y = 16 + (rowIdx / Math.max(rows - 1, 1)) * 68;
+
+      nodes.push({
+        id: s.spec.id,
+        label: s.spec.name,
+        type: 'hypervisor',
+        status: s.status,
+        x,
+        y,
+        ip: s.spec.ip || undefined,
+        health: s.health,
+      });
+      links.push({
+        id: `internet-${s.spec.id}`,
+        source: 'internet',
+        target: s.spec.id,
+        status: s.status === 'online' ? 'healthy' : s.status === 'degraded' ? 'warning' : 'critical',
+        latencyMs: 1,
+        throughputMbps: round(s.netDownMbps, 0),
+        jitterMs: 0.1,
+        packetLoss: 0,
+      });
+
+      const guestList = (this.guests.get(s.spec.id) ?? []).slice(0, 20);
+      guestList.forEach((g, gi) => {
+        const gid = `${s.spec.id}-g${gi}`;
+        nodes.push({
+          id: gid,
+          label: g.name,
+          type: 'container',
+          status: g.running ? 'online' : 'offline',
+          x: x + 8,
+          y: y + 16 + (gi % 4) * 12,
+          parentId: s.spec.id,
+          health: g.running ? 100 : 0,
+        });
+        links.push({
+          id: `${s.spec.id}-${gid}`,
+          source: s.spec.id,
+          target: gid,
+          status: g.running ? 'healthy' : 'warning',
+          latencyMs: 0.1,
+          throughputMbps: 0,
+          jitterMs: 0.05,
+          packetLoss: 0,
+        });
+      });
+    });
+
+    return { nodes, links };
+  }
+
+  getClusters(): ClusterInfo[] {
+    const servers = this.getServers();
+    if (servers.length === 0) return [];
+    const online = servers.filter((s) => s.status === 'online').length;
+    const degraded = servers.filter((s) => s.status === 'degraded').length;
+    const offline = servers.length - online - degraded;
+
+    return [
+      {
+        id: 'proxmox-cluster',
+        name: 'Proxmox Cluster',
+        serverIds: servers.map((s) => s.spec.id),
+        status: offline > 0 ? 'offline' : degraded > 0 ? 'degraded' : 'online',
+        health: round(servers.reduce((a, s) => a + s.health, 0) / servers.length, 1),
+        online,
+        degraded,
+        offline,
+      },
+    ];
+  }
+
+  getBootStats(): BootStats {
+    return {
+      historySeeded: true,
+      historyPoints: countMetrics(),
+      startedAt: this.startedAt,
+    };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sensor mapping (lm-sensors on the node → dashboard sensor registry) */
+/* ------------------------------------------------------------------ */
+
+function mapSensor(
+  s: PveSensor,
+): Pick<SensorConfig, 'kind' | 'label' | 'unit' | 'warningThreshold' | 'criticalThreshold'> | null {
+  const name = s.name.toLowerCase();
+  switch (s.type) {
+    case 'temperature':
+      if (name.includes('gpu')) {
+        return { kind: 'gpu_temp', label: `${s.name} Temperature`, unit: '°C', warningThreshold: 82, criticalThreshold: 92 };
+      }
+      if (/nvme|ssd|disk|hdd/.test(name)) {
+        return { kind: 'disk_temp', label: `${s.name} Temp`, unit: '°C', warningThreshold: 60, criticalThreshold: 70 };
+      }
+      if (name.includes('nic') || name.includes('lan')) {
+        return { kind: 'nic_temp', label: `${s.name} Temp`, unit: '°C', warningThreshold: 80, criticalThreshold: 90 };
+      }
+      return { kind: 'cpu_temp', label: `${s.name}`, unit: '°C', warningThreshold: 78, criticalThreshold: 88 };
+    case 'fan':
+      return { kind: 'fan_rpm', label: `${s.name}`, unit: 'rpm', warningThreshold: 2400, criticalThreshold: 2600 };
+    case 'power':
+      return { kind: 'power_consumption', label: `${s.name}`, unit: 'W', warningThreshold: 320, criticalThreshold: 360 };
+    default:
+      return null;
+  }
+}

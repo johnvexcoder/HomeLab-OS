@@ -16,4 +16,11 @@ export const config = {
   mockMode: (process.env.MOCK_MODE ?? 'true').toLowerCase() === 'true',
   telemetryIntervalMs: int(process.env.TELEMETRY_INTERVAL_MS, 2000),
   historyRetentionHours: int(process.env.HISTORY_RETENTION_HOURS, 24),
+  proxmox: {
+    host: process.env.PROXMOX_HOST ?? '',
+    tokenId: process.env.PROXMOX_TOKEN_ID ?? '',
+    tokenSecret: process.env.PROXMOX_TOKEN_SECRET ?? '',
+    verifyTls: (process.env.PROXMOX_VERIFY_TLS ?? 'false').toLowerCase() === 'true',
+    pollIntervalMs: int(process.env.PROXMOX_POLL_INTERVAL_MS, 5000),
+  },
 };

@@ -45,7 +45,6 @@ before(async () => {
   bootstrapSecurity();
 
   app = createApp({
-    simulator: null as never,
     metrics: new MockMetricsProvider(new TelemetryEngine()),
     notifications: new MockNotificationsProvider(),
   });

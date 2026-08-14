@@ -1,6 +1,6 @@
 {
   "name": "@homelab/backend",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "private": true,
   "description": "HomeLab OS backend - mock telemetry engine, REST API and WebSocket push",
   "main": "dist/index.js",

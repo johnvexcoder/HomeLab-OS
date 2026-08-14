@@ -104,10 +104,12 @@ on your hosts. Discovery is entirely a backend concern:
   servers, history, global health, stats and network topology.
 - The default `MockMetricsProvider` returns a believable 5-host fleet (PVE0, Docker01, NAS01, Gateway, Switch01)
   so the whole UI works out of the box.
-- **To go live**, implement the same interface against Proxmox API / Docker Engine API / Node Exporter /
-  Uptime Kuma and swap the constructor in `backend/src/index.ts`. Nothing in the frontend or routes changes —
-  the REST + WebSocket pipeline stays identical. The fleet grid, charts, network map and alerts all light up
-  with real numbers.
+- **Proxmox VE is a first-class live provider** (`backend/src/providers/proxmoxMetricsProvider.ts`). Set
+  `MOCK_MODE=false` and provide a Proxmox API token (see `SETUP.md`). The backend then discovers every node,
+  VM and container automatically and feeds the dashboard with real CPU/RAM/disk/network/temperature data —
+  including optional `lm-sensors` telemetry when the host exposes it. Nothing is installed on Proxmox itself.
+- Other backends (Docker Engine API, Node Exporter, Uptime Kuma…) can implement the same `MetricsProvider`
+  contract; the REST + WebSocket pipeline, fleet grid, charts, network map and alerts all stay identical.
 
 ---
 
@@ -156,6 +158,9 @@ npm run start -w backend
 ---
 
 ## Homelab Deployment Guide
+
+> **For a complete, step-by-step installation walkthrough** — including Proxmox API token setup,
+> enabling the live provider, Telegram and email configuration, and going live — read [`SETUP.md`](./SETUP.md).
 
 ### 1. Docker Compose (recommended)
 
@@ -226,9 +231,10 @@ To pin your own password instead, set `ADMIN_INITIAL_PASSWORD` in the backend en
 
 ### 6. Going live with real servers
 
-Follow **Architecture → How servers are discovered** above. Implement `MetricsProvider` for your
-hypervisor / Docker engine / exporter, set `MOCK_MODE=false`, and swap the constructor. There is no
-agent component to deploy on your hosts.
+Follow `SETUP.md` to enable the **built-in Proxmox VE provider**: set `MOCK_MODE=false`, create an API token
+in the Proxmox web UI, and drop the host + token into `.env`. The backend then discovers all nodes, VMs and
+containers automatically — there is no agent component to deploy on your hosts. Everything else (fleet grid,
+charts, network map, sensors, alerts) lights up with real data with no frontend changes.
 
 ---
 
@@ -291,9 +297,14 @@ Other recovery commands: `status`, `emergency-unlock`, `reset-settings`,
 | `HOST` | `0.0.0.0` | Bind address |
 | `CORS_ORIGIN` | `http://localhost:5173` | Comma-separated allowed origins |
 | `DATA_DIR` | `./data` | SQLite file location, backups, secrets |
-| `MOCK_MODE` | `true` | `true` = simulated telemetry provider |
+| `MOCK_MODE` | `true` | `true` = simulated telemetry, `false` = live Proxmox provider |
 | `TELEMETRY_INTERVAL_MS` | `2000` | Simulation tick / WS push cadence |
 | `HISTORY_RETENTION_HOURS` | `24` | Seeded history window |
+| `PROXMOX_HOST` | — | Proxmox API host (with port: `https://192.168.1.10:8006`) |
+| `PROXMOX_TOKEN_ID` | — | Proxmox API token ID (`<user>@<realm>!<token>`), e.g. `root@pam!homelab` |
+| `PROXMOX_TOKEN_SECRET` | — | Proxmox API token secret |
+| `PROXMOX_VERIFY_TLS` | `false` | Validate the Proxmox TLS chain (self-signed by default) |
+| `PROXMOX_POLL_INTERVAL_MS` | `5000` | How often the backend polls Proxmox |
 | `SECRET_ENCRYPTION_KEY` | — | Encrypts stored secrets; set a long random string |
 | `ADMIN_INITIAL_PASSWORD` | — | First-boot super admin password (auto-generated if empty) |
 | `COOKIE_SECURE` | `false` | Session cookie `Secure` flag (with `NODE_ENV=production`) |
@@ -309,7 +320,7 @@ A full `.env.example` with placeholders is committed at the repo root. **Never c
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/health` | Status, mock flag, boot stats |
+| GET | `/api/health` | Status, mock flag, provider name, last poll error, boot stats |
 | GET | `/api/servers` | All servers with live runtime |
 | GET | `/api/servers/:id` | Single server |
 | GET | `/api/servers/:id/history?range=` | Bucketed history points |
@@ -388,10 +399,14 @@ The simulation (`backend/src/telemetry/engine.ts`) drives five believable hosts 
 
 ## Extending
 
-### Add a real integration (e.g. Proxmox)
-1. Create `backend/src/providers/proxmoxMetricsProvider.ts` implementing `MetricsProvider` (fetch `/nodes`, `/nodes/:node/status`, etc.).
-2. Replace `new MockMetricsProvider(simulator.engine)` in `backend/src/index.ts`.
+### Add a real integration (e.g. another Proxmox-free backend)
+1. Create `backend/src/providers/<name>MetricsProvider.ts` implementing `MetricsProvider` — the Proxmox
+   provider (`proxmoxMetricsProvider.ts`) is a complete reference (API client, poll loop, sensor mapping,
+   network topology from guests).
+2. Select it in `backend/src/index.ts` where the mock/proxmox branch lives.
 3. The whole UI, charts and WS pipeline keep working unchanged.
+
+> Proxmox VE ships as a built-in provider — see `SETUP.md` to enable it.
 
 ### Add a new hardware sensor
 1. Add the kind to `SensorKind` (backend `types`) and a `SensorConfig` on the hosts that have it.
@@ -405,7 +420,7 @@ Append to `QUICK_ACTIONS` in `backend/src/routes/index.ts` and it flows into `�
 
 ## Roadmap
 
-- Real provider implementations (Proxmox, Docker Engine, Node Exporter, Prometheus, Uptime Kuma)
+- Additional provider backends (Docker Engine, Node Exporter, Prometheus, Uptime Kuma)
 - Actual Telegram message delivery and email notification delivery (integration stubs are in place)
 - Alert routing rules and escalation
 - Additional hardware sensor kinds

@@ -1,5 +1,6 @@
 import type {
   BootStats,
+  ClusterInfo,
   GlobalHealth,
   MetricSnapshot,
   NetworkLink,
@@ -31,17 +32,34 @@ export interface StatsHistoryPoint {
 }
 
 /**
- * The contract every backend integration (Proxmox, Docker API, Node Exporter,
- * Uptime Kuma…) must implement. The mock provider is the default implementation.
+ * The full contract every metrics provider (mock or real Proxmox) must
+ * implement. Routes only ever depend on this — swapping the source never
+ * touches the API surface or the frontend.
  */
 export interface MetricsProvider {
   getServers(): ServerRuntime[];
   getServer(id: string): ServerRuntime | undefined;
   getHistory(serverId: string, range: HistoryRange): HistoryPoint[];
+  getStatsHistory(range: HistoryRange): StatsHistoryPoint[];
   getGlobalHealth(): GlobalHealth;
   getQuickStats(): QuickStat[];
   getNetwork(): { nodes: NetworkNode[]; links: NetworkLink[] };
+  getClusters(): ClusterInfo[];
   getBootStats(): BootStats;
+  /** Optional: provider name shown on /api/health (defaults to mock/proxmox). */
+  getSourceName?(): string;
+  /** Optional: last poll error, surfaced on /api/health for real integrations. */
+  getLastPollError?(): string | null;
+}
+
+/**
+ * Emits the live telemetry loop (snapshots + derived notifications) to the
+ * WebSocket broadcaster. Both the mock Simulator and the real Proxmox poller
+ * satisfy this structurally, so `ws/` never cares which source is active.
+ */
+export interface TelemetryBroadcaster {
+  onTick(listener: (snapshots: MetricSnapshot[]) => void): void;
+  onNotifications(listener: (notifications: Notification[]) => void): void;
 }
 
 export interface NotificationsProvider {
