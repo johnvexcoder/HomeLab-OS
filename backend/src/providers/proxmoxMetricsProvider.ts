@@ -235,6 +235,19 @@ export class ProxmoxMetricsProvider {
         console.warn(`[proxmox] ${path} not supported by this PVE server — disabling endpoint`);
         return fallback;
       }
+      if (!/^PVE \d{3}/.test(message)) {
+        // Transport-level failure (ECONNRESET "socket hang up", ECONNREFUSED,
+        // timeout). Retry once before flagging so transient blips don't alarm.
+        try {
+          await new Promise((r) => setTimeout(r, 500));
+          return await this.api<T>(path);
+        } catch (retryErr) {
+          if (retryErr instanceof Error && /^PVE \d{3}/.test(retryErr.message)) {
+            this.endpointErrors.set(path, retryErr.message);
+            return fallback;
+          }
+        }
+      }
       if (this.endpointErrors.get(path) !== message) {
         this.endpointErrors.set(path, message);
         if (this.endpointErrors.size > 24) {

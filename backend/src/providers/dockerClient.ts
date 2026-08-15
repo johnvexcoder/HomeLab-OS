@@ -13,6 +13,30 @@ export interface DockerContainer {
   image: string;
 }
 
+export interface DockerHostInfo {
+  name: string;
+  ncpu: number;
+  memTotal: number;
+  os: string;
+  kernel: string;
+  dockerVersion: string;
+  architecture: string;
+}
+
+export interface DockerContainerStats {
+  id: string;
+  cpuTotal: number;
+  systemCpu: number;
+  onlineCpus: number;
+  memUsed: number;
+  netRxBytes: number;
+  netTxBytes: number;
+}
+
+export interface DockerDiskUsage {
+  used: number;
+}
+
 export class DockerClient {
   constructor(private readonly host: string) {}
 
@@ -75,5 +99,69 @@ export class DockerClient {
         image: typeof c.Image === 'string' ? c.Image : '',
       };
     });
+  }
+
+  /** Host-level capacity + identity from /info. */
+  async getInfo(): Promise<DockerHostInfo> {
+    const { statusCode, body } = await this.request<Record<string, unknown>>('/info');
+    if (statusCode >= 400) throw new Error(`Docker info returned HTTP ${statusCode}`);
+    const raw = body ?? {};
+    return {
+      name: typeof raw.Name === 'string' ? raw.Name : 'docker',
+      ncpu: typeof raw.NCPU === 'number' ? raw.NCPU : 1,
+      memTotal: typeof raw.MemTotal === 'number' ? raw.MemTotal : 0,
+      os: typeof raw.OperatingSystem === 'string' ? raw.OperatingSystem : '',
+      kernel: typeof raw.KernelVersion === 'string' ? raw.KernelVersion : '',
+      dockerVersion: typeof raw.ServerVersion === 'string' ? raw.ServerVersion : '',
+      architecture: typeof raw.Architecture === 'string' ? raw.Architecture : '',
+    };
+  }
+
+  /** Single-shot usage snapshot for one container (no CPU delta — caller computes). */
+  async getContainerStats(id: string): Promise<DockerContainerStats | null> {
+    const { statusCode, body } = await this.request<Record<string, unknown>>(`/containers/${id}/stats?stream=false`);
+    if (statusCode >= 400) return null;
+    const raw = body ?? {};
+    const cpu = raw.cpu_stats as Record<string, unknown> | undefined;
+    const cpuUsage = cpu?.cpu_usage as Record<string, unknown> | undefined;
+    const mem = raw.memory_stats as Record<string, unknown> | undefined;
+    const nets = (raw.networks as Record<string, Record<string, unknown>> | undefined) ?? {};
+    let rx = 0;
+    let tx = 0;
+    for (const n of Object.values(nets)) {
+      rx += typeof n.rx_bytes === 'number' ? n.rx_bytes : 0;
+      tx += typeof n.tx_bytes === 'number' ? n.tx_bytes : 0;
+    }
+    return {
+      id,
+      cpuTotal: typeof cpuUsage?.total_usage === 'number' ? cpuUsage.total_usage : 0,
+      systemCpu: typeof cpu?.system_cpu_usage === 'number' ? cpu.system_cpu_usage : 0,
+      onlineCpus: typeof cpu?.online_cpus === 'number' ? cpu.online_cpus : 1,
+      memUsed: typeof mem?.usage === 'number' ? mem.usage : 0,
+      netRxBytes: rx,
+      netTxBytes: tx,
+    };
+  }
+
+  /** Docker-owned disk footprint (layers + containers + volumes). */
+  async getDiskUsage(): Promise<DockerDiskUsage> {
+    const { statusCode, body } = await this.request<Record<string, unknown>>('/system/df');
+    if (statusCode >= 400) throw new Error(`Docker df returned HTTP ${statusCode}`);
+    const raw = body ?? {};
+    const sum = (arr: unknown, key: string): number =>
+      Array.isArray(arr)
+        ? arr.reduce((acc, item) => {
+            const it = item as Record<string, unknown>;
+            const direct = typeof it[key] === 'number' ? (it[key] as number) : 0;
+            const usage = it.UsageData as Record<string, unknown> | undefined;
+            const nested = typeof usage?.Size === 'number' ? usage.Size : 0;
+            return acc + direct + nested;
+          }, 0)
+        : 0;
+    const layers = typeof raw.LayersSize === 'number' ? raw.LayersSize : 0;
+    const containers = sum(raw.Containers, 'Size');
+    const volumes = sum(raw.Volumes, 'Size');
+    const buildCache = sum(raw.BuildCache, 'Size');
+    return { used: layers + containers + volumes + buildCache };
   }
 }

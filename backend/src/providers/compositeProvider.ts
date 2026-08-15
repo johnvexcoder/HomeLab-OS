@@ -12,12 +12,15 @@ import type {
   ServerRuntime,
 } from '../types';
 import { config } from '../config';
+import { insertMetrics } from '../db/database';
+import { statsHistoryFor } from './history';
 
 /**
- * Wraps the primary provider (Proxmox) and merges Docker container nodes into
- * its topology. The Proxmox provider stays the single source of truth for
- * fleet/servers/history; Docker only contributes the container layer that hangs
- * off the Docker-hosting guest (e.g. `docker01`).
+ * Wraps the primary provider (Proxmox) and merges the Docker layer into it:
+ * container nodes hang off the Docker-hosting guest on the map, and the Docker
+ * host itself (e.g. `docker01`) is surfaced as its own server with live
+ * CPU/memory/network. The Proxmox provider stays the source of truth for the
+ * PVE node; Docker only contributes the container layer and the host runtime.
  */
 export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster {
   constructor(
@@ -26,7 +29,15 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
   ) {}
 
   onTick(listener: (snapshots: MetricSnapshot[]) => void): void {
-    this.primary.onTick(listener);
+    this.primary.onTick((snapshots) => {
+      const dockerSnap = this.docker?.getHostSnapshot();
+      if (!dockerSnap) {
+        listener(snapshots);
+        return;
+      }
+      insertMetrics([dockerSnap]);
+      listener([...snapshots, dockerSnap]);
+    });
   }
 
   onNotifications(listener: (notifications: Notification[]) => void): void {
@@ -34,11 +45,14 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
   }
 
   getServers(): ServerRuntime[] {
-    return this.primary.getServers();
+    const primary = this.primary.getServers();
+    const docker = this.docker?.getHostRuntime();
+    if (!docker) return primary;
+    return primary.some((s) => s.spec.id === docker.spec.id) ? primary : [...primary, docker];
   }
 
   getServer(id: string): ServerRuntime | undefined {
-    return this.primary.getServer(id);
+    return this.primary.getServer(id) ?? this.docker?.getHostRuntime() ?? undefined;
   }
 
   getHistory(serverId: string, range: HistoryRange) {
@@ -46,7 +60,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
   }
 
   getStatsHistory(range: HistoryRange) {
-    return this.primary.getStatsHistory(range);
+    return statsHistoryFor(range, this.getServers());
   }
 
   getGlobalHealth(): GlobalHealth {
