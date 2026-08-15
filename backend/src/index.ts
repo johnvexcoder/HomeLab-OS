@@ -43,8 +43,9 @@ async function bootstrap(): Promise<void> {
       const docker = new DockerMetricsProvider();
       await docker.start();
       console.log(`[homelab] docker provider active (${config.docker.host})`);
-      metrics = new CompositeProvider(proxmox, docker);
-      broadcaster = proxmox;
+      const composite = new CompositeProvider(proxmox, docker);
+      metrics = composite;
+      broadcaster = composite;
     }
   }
 
