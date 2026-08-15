@@ -119,7 +119,18 @@ Map, Sensors, Alerts, Settings) works. Look around; the real data comes next.
 ## Part 2 — Connect your real Proxmox servers
 
 The dashboard reads Proxmox through an **API token**. The token only needs *read* access — create it with
-the **PVEAuditor** role (view everything, change nothing).
+the **PVEAuditor** role (view everything, change nothing). The dashboard reads *four* kinds of data, and the
+token needs read privileges for each:
+
+| Data | PVE endpoint | Required privilege |
+|---|---|---|
+| Node CPU / RAM / uptime / OS | `GET /nodes`, `GET /nodes/{node}/status` | `Sys.Audit` |
+| VMs & containers (map + quick stats) | `GET /nodes/{node}/qemu`, `GET /nodes/{node}/lxc` | `VM.Audit` |
+| Network interfaces / IPs | `GET /nodes/{node}/network` | `Sys.Audit` |
+| Sensors + RRD history | `GET /nodes/{node}/sensors`, `.../rrddata` | `Sys.Audit` |
+
+**PVEAuditor** includes all of the above. If a metric row shows zeros while the node itself is listed
+as online, the token is missing one of these privileges (see *Troubleshooting* in §2.5).
 
 ### 2.1 Create an API token in Proxmox
 
@@ -131,7 +142,9 @@ the **PVEAuditor** role (view everything, change nothing).
      cleaner option is a dedicated user. If you create a new user (`Permissions → Users → Add`) give it the
      **PVEAuditor** role and no password (API-token only).
    - **Token ID**: `homelab` (or anything you like).
-   - Tick **Privilege Separation** if you want to limit it; **PVEAuditor** is already read-only.
+   - **Privilege Separation**: leave it **unticked** unless you know you need it. If you do tick it, the
+     separated token has *no* privileges until you add ACL entries — grant at least `Sys.Audit` and `VM.Audit`
+     on the datacenter/node path, otherwise the dashboard shows zeroed metrics (see Troubleshooting).
 5. Click **Add**.
 6. Proxmox shows the token secret **once**:
    ```
@@ -185,6 +198,10 @@ You should see:
 1. In the dashboard, open **Servers**. Your Proxmox **nodes** are now the servers (e.g. `pve1`, `pve2`).
 2. Open the **Network Map** — you'll see `Internet → your nodes → each VM/container` (green = running,
    grey/red = stopped).
+   > **Where's "docker"?** The map shows the Proxmox topology: a VM named `docker01` appears as a child of its
+   > node once the PVE token has `VM.Audit` (see §2.5). *Container-level* nodes require a Docker API agent,
+   > which is **not implemented yet** — the `docker_monitoring` feature flag is listed as unsupported for that
+   > reason. Don't expect a `docker01 → container` layer until that lands.
 3. The **Dashboard** stats switch to Nodes / VMs & CTs / Avg CPU / Memory / Network — all live.
 4. Check the backend health endpoint — it reports the provider and the last poll error (see troubleshooting):
 
@@ -197,7 +214,43 @@ You should see:
 > restart with `docker compose up -d backend` (the `-d` flag is required to apply environment changes), or
 > re-create with `docker compose up -d --force-recreate backend`.
 
-### 2.5 Optional — temperature / fan sensors
+### 2.5 Troubleshooting — node online but all metrics are zero
+
+Symptom: the Servers page lists your node as **online**, but RAM/Disk show `0 GB`, the CPU model says
+`Unknown CPU`, uptime is `0`, and the Network Map only shows the node — no VMs/containers.
+
+Cause: the node list endpoint (`/nodes`) is readable with minimal privileges, but the *per-node* endpoints
+that carry CPU model, memory, disk, uptime, guests and sensors need `Sys.Audit` / `VM.Audit`. A
+privilege-separated token (or a token whose user lacks `PVEAuditor`) gets exactly this partial view.
+
+1. Check the backend health endpoint — failed PVE requests are now reported per-endpoint:
+
+   ```bash
+   curl -s http://localhost:4000/api/health
+   ```
+
+   ```json
+   {
+     "status": "ok",
+     "mockMode": false,
+     "provider": "proxmox",
+     "diagnostics": {
+       "endpointErrors": {
+         "/nodes/pve1/status": "PVE 403 /nodes/pve1/status: permission denied",
+         "/nodes/pve1/qemu":    "PVE 403 /nodes/pve1/qemu: permission denied"
+       }
+     }
+   }
+   ```
+
+   The same failures show as an amber banner on the **Servers** and **Network** pages.
+2. In Proxmox open **Datacenter → Permissions → API Tokens**, edit the token:
+   - **Privilege Separation**: untick it, **or**
+   - Add ACL entries granting `Sys.Audit` and `VM.Audit` on `/` (or on the specific node path).
+3. Give the token's user the **PVEAuditor** role at the datacenter level if it isn’t already.
+4. Wait for the next poll (default 5 s) or restart the backend (`docker compose restart backend`).
+
+### 2.6 Optional — temperature / fan sensors
 
 Proxmox exposes `lm-sensors` telemetry only if the host has it installed. On each Proxmox node (SSH):
 
@@ -292,7 +345,8 @@ fully functional today.
    - Host, port (`587` STARTTLS, `465` implicit TLS, or `25` plaintext)
    - Username + password (app passwords for Gmail work)
    - From-address (e.g. `homelab@example.com`)
-3. Save and click **Test** to send a real test email.
+3. Save and click **Test** — it performs a real SMTP connectivity check (server reachable + SMTP greeting);
+   the "send a test email" delivery path is pending. Alert delivery is not wired up yet.
 
 ### 5.2 Optional — 2FA & recovery
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { MetricSnapshot, ServerRuntime, ServerStatus, GlobalHealth } from '@/types';
+import { pct } from '@/lib/utils';
 
 interface TelemetryState {
   servers: Record<string, ServerRuntime>;
@@ -61,8 +62,8 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
         const rings = sparklines[snap.serverId] ?? emptyRings();
         sparklines[snap.serverId] = {
           cpu: [...rings.cpu.slice(-HISTORY_LEN), snap.cpu],
-          ram: [...rings.ram.slice(-HISTORY_LEN), (snap.ramUsedGb / snap.ramTotalGb) * 100],
-          disk: [...rings.disk.slice(-HISTORY_LEN), (snap.diskUsedGb / snap.diskTotalGb) * 100],
+          ram: [...rings.ram.slice(-HISTORY_LEN), pct(snap.ramUsedGb, snap.ramTotalGb)],
+          disk: [...rings.disk.slice(-HISTORY_LEN), pct(snap.diskUsedGb, snap.diskTotalGb)],
           temp: [...rings.temp.slice(-HISTORY_LEN), snap.tempC],
           netUp: [...rings.netUp.slice(-HISTORY_LEN), snap.netUpMbps],
           netDown: [...rings.netDown.slice(-HISTORY_LEN), snap.netDownMbps],
@@ -109,7 +110,7 @@ export function globalHealthFromServers(servers: ServerRuntime[]): GlobalHealth 
   const offline = serverStatusCount(servers, 'offline');
   const score = servers.reduce((a, s) => a + s.health, 0) / servers.length;
   const avgCpu = servers.reduce((a, s) => a + s.cpu, 0) / servers.length;
-  const avgRam = servers.reduce((a, s) => a + (s.ramUsedGb / s.spec.ramTotalGb) * 100, 0) / servers.length;
+  const avgRam = servers.reduce((a, s) => a + pct(s.ramUsedGb, s.spec.ramTotalGb), 0) / servers.length;
   return {
     score: Math.round(score * 10) / 10,
     status: offline > 0 ? 'offline' : degraded > 0 ? 'degraded' : 'online',

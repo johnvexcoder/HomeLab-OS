@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
+import net from 'node:net';
 import { getDb } from '../db/database';
 import { getEncryptionKey, rotateSecrets } from '../security/secrets';
 import { decryptSecret, encryptSecret } from '../security/crypto';
-import { getBoolSetting } from '../security/settings';
+import { getBoolSetting, getSetting, getIntSetting } from '../security/settings';
 
 export type IntegrationKind = 'uptime_kuma' | 'telegram' | 'email' | 'prometheus' | 'ai_assistant';
 
@@ -189,7 +190,89 @@ export function integrationEnabledByFeature(kind: IntegrationKind): boolean {
   return getBoolSetting(`feature.${feature}`);
 }
 
-/** Test connectivity (stub — real delivery lands with real integrations). */
+async function httpProbe(url: string, timeoutMs = 6000): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return { ok: false, latencyMs: 0, error: 'invalid URL' };
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    return { ok: false, latencyMs: 0, error: 'URL must be http(s)' };
+  }
+  const start = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(target, {
+      method: 'GET',
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: { accept: 'application/json, text/plain, */*' },
+    });
+    const latencyMs = Date.now() - start;
+    if (res.ok) return { ok: true, latencyMs };
+    return { ok: false, latencyMs, error: `HTTP ${res.status}` };
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    const message = err instanceof Error ? (err.name === 'AbortError' ? 'timeout' : err.message) : 'request failed';
+    return { ok: false, latencyMs, error: message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function smtpProbe(host: string, port: number, timeoutMs = 6000): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const socket = net.createConnection({ host, port, timeout: timeoutMs });
+    let settled = false;
+    const done = (ok: boolean, error?: string) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve({ ok, latencyMs: Date.now() - start, error });
+    };
+    socket.on('connect', () => done(true));
+    socket.on('error', (err) => done(false, err.message));
+    socket.on('timeout', () => done(false, 'timeout'));
+  });
+}
+
+/** Per-kind connectivity checks. Error message must NOT leak secret values. */
+async function probeKind(kind: IntegrationKind, row: IntegrationRow): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const config = row.config ? (JSON.parse(row.config) as Record<string, unknown>) : {};
+  const secret = (field: string): string | null => secretValue(row.id, field);
+
+  switch (kind) {
+    case 'uptime_kuma': {
+      const url = typeof config.url === 'string' ? config.url : '';
+      return httpProbe(url);
+    }
+    case 'prometheus': {
+      const base = typeof config.url === 'string' ? config.url.replace(/\/$/, '') : '';
+      return httpProbe(`${base}/api/v1/status`);
+    }
+    case 'telegram': {
+      const token = secret('botToken');
+      if (!token) return { ok: false, latencyMs: 0, error: 'missing bot token' };
+      return httpProbe(`https://api.telegram.org/bot${encodeURIComponent(token)}/getMe`).then((r) => {
+        if (!r.ok && /401|403|404/.test(r.error ?? '')) return { ...r, error: 'invalid bot token' };
+        return r;
+      });
+    }
+    case 'email': {
+      const host = typeof config.smtpHost === 'string' && config.smtpHost ? config.smtpHost : getSetting('security.smtpHost');
+      const rawPort = typeof config.smtpPort === 'number' ? config.smtpPort : getIntSetting('security.smtpPort', 587);
+      if (!host) return { ok: false, latencyMs: 0, error: 'missing SMTP host' };
+      return smtpProbe(host, rawPort);
+    }
+    case 'ai_assistant':
+      return { ok: false, latencyMs: 0, error: 'AI Assistant delivery is not implemented yet' };
+  }
+}
+
+/** Test connectivity against the real target (no secrets in the response). */
 export async function testIntegration(id: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
   const row = getIntegration(id);
   if (!row) return { ok: false, latencyMs: 0, error: 'not found' };
@@ -199,13 +282,15 @@ export async function testIntegration(id: string): Promise<{ ok: boolean; latenc
   if (row.configured !== 1) {
     return { ok: false, latencyMs: 0, error: 'not configured' };
   }
-  const start = Date.now();
-  await new Promise((r) => setTimeout(r, 150));
-  const latencyMs = Date.now() - start;
-  getDb()
-    .prepare('UPDATE integrations SET status = ?, last_success_at = ?, last_error_at = ?, last_error = ? WHERE id = ?')
-    .run('ok', Date.now(), null, null, id);
-  return { ok: true, latencyMs };
+  const result = await probeKind(row.kind as IntegrationKind, row);
+  if (result.ok) {
+    getDb()
+      .prepare('UPDATE integrations SET status = ?, last_success_at = ?, last_error_at = ?, last_error = ? WHERE id = ?')
+      .run('ok', Date.now(), null, null, id);
+  } else {
+    markIntegrationError(id, result.error ?? 'test failed');
+  }
+  return result;
 }
 
 export function markIntegrationError(id: string, error: string): void {

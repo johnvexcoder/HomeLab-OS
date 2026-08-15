@@ -104,9 +104,28 @@ export function guestScopeIncludes(scopeKey: string): boolean {
  * Global mutation guard. Rejects state-changing requests while any of these
  * protections are active, with a single audit record. Auth endpoints are
  * exempt by design (login/logout/change-password must stay reachable).
+ *
+ * Read-only and safe mode both leave one escape hatch: a request that turns
+ * the active protection OFF (settings PUT setting `security.readOnly=false`,
+ * or `POST /api/admin/safe-mode { enabled:false }`). Otherwise a super admin
+ * who enabled the mode from the UI could never disable it from the UI.
+ * CSRF and the route's own permission checks still apply to that request.
  */
 function fullPath(req: Request): string {
   return `${req.baseUrl}${req.path}`;
+}
+
+/** Look up a setting key in either the `{settings:{...}}` or flat body shape. */
+function bodySetting(req: Request, key: string): unknown {
+  const body = req.body as Record<string, unknown> | undefined;
+  if (!body || typeof body !== 'object') return undefined;
+  const inner = body.settings as Record<string, unknown> | undefined;
+  return (inner && typeof inner === 'object' ? inner : body)[key];
+}
+
+/** Settings arrive either as booleans (UI) or normalized strings (API). */
+function isFalse(v: unknown): boolean {
+  return v === false || v === 'false' || v === 0;
 }
 
 export function mutationGuard(req: Request, res: Response, next: NextFunction): void {
@@ -163,8 +182,9 @@ export function mutationGuard(req: Request, res: Response, next: NextFunction): 
     return;
   }
 
-  // Read-only mode blocks everything except login/logout/password changes.
-  if (readOnly && !isAuthExemptPath(fullPath(req))) {
+  // Read-only mode blocks everything except login/logout/password changes and
+  // the explicit turn-off of read-only mode itself.
+  if (readOnly && !isAuthExemptPath(fullPath(req)) && !isFalse(bodySetting(req, 'security.readOnly'))) {
     audit({
       ts: Date.now(),
       userId: req.auth?.user.id,
@@ -181,8 +201,9 @@ export function mutationGuard(req: Request, res: Response, next: NextFunction): 
     return;
   }
 
-  // Safe mode: dashboard monitoring stays up, mutations are blocked.
-  if (safeMode && !isAuthExemptPath(fullPath(req))) {
+  // Safe mode: dashboard monitoring stays up, mutations are blocked (except
+  // the explicit turn-off of safe mode itself).
+  if (safeMode && !isAuthExemptPath(fullPath(req)) && !(fullPath(req) === '/api/admin/safe-mode' && isFalse(req.body?.enabled))) {
     audit({
       ts: Date.now(),
       userId: req.auth?.user.id,

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Thermometer, ArrowDown, ArrowUp, Layers, Server } from 'lucide-react';
 import type { ServerRuntime } from '@/types';
 import { ROLE_META, REACH_META, CAPABILITY_META, statusTextClass, statusDotClass, compactClusterLabel } from '@/lib/constants';
-import { formatUptime, formatBytes, formatMbps, cn } from '@/lib/utils';
+import { formatUptime, formatBytes, formatMbps, pct, cn } from '@/lib/utils';
 import { useTelemetryStore } from '@/store/telemetry';
 import { useClusters } from '@/hooks/useQueries';
 import { Sparkline } from '@/components/ui/Sparkline';
@@ -21,8 +21,8 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
   const clusterLabel = cluster ? compactClusterLabel(cluster.name) : undefined;
 
   const cpuPct = server.cpu;
-  const ramPct = (server.ramUsedGb / s.ramTotalGb) * 100;
-  const diskPct = (server.diskUsedGb / s.diskTotalGb) * 100;
+  const ramPct = pct(server.ramUsedGb, s.ramTotalGb);
+  const diskPct = pct(server.diskUsedGb, s.diskTotalGb);
   const tempTone = server.tempC >= 75 ? 'text-crit' : server.tempC >= 60 ? 'text-warn' : 'text-text-primary';
 
   const row = (

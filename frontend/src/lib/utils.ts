@@ -8,6 +8,11 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Percent of `used` out of `total`, guarding against 0/0 → NaN. */
+export function pct(used: number, total: number): number {
+  return total > 0 ? (used / total) * 100 : 0;
+}
+
 export function round(value: number, digits = 0): number {
   const f = Math.pow(10, digits);
   return Math.round(value * f) / f;

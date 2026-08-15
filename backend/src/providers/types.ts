@@ -50,6 +50,15 @@ export interface MetricsProvider {
   getSourceName?(): string;
   /** Optional: last poll error, surfaced on /api/health for real integrations. */
   getLastPollError?(): string | null;
+  /** Optional: per-endpoint diagnostics for real integrations (e.g. PVE auth failures). */
+  getDiagnostics?(): ProviderDiagnostics;
+}
+
+export interface ProviderDiagnostics {
+  lastPollAt: number | null;
+  lastPollError: string | null;
+  /** Maps an API path (e.g. `/nodes/pve1/status`) to its last error message. */
+  endpointErrors: Record<string, string>;
 }
 
 /**

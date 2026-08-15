@@ -32,8 +32,8 @@ export function bucketHistory(rows: MetricRow[]): HistoryPoint[] {
     buckets.push({
       ts: slice[0].ts,
       cpu: round(sum((r) => r.cpu), 1),
-      ram: round(sum((r) => (r.ram_used_gb / r.ram_total_gb) * 100), 1),
-      disk: round(sum((r) => (r.disk_used_gb / r.disk_total_gb) * 100), 1),
+      ram: round(sum((r) => (r.ram_total_gb > 0 ? (r.ram_used_gb / r.ram_total_gb) * 100 : 0)), 1),
+      disk: round(sum((r) => (r.disk_total_gb > 0 ? (r.disk_used_gb / r.disk_total_gb) * 100 : 0)), 1),
       temp: round(sum((r) => r.temp_c), 1),
       netUp: round(sum((r) => r.net_up_mbps), 0),
       netDown: round(sum((r) => r.net_down_mbps), 0),

@@ -15,7 +15,7 @@ import type {
   ServerSpec,
   ServerStatus,
 } from '../types';
-import type { HistoryPoint, HistoryRange, StatsHistoryPoint } from './types';
+import type { HistoryPoint, HistoryRange, StatsHistoryPoint, ProviderDiagnostics } from './types';
 import { insertMetrics, countMetrics } from '../db/database';
 import { historyForServer, statsHistoryFor } from './history';
 import { NotificationGenerator } from '../telemetry/notification-generator';
@@ -129,6 +129,8 @@ export class ProxmoxMetricsProvider {
   private interval: NodeJS.Timeout | null = null;
   private polling = false;
   private lastPollError: string | null = null;
+  private lastPollAt: number | null = null;
+  private readonly endpointErrors = new Map<string, string>();
 
   constructor() {
     if (!this.host || !this.tokenId || !this.tokenSecret) {
@@ -170,6 +172,14 @@ export class ProxmoxMetricsProvider {
     return this.lastPollError;
   }
 
+  getDiagnostics(): ProviderDiagnostics {
+    return {
+      lastPollAt: this.lastPollAt,
+      lastPollError: this.lastPollError,
+      endpointErrors: Object.fromEntries(this.endpointErrors),
+    };
+  }
+
   /* ---------------------------------------------------------------- */
   /* Polling                                                          */
   /* ---------------------------------------------------------------- */
@@ -182,9 +192,11 @@ export class ProxmoxMetricsProvider {
       const details = await Promise.all(nodes.map((n) => this.pollNode(n)));
       for (const detail of details) this.applyDetail(detail);
       this.lastPollError = null;
+      this.lastPollAt = Date.now();
       this.emitTick();
     } catch (err) {
       this.lastPollError = err instanceof Error ? err.message : String(err);
+      this.lastPollAt = Date.now();
       console.error(`[proxmox] poll failed: ${this.lastPollError}`);
       this.markAllUnreachable();
     } finally {
@@ -192,17 +204,36 @@ export class ProxmoxMetricsProvider {
     }
   }
 
-  private async pollNode(node: PveNode): Promise<PollDetail> {
+  private pollNode(node: PveNode): Promise<PollDetail> {
     const name = encodeURIComponent(node.node);
-    const [status, qemu, lxc, rrd, sensors, network] = await Promise.all([
-      this.api<PveNodeStatus>(`/nodes/${name}/status`).catch(() => ({})),
-      this.api<PveGuest[]>(`/nodes/${name}/qemu`).catch(() => []),
-      this.api<PveGuest[]>(`/nodes/${name}/lxc`).catch(() => []),
-      this.api<PveRrdPoint[]>(`/nodes/${name}/rrddata?timeframe=hour&cf=AVERAGE`).catch(() => []),
-      this.api<PveSensor[]>(`/nodes/${name}/sensors`).catch(() => []),
-      this.api<PveNetworkIface[]>(`/nodes/${name}/network`).catch(() => []),
-    ]);
-    return { node, status, qemu, lxc, rrd, sensors, network };
+    return Promise.all([
+      this.fetchOr<PveNodeStatus>(`/nodes/${name}/status`, {}),
+      this.fetchOr<PveGuest[]>(`/nodes/${name}/qemu`, []),
+      this.fetchOr<PveGuest[]>(`/nodes/${name}/lxc`, []),
+      this.fetchOr<PveRrdPoint[]>(`/nodes/${name}/rrddata?timeframe=hour&cf=AVERAGE`, []),
+      this.fetchOr<PveSensor[]>(`/nodes/${name}/sensors`, []),
+      this.fetchOr<PveNetworkIface[]>(`/nodes/${name}/network`, []),
+    ]).then(([status, qemu, lxc, rrd, sensors, network]) => ({ node, status, qemu, lxc, rrd, sensors, network }));
+  }
+
+  /** Fetch a per-node endpoint, remembering failures instead of swallowing them. */
+  private async fetchOr<T>(path: string, fallback: T): Promise<T> {
+    try {
+      const result = await this.api<T>(path);
+      this.endpointErrors.delete(path);
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (this.endpointErrors.get(path) !== message) {
+        this.endpointErrors.set(path, message);
+        if (this.endpointErrors.size > 24) {
+          const oldest = this.endpointErrors.keys().next().value;
+          if (oldest !== undefined) this.endpointErrors.delete(oldest);
+        }
+        console.warn(`[proxmox] ${path}: ${message}`);
+      }
+      return fallback;
+    }
   }
 
   private applyDetail(detail: PollDetail): void {

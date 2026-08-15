@@ -3,6 +3,7 @@ import { useTelemetry } from '@/hooks/useTelemetry';
 import { useClusters } from '@/hooks/useQueries';
 import { ServerCard } from '@/components/server/ServerCard';
 import { ClusterCard } from '@/components/server/ClusterCard';
+import { ProviderDiagnosticsBanner } from '@/components/provider/ProviderDiagnosticsBanner';
 import { Skeleton } from '@/components/ui/Status';
 import type { ServerRole } from '@/types';
 import { cn } from '@/lib/utils';
@@ -58,6 +59,8 @@ export default function ServersPage() {
           ))}
         </div>
       </div>
+
+      <ProviderDiagnosticsBanner />
 
       {isClustered && (
         <div className="grid gap-4 lg:grid-cols-2">

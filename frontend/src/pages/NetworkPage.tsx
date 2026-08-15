@@ -1,5 +1,6 @@
 import { useNetwork } from '@/hooks/useQueries';
 import { NetworkMap } from '@/components/dashboard/NetworkMap';
+import { ProviderDiagnosticsBanner } from '@/components/provider/ProviderDiagnosticsBanner';
 import { Card } from '@/components/ui/Card';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { StatusDot } from '@/components/ui/Status';
@@ -18,6 +19,8 @@ export default function NetworkPage() {
         <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Network</h1>
         <p className="mt-1 text-sm text-text-muted">Topology, link health and throughput</p>
       </div>
+
+      <ProviderDiagnosticsBanner />
 
       <NetworkMap />
 

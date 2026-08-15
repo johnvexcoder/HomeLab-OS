@@ -32,7 +32,20 @@ import type {
 export const endpoints = {
   ping: () => api.get<{ pong: true; ts: number }>('/ping'),
 
-  health: () => api.get<{ status: string; mockMode: boolean; bootStats: BootStats; timestamp: number }>('/health'),
+  health: () =>
+    api.get<{
+      status: string;
+      mockMode: boolean;
+      provider: string;
+      lastPollError: string | null;
+      diagnostics: {
+        lastPollAt: number | null;
+        lastPollError: string | null;
+        endpointErrors: Record<string, string>;
+      } | null;
+      bootStats: BootStats;
+      timestamp: number;
+    }>('/health'),
 
   servers: {
     list: () => api.get<ServerRuntime[]>('/servers'),

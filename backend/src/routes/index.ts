@@ -30,6 +30,7 @@ export function createRouter(ctx: ApiContext): Router {
       mockMode: config.mockMode,
       provider: metrics.getSourceName?.() ?? (config.mockMode ? 'mock' : 'proxmox'),
       lastPollError: metrics.getLastPollError?.() ?? null,
+      diagnostics: metrics.getDiagnostics?.() ?? null,
       bootStats: metrics.getBootStats(),
       timestamp: Date.now(),
     });

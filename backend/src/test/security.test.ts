@@ -358,8 +358,55 @@ describe('read-only mode', () => {
     const fresh = await req('POST', '/api/auth/login', { body: { username: 'admin', password: ADMIN_PASSWORD } });
     assert.equal(fresh.status, 200);
 
-    // Turn it back off via CLI-path DB write to avoid sticky RO.
+    // Turning read-only OFF is the one allowed mutation (CSRF + perm still apply).
+    const off = await req('PUT', '/api/admin/settings', {
+      jar: admin,
+      headers: csrf(admin),
+      body: { settings: { 'security.readOnly': 'false' } },
+    });
+    assert.equal(off.status, 200);
+    const mode = await req('GET', '/api/admin/mode');
+    assert.equal(mode.json.readOnly, false);
+
     setSetting('security.readOnly', 'false');
+  });
+});
+
+describe('read-only / safe-mode escape hatch', () => {
+  let admin: Jar;
+
+  before(async () => {
+    admin = await login('admin', ADMIN_PASSWORD);
+  });
+
+  it('read-only mode cannot be switched off without the CSRF token', async () => {
+    setSetting('security.readOnly', 'true');
+    try {
+      const noCsrf = await req('PUT', '/api/admin/settings', {
+        jar: admin,
+        body: { settings: { 'security.readOnly': 'false' } },
+      });
+      assert.equal(noCsrf.status, 403);
+      assert.equal(noCsrf.json.error, 'csrf');
+    } finally {
+      setSetting('security.readOnly', 'false');
+    }
+  });
+
+  it('safe mode can be switched off via its own admin route', async () => {
+    setSetting('security.safeMode', 'true');
+    try {
+      const off = await req('POST', '/api/admin/safe-mode', {
+        jar: admin,
+        headers: csrf(admin),
+        body: { enabled: false },
+      });
+      assert.equal(off.status, 200);
+      const mode = await req('GET', '/api/admin/mode');
+      assert.equal(mode.json.safeMode, false);
+    } finally {
+      setSetting('security.safeMode', 'false');
+    }
   });
 });
 

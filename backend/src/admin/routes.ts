@@ -393,10 +393,10 @@ export function createAdminRouter(): Router {
       integrations: listIntegrations(),
       kinds: Object.fromEntries(Object.entries(INTEGRATION_SECRET_FIELDS).map(([kind, fields]) => [kind, { secretFields: fields }])),
       featureMap: {
-        uptime_kuma: getBoolSetting('feature.uptime_kuma_integration'),
-        telegram: getBoolSetting('feature.telegram_notifications'),
-        email: getBoolSetting('feature.email_notifications'),
-        prometheus: getBoolSetting('feature.prometheus_integration'),
+        uptime_kuma_integration: getBoolSetting('feature.uptime_kuma_integration'),
+        telegram_notifications: getBoolSetting('feature.telegram_notifications'),
+        email_notifications: getBoolSetting('feature.email_notifications'),
+        prometheus_integration: getBoolSetting('feature.prometheus_integration'),
         ai_assistant: getBoolSetting('feature.ai_assistant'),
       },
     });

@@ -26,7 +26,7 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { ProgressBar, ProgressRing } from '@/components/ui/Progress';
 import { Skeleton, StatusDot } from '@/components/ui/Status';
 import { ROLE_META, REACH_META, CAPABILITY_META } from '@/lib/constants';
-import { formatUptime, formatBytes, formatMbps, cn } from '@/lib/utils';
+import { formatUptime, formatBytes, formatMbps, pct, cn } from '@/lib/utils';
 
 const CHART_TABS: Array<{ key: MetricKey; label: string; icon: typeof Cpu }> = [
   { key: 'cpu', label: 'CPU', icon: Cpu },
@@ -67,8 +67,8 @@ export default function ServerDetailPage() {
   const s = server.spec;
   const role = ROLE_META[s.role];
   const reach = REACH_META[server.reachability];
-  const ramPct = (server.ramUsedGb / s.ramTotalGb) * 100;
-  const diskPct = (server.diskUsedGb / s.diskTotalGb) * 100;
+  const ramPct = pct(server.ramUsedGb, s.ramTotalGb);
+  const diskPct = pct(server.diskUsedGb, s.diskTotalGb);
   const { clusters } = useClusters();
   const cluster = s.clusterId ? clusters.find((c) => c.id === s.clusterId) : undefined;
 
