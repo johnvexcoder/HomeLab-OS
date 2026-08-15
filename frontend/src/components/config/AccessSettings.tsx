@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Lock, ShieldOff, Users } from 'lucide-react';
 import { endpoints } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
@@ -34,6 +34,7 @@ export function AccessSettings() {
   const safeSave = useSave();
   const lockSave = useSave();
   const unlockSave = useSave();
+  const queryClient = useQueryClient();
 
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState<string | null>(null);
@@ -59,12 +60,20 @@ export function AccessSettings() {
     }
   }, [settings]);
 
-  async function saveGuest() {
+  async function saveGuest(next: boolean) {
     await save.run(async () => {
       await endpoints.admin.settings.update({
-        'access.guest.enabled': guestEnabled,
+        'access.guest.enabled': next,
         'access.guest.scopes': scopes,
       });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+    });
+  }
+
+  async function saveScopes(next: string[]) {
+    await save.run(async () => {
+      await endpoints.admin.settings.update({ 'access.guest.scopes': next });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
     });
   }
 
@@ -120,7 +129,7 @@ export function AccessSettings() {
           label="Enable guest mode"
           description="Anonymous visitors can view the dashboard without signing in. Only the scopes below are exposed."
           checked={guestEnabled}
-          onChange={() => void saveGuest()}
+          onChange={() => void saveGuest(!guestEnabled)}
         />
 
         <div className={cn('rounded-xl border border-surface-border/70 bg-surface-input p-4', !guestEnabled && 'opacity-50 pointer-events-none')}>
@@ -141,9 +150,7 @@ export function AccessSettings() {
                     checked={checked}
                     onChange={() => {
                       const next = checked ? scopes.filter((s) => s !== scope.id) : [...scopes, scope.id];
-                      void save.run(async () => {
-                        await endpoints.admin.settings.update({ 'access.guest.scopes': next });
-                      });
+                      void saveScopes(next);
                     }}
                   />
                   {scope.label}
