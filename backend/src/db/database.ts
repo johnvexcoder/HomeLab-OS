@@ -198,18 +198,6 @@ function migrate(database: Database.Database): void {
   if (!hasColumn('email_otp_enabled')) {
     database.exec('ALTER TABLE users ADD COLUMN email_otp_enabled INTEGER NOT NULL DEFAULT 0');
   }
-
-  // Data migrations (idempotent; safe on pre-existing databases).
-  // docker_monitoring previously defaulted to enabled but had no provider behind it —
-  // reset it to the (now correct) default so the UI honestly shows it as unsupported.
-  const dockerFlag = database
-    .prepare(`SELECT value FROM settings WHERE key = 'feature.docker_monitoring'`)
-    .get() as { value?: string } | undefined;
-  if (dockerFlag && dockerFlag.value === 'true') {
-    database
-      .prepare(`UPDATE settings SET value = 'false', updated_at = ? WHERE key = 'feature.docker_monitoring'`)
-      .run(Date.now());
-  }
 }
 
 /** Persist a batch of snapshots in one transaction. */

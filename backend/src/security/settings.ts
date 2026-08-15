@@ -23,7 +23,7 @@ export const FEATURES: FeatureDef[] = [
   { id: 'hardware_monitoring', label: 'Hardware Monitoring', description: 'Optional hardware sensors', group: 'infrastructure', supported: true, defaultEnabled: true },
   { id: 'fan_monitoring', label: 'Fan Monitoring', description: 'Fan RPM / duty sensors', group: 'infrastructure', supported: true, defaultEnabled: true },
   { id: 'temperature_monitoring', label: 'Temperature Monitoring', description: 'CPU/GPU/disk/NVMe temperature sensors', group: 'infrastructure', supported: true, defaultEnabled: true },
-  { id: 'docker_monitoring', label: 'Docker Monitoring', description: 'Container host metrics — requires a Docker API agent (not implemented yet); the map shows PVE VMs/containers instead', group: 'infrastructure', supported: false, defaultEnabled: false },
+  { id: 'docker_monitoring', label: 'Docker Monitoring', description: 'Container host metrics — needs DOCKER_ENABLED=true + the Docker socket mounted; containers appear under the docker01 guest on the map', group: 'infrastructure', supported: true, defaultEnabled: true },
   { id: 'proxmox_monitoring', label: 'Proxmox Monitoring', description: 'Hypervisor / VM metrics', group: 'infrastructure', supported: true, defaultEnabled: true },
   { id: 'gpu_monitoring', label: 'GPU Monitoring', description: 'GPU telemetry (unsupported yet)', group: 'infrastructure', supported: false, defaultEnabled: false },
   { id: 'ups_monitoring', label: 'UPS Monitoring', description: 'Battery/power telemetry (unsupported yet)', group: 'infrastructure', supported: false, defaultEnabled: false },

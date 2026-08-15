@@ -176,6 +176,11 @@ PROXMOX_VERIFY_TLS=false
 
 # Poll cadence in milliseconds (5s is fine)
 PROXMOX_POLL_INTERVAL_MS=5000
+
+# --- Optional: Docker container monitoring (see §2.6) ---
+# DOCKER_ENABLED=false
+# DOCKER_HOST=/var/run/docker.sock   # unix socket, or tcp://host:2375
+# DOCKER_HOST_GUEST=docker           # name of the PVE guest that hosts Docker
 ```
 
 ### 2.3 Restart the backend
@@ -198,10 +203,10 @@ You should see:
 1. In the dashboard, open **Servers**. Your Proxmox **nodes** are now the servers (e.g. `pve1`, `pve2`).
 2. Open the **Network Map** — you'll see `Internet → your nodes → each VM/container` (green = running,
    grey/red = stopped).
-   > **Where's "docker"?** The map shows the Proxmox topology: a VM named `docker01` appears as a child of its
-   > node once the PVE token has `VM.Audit` (see §2.5). *Container-level* nodes require a Docker API agent,
-   > which is **not implemented yet** — the `docker_monitoring` feature flag is listed as unsupported for that
-   > reason. Don't expect a `docker01 → container` layer until that lands.
+    > **Where's "docker"?** Two layers:
+    > - `docker01` (a VM) appears as a child of its node once the PVE token has `VM.Audit` (see §2.5).
+    > - The `docker01 → containers` layer needs the Docker provider — enable it with `DOCKER_ENABLED=true`
+    >   (see §2.6) and turn on the **Docker Monitoring** feature flag in Configuration → Features.
 3. The **Dashboard** stats switch to Nodes / VMs & CTs / Avg CPU / Memory / Network — all live.
 4. Check the backend health endpoint — it reports the provider and the last poll error (see troubleshooting):
 
@@ -250,7 +255,36 @@ privilege-separated token (or a token whose user lacks `PVEAuditor`) gets exactl
 3. Give the token's user the **PVEAuditor** role at the datacenter level if it isn’t already.
 4. Wait for the next poll (default 5 s) or restart the backend (`docker compose restart backend`).
 
-### 2.6 Optional — temperature / fan sensors
+### 2.6 Optional — Docker container monitoring
+
+The backend can read the Docker Engine directly and draw a `docker01 → containers` layer on the Network Map.
+
+1. Mount the Docker socket into the backend container. In `docker-compose.yml`, under the **backend** service
+   (this mounts the socket from the *same host the dashboard runs on* — e.g. `docker01`):
+
+   ```yaml
+   services:
+     backend:
+       volumes:
+         - /var/run/docker.sock:/var/run/docker.sock
+   ```
+
+2. In `.env`, enable the provider:
+
+   ```dotenv
+   DOCKER_ENABLED=true
+   # DOCKER_HOST=/var/run/docker.sock    # unix socket (default)
+   # DOCKER_HOST_GUEST=docker            # PVE guest whose name contains "docker"
+   ```
+
+3. `docker compose up -d backend` and in the dashboard turn on **Configuration → Features → Docker
+   Monitoring**. Containers appear under the `docker01` guest on the map (🐳, green = running, grey = stopped),
+   and the dashboard's **VMs & CTs** counter includes running containers.
+
+> No socket? Leave `DOCKER_ENABLED=false` — the map still shows `docker01` as a PVE VM. Pointing
+> `DOCKER_HOST` at a `tcp://host:2375` daemon is supported but **not recommended** without TLS.
+
+### 2.7 Optional — temperature / fan sensors
 
 Proxmox exposes `lm-sensors` telemetry only if the host has it installed. On each Proxmox node (SSH):
 
@@ -260,7 +294,9 @@ sensors-detect --auto
 ```
 
 After the next poll, the **Sensors** tab and the per-server sensor grid show real CPU temperature, fan RPM
-and power draw. Nodes without sensors simply show "Not Available" — no fake zeros.
+and power draw. Nodes without sensors simply show "Not Available" — no fake zeros. (If the PVE server
+reports `501` for `/nodes/<node>/sensors`, its API simply has no sensor endpoint — the provider disables
+that endpoint automatically instead of reporting an error.)
 
 ---
 
@@ -440,6 +476,10 @@ development with hot reload: `npm run dev` (frontend at :5173, proxies to backen
 | `PROXMOX_TOKEN_SECRET` | — | Proxmox API token secret |
 | `PROXMOX_VERIFY_TLS` | `false` | Validate Proxmox TLS chain |
 | `PROXMOX_POLL_INTERVAL_MS` | `5000` | Poll cadence (ms) |
+| `DOCKER_ENABLED` | `false` | Read containers from the Docker Engine |
+| `DOCKER_HOST` | `/var/run/docker.sock` | Docker socket path or `tcp://host:2375` |
+| `DOCKER_HOST_GUEST` | `docker` | PVE guest name hosting Docker (map placement) |
+| `DOCKER_POLL_INTERVAL_MS` | `10000` | Docker poll cadence (ms) |
 | `SECRET_ENCRYPTION_KEY` | — | Encrypts stored credentials (set it!) |
 | `ADMIN_INITIAL_PASSWORD` | — | First-boot admin password (random if empty) |
 | `COOKIE_SECURE` | `false` | `Secure` session cookie (behind HTTPS) |

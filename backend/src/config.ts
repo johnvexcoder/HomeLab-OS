@@ -23,4 +23,12 @@ export const config = {
     verifyTls: (process.env.PROXMOX_VERIFY_TLS ?? 'false').toLowerCase() === 'true',
     pollIntervalMs: int(process.env.PROXMOX_POLL_INTERVAL_MS, 5000),
   },
+  docker: {
+    enabled: (process.env.DOCKER_ENABLED ?? 'false').toLowerCase() === 'true',
+    /** unix socket path, or a tcp://host:port DOCKER_HOST-style endpoint */
+    host: process.env.DOCKER_HOST ?? '/var/run/docker.sock',
+    pollIntervalMs: int(process.env.DOCKER_POLL_INTERVAL_MS, 10000),
+    /** name pattern (case-insensitive substring) of the PVE guest that hosts Docker */
+    hostGuest: process.env.DOCKER_HOST_GUEST ?? 'docker',
+  },
 };

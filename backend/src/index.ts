@@ -3,6 +3,8 @@ import { createApp } from './app';
 import { Simulator, seedHistory } from './services/simulator';
 import { MockMetricsProvider } from './providers/mockMetricsProvider';
 import { ProxmoxMetricsProvider } from './providers/proxmoxMetricsProvider';
+import { DockerMetricsProvider } from './providers/dockerMetricsProvider';
+import { CompositeProvider } from './providers/compositeProvider';
 import { MockNotificationsProvider } from './providers/mockNotificationsProvider';
 import type { MetricsProvider, TelemetryBroadcaster } from './providers/types';
 import { attachWebSocket } from './ws';
@@ -36,6 +38,14 @@ async function bootstrap(): Promise<void> {
     console.log(`[homelab] proxmox provider active (${config.proxmox.host})`);
     metrics = proxmox;
     broadcaster = proxmox;
+
+    if (config.docker.enabled) {
+      const docker = new DockerMetricsProvider();
+      await docker.start();
+      console.log(`[homelab] docker provider active (${config.docker.host})`);
+      metrics = new CompositeProvider(proxmox, docker);
+      broadcaster = proxmox;
+    }
   }
 
   const notifications = new MockNotificationsProvider();
