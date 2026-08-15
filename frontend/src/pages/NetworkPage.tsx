@@ -31,7 +31,9 @@ export default function NetworkPage() {
             <h3 className="text-sm font-semibold text-text-primary">Link Status</h3>
             <span className="text-xs text-text-muted">{links.length} links</span>
           </div>
-          <div className="overflow-x-auto">
+          
+          {/* Desktop table view */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-surface-border text-[10px] uppercase tracking-widest text-text-muted">
@@ -68,6 +70,46 @@ export default function NetworkPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile card view */}
+          <div className="md:hidden flex flex-col gap-3">
+            {links.map((l) => (
+              <div key={l.id} className="rounded-lg border border-surface-border bg-surface-input p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-mono text-xs font-semibold text-text-primary">{l.source} → {l.target}</span>
+                  <span className="flex items-center gap-1.5 text-xs font-medium">
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: l.status === 'healthy' ? 'var(--accent)' : l.status === 'warning' ? '#F59E0B' : '#EF4444' }}
+                    />
+                    {l.status}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-text-muted">Latency</span>
+                    <div className="font-mono font-semibold text-text-primary">
+                      <AnimatedNumber value={l.latencyMs} decimals={1} /> ms
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-text-muted">Throughput</span>
+                    <div className="font-mono font-semibold text-text-primary">{formatMbps(l.throughputMbps)}</div>
+                  </div>
+                  <div>
+                    <span className="text-text-muted">Packet Loss</span>
+                    <div className="font-mono font-semibold text-text-primary">{l.packetLoss.toFixed(1)}%</div>
+                  </div>
+                  <div>
+                    <span className="text-text-muted">Jitter</span>
+                    <div className="font-mono font-semibold text-text-primary">
+                      <AnimatedNumber value={l.jitterMs} decimals={1} /> ms
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </Card>
 

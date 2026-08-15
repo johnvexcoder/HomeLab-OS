@@ -23,7 +23,8 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
   const cpuPct = server.cpu;
   const ramPct = pct(server.ramUsedGb, s.ramTotalGb);
   const diskPct = pct(server.diskUsedGb, s.diskTotalGb);
-  const tempTone = server.tempC >= 75 ? 'text-crit' : server.tempC >= 60 ? 'text-warn' : 'text-text-primary';
+  const tempAvailable = server.tempC > 0;
+  const tempTone = tempAvailable && server.tempC >= 75 ? 'text-crit' : tempAvailable && server.tempC >= 60 ? 'text-warn' : 'text-text-primary';
 
   const row = (
     <div className="flex flex-col gap-3">
@@ -90,7 +91,7 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
         <MetricRow label="CPU" icon={Cpu} value={<AnimatedNumber value={cpuPct} decimals={0} suffix="%" className="text-text-primary" />} spark={sparklines?.cpu} color="var(--accent)" tone={cpuPct >= 85 ? 'crit' : cpuPct >= 70 ? 'warn' : 'good'} />
         <MetricRow label="Memory" icon={MemoryStick} value={<AnimatedNumber value={ramPct} decimals={0} suffix="%" className="text-text-primary" />} spark={sparklines?.ram} color="#60A5FA" tone={ramPct >= 85 ? 'crit' : ramPct >= 70 ? 'warn' : 'good'} />
         <MetricRow label="Storage" icon={HardDrive} value={<AnimatedNumber value={diskPct} decimals={0} suffix="%" className="text-text-primary" />} spark={sparklines?.disk} color="#F59E0B" tone={diskPct >= 85 ? 'crit' : diskPct >= 70 ? 'warn' : 'good'} />
-        <MetricRow label="Temp" icon={Thermometer} value={<AnimatedNumber value={server.tempC} decimals={0} suffix="°C" className={tempTone} />} spark={sparklines?.temp} color="#F97316" tone={tempTone} />
+        <MetricRow label="Temp" icon={Thermometer} value={tempAvailable ? <AnimatedNumber value={server.tempC} decimals={0} suffix="°C" className={tempTone} /> : <span className="text-xs text-text-muted">N/A</span>} spark={sparklines?.temp} color="#F97316" tone={tempTone} />
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-center">

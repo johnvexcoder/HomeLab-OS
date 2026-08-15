@@ -63,10 +63,13 @@ export default function ServersPage() {
       <ProviderDiagnosticsBanner />
 
       {isClustered && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {clusters.map((cluster, i) => (
-            <ClusterCard key={cluster.id} cluster={cluster} index={i} />
-          ))}
+        <div className="flex flex-col gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted">Clusters</h2>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {clusters.map((cluster, i) => (
+              <ClusterCard key={cluster.id} cluster={cluster} index={i} />
+            ))}
+          </div>
         </div>
       )}
 
@@ -86,8 +89,8 @@ export default function ServersPage() {
       ) : filter === 'all' ? (
         <>
           {standalone.length > 0 && (
-            <div>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-text-muted">Standalone Nodes</h2>
+            <div className="flex flex-col gap-3">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted">Standalone Nodes</h2>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {standalone.map((server, i) => (
                   <ServerCard key={server.spec.id} server={server} index={i} />
@@ -96,8 +99,8 @@ export default function ServersPage() {
             </div>
           )}
           {clusteredServers.length > 0 && (
-            <div>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-text-muted">Cluster Nodes</h2>
+            <div className="flex flex-col gap-3">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted">Cluster Nodes</h2>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {clusteredServers.map((server, i) => (
                   <ServerCard key={server.spec.id} server={server} index={i} />

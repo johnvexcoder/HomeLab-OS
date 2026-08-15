@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Globe, Network, RefreshCw, WifiOff, X, Radio } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
@@ -7,7 +7,7 @@ import type { NetworkNode, NetworkLink } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { formatMbps } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-import { findNetworkPath, generateTrafficEvents } from '@/lib/networkPath';
+import { createNetworkLayout, getActiveLinks, type TrafficFlow } from '@/lib/networkEngine';
 
 const VB_W = 800;
 const VB_H = 340;
@@ -57,6 +57,15 @@ export function NetworkMap() {
 
   const [hovered, setHovered] = useState<NetworkLink | null>(null);
   const [selected, setSelected] = useState<NetworkLink | null>(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Update current time for animation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 50); // Update every 50ms for smooth animation
+    return () => clearInterval(interval);
+  }, []);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
@@ -80,39 +89,27 @@ export function NetworkMap() {
     [links],
   );
 
-  /**
-   * Generate realistic traffic events based on actual network paths.
-   * This ensures traffic flows respect the topology hierarchy and follows
-   * actual infrastructure relationships.
-   */
-  const trafficEvents = useMemo(() => {
-    if (nodes.length === 0 || links.length === 0) return [];
+  // Generate layout and traffic flows using advanced network engine
+  const { layoutNodes, trafficFlows } = useMemo(() => {
+    if (nodes.length === 0 || links.length === 0) {
+      return { layoutNodes: new Map(), trafficFlows: [] };
+    }
     try {
-      return generateTrafficEvents(nodes, links);
+      const result = createNetworkLayout(nodes, links);
+      return {
+        layoutNodes: result.nodes,
+        trafficFlows: result.flows,
+      };
     } catch (e) {
-      // Silently handle any path calculation errors
-      return [];
+      console.error('Failed to calculate network layout:', e);
+      return { layoutNodes: new Map(), trafficFlows: [] };
     }
   }, [nodes, links]);
 
-  /**
-   * Calculate which links are part of active traffic flows.
-   * This ensures animations follow actual network paths.
-   */
+  // Calculate active links based on current traffic flows
   const activeTrafficLinks = useMemo(() => {
-    const activeIds = new Set<string>();
-    for (const event of trafficEvents) {
-      // Mark outbound path links as active
-      for (const pathLink of event.sourcePath) {
-        activeIds.add(pathLink.linkId);
-      }
-      // Mark return path links as active
-      for (const pathLink of event.returnPath) {
-        activeIds.add(pathLink.linkId);
-      }
-    }
-    return activeIds;
-  }, [trafficEvents]);
+    return getActiveLinks(trafficFlows, currentTime);
+  }, [trafficFlows, currentTime]);
 
   /** Approximate curve midpoint (percent coords) for tooltip anchoring. */
   const midpoint = (link: NetworkLink) => {
@@ -269,62 +266,71 @@ export function NetworkMap() {
           )}
 
           {/* Node layer (HTML for full styling freedom) */}
-          {nodes.map((node, i) => (
-            <motion.div
-              key={node.id}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4, delay: i * 0.07, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${node.x}%`, top: `${node.y}%` }}
-            >
-              <div className="flex flex-col items-center gap-1">
-                {node.type === 'internet' ? (
-                  <div className="relative flex flex-col items-center">
-                    <motion.div
-                      className="absolute inset-0 rounded-full border"
-                      style={{ borderColor: `${NODE_STATUS_RING[node.status]}66` }}
-                      animate={{ scale: [1, 1.5], opacity: [0.7, 0] }}
-                      transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
-                    />
-                    <div
-                      className="relative flex h-11 w-11 items-center justify-center rounded-full border-2 bg-[#0F1522] shadow-card sm:h-14 sm:w-14 sm:text-2xl"
-                      style={{
-                        borderColor: NODE_STATUS_RING[node.status],
-                        boxShadow: `0 0 24px ${NODE_STATUS_RING[node.status]}44`,
-                      }}
-                    >
-                      <Globe className="h-5 w-5 sm:h-6 sm:w-6" style={{ color: NODE_STATUS_RING[node.status] }} />
-                      <span
-                        className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
-                        style={{ backgroundColor: NODE_STATUS_RING[node.status] }}
+          {Array.from(layoutNodes.values()).map((layoutNode) => {
+            const originalNode = nodeById.get(layoutNode.id);
+            const i = Array.from(layoutNodes.keys()).indexOf(layoutNode.id);
+            if (!originalNode) return null;
+
+            const nodeStatus = (layoutNode.status || 'online') as keyof typeof NODE_STATUS_RING;
+            const nodeType = (layoutNode.type || 'container') as keyof typeof NETWORK_NODE_ICONS_FRONTEND;
+
+            return (
+              <motion.div
+                key={layoutNode.id}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4, delay: i * 0.07, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${layoutNode.x}%`, top: `${layoutNode.y}%` }}
+              >
+                <div className="flex flex-col items-center gap-1">
+                  {nodeType === 'internet' ? (
+                    <div className="relative flex flex-col items-center">
+                      <motion.div
+                        className="absolute inset-0 rounded-full border"
+                        style={{ borderColor: `${NODE_STATUS_RING[nodeStatus]}66` }}
+                        animate={{ scale: [1, 1.5], opacity: [0.7, 0] }}
+                        transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
                       />
+                      <div
+                        className="relative flex h-11 w-11 items-center justify-center rounded-full border-2 bg-[#0F1522] shadow-card sm:h-14 sm:w-14 sm:text-2xl"
+                        style={{
+                          borderColor: NODE_STATUS_RING[nodeStatus],
+                          boxShadow: `0 0 24px ${NODE_STATUS_RING[nodeStatus]}44`,
+                        }}
+                      >
+                        <Globe className="h-5 w-5 sm:h-6 sm:w-6" style={{ color: NODE_STATUS_RING[nodeStatus] }} />
+                        <span
+                          className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
+                          style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
+                        />
+                      </div>
+                      <div className="mt-1 rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
+                        <span className="text-[10px] font-semibold text-text-primary">{layoutNode.label}</span>
+                      </div>
                     </div>
-                    <div className="mt-1 rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
-                      <span className="text-[10px] font-semibold text-text-primary">{node.label}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      className="flex h-10 w-10 items-center justify-center rounded-2xl border bg-[#141414] shadow-card transition-all sm:h-12 sm:w-12 sm:text-xl"
-                      style={{ borderColor: `${NODE_STATUS_RING[node.status]}55`, boxShadow: `0 0 16px ${NODE_STATUS_RING[node.status]}22` }}
-                    >
-                      <span>{NETWORK_NODE_ICONS_FRONTEND[node.type]}</span>
-                      <span
-                        className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
-                        style={{ backgroundColor: NODE_STATUS_RING[node.status] }}
-                      />
-                    </div>
-                    <div className="rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
-                      <span className="text-[10px] font-semibold text-text-primary">{node.label}</span>
-                    </div>
-                  </>
-                )}
-                {node.ip && <span className="font-mono text-[9px] text-text-muted">{node.ip}</span>}
-              </div>
-            </motion.div>
-          ))}
+                  ) : (
+                    <>
+                      <div
+                        className="flex h-10 w-10 items-center justify-center rounded-2xl border bg-[#141414] shadow-card transition-all sm:h-12 sm:w-12 sm:text-xl"
+                        style={{ borderColor: `${NODE_STATUS_RING[nodeStatus]}55`, boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}22` }}
+                      >
+                        <span>{NETWORK_NODE_ICONS_FRONTEND[nodeType]}</span>
+                        <span
+                          className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
+                          style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
+                        />
+                      </div>
+                      <div className="rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
+                        <span className="text-[10px] font-semibold text-text-primary">{layoutNode.label}</span>
+                      </div>
+                    </>
+                  )}
+                  {originalNode.ip && <span className="font-mono text-[9px] text-text-muted">{originalNode.ip}</span>}
+                </div>
+              </motion.div>
+            );
+          })}
 
           {isLoading && nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">

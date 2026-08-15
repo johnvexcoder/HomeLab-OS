@@ -87,13 +87,17 @@
   }
 
   body {
-    @apply bg-base text-text-primary font-sans antialiased;
+    @apply bg-base text-text-primary font-sans antialiased overflow-x-hidden;
     background-image:
       radial-gradient(1200px 600px at 80% -10%, rgb(var(--accent) / 0.05), transparent 60%),
       radial-gradient(1000px 500px at -10% 110%, rgb(var(--accent) / 0.035), transparent 55%),
       radial-gradient(60rem 60rem at 50% 0%, rgb(var(--overlay) / 0.015), transparent 70%);
     background-attachment: fixed;
-    overflow: hidden;
+    overflow-y: hidden;
+  }
+
+  * {
+    box-sizing: border-box;
   }
 
   h1,
