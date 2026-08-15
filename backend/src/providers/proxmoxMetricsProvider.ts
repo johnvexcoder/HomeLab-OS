@@ -131,6 +131,8 @@ export class ProxmoxMetricsProvider {
   private lastPollError: string | null = null;
   private lastPollAt: number | null = null;
   private readonly endpointErrors = new Map<string, string>();
+  /** Endpoints the PVE server itself does not implement (HTTP 501) — never retried, never reported. */
+  private readonly unsupportedEndpoints = new Set<string>();
 
   constructor() {
     if (!this.host || !this.tokenId || !this.tokenSecret) {
@@ -218,12 +220,21 @@ export class ProxmoxMetricsProvider {
 
   /** Fetch a per-node endpoint, remembering failures instead of swallowing them. */
   private async fetchOr<T>(path: string, fallback: T): Promise<T> {
+    if (this.unsupportedEndpoints.has(path)) return fallback;
     try {
       const result = await this.api<T>(path);
       this.endpointErrors.delete(path);
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith('PVE 501 ')) {
+        // The PVE server does not implement this endpoint (e.g. /sensors on older
+        // nodes). Permanent — stop polling it and never surface it as an error.
+        this.unsupportedEndpoints.add(path);
+        this.endpointErrors.delete(path);
+        console.warn(`[proxmox] ${path} not supported by this PVE server — disabling endpoint`);
+        return fallback;
+      }
       if (this.endpointErrors.get(path) !== message) {
         this.endpointErrors.set(path, message);
         if (this.endpointErrors.size > 24) {
