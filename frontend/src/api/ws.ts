@@ -2,7 +2,7 @@ import type { MetricSnapshot, Notification } from '@/types';
 import { useTelemetryStore } from '@/store/telemetry';
 import { useNotificationStore } from '@/store/notifications';
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? (() => {
+const WS_URL = (import.meta.env.VITE_WS_URL ?? '').trim() || (() => {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${location.host}/ws`;
 })();

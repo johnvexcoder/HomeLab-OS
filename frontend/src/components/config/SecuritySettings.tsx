@@ -163,7 +163,7 @@ export function SecuritySettings() {
         >
           <Toggle
             label="Two-factor auth"
-            description="Require TOTP codes at sign-in for every user"
+            description="Allow authenticator-app 2FA on this server. Enrolled users must enter a code at sign-in; each user turns it on from their Account tab."
             checked={twoFactorEnabled}
             onChange={(next) => void toggle('security.twoFactorEnabled', next)}
           />

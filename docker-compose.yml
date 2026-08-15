@@ -16,10 +16,15 @@ services:
       - PROXMOX_TOKEN_SECRET=${PROXMOX_TOKEN_SECRET:-}
       - PROXMOX_VERIFY_TLS=${PROXMOX_VERIFY_TLS:-false}
       - PROXMOX_POLL_INTERVAL_MS=${PROXMOX_POLL_INTERVAL_MS:-5000}
+      - DOCKER_ENABLED=${DOCKER_ENABLED:-false}
+      - DOCKER_HOST=${DOCKER_HOST:-/var/run/docker.sock}
+      - DOCKER_HOST_GUEST=${DOCKER_HOST_GUEST:-docker}
+      - DOCKER_POLL_INTERVAL_MS=${DOCKER_POLL_INTERVAL_MS:-10000}
       - SECRET_ENCRYPTION_KEY=${SECRET_ENCRYPTION_KEY:-}
       - ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD:-}
     volumes:
       - homelab-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "4000:4000"
     healthcheck:
@@ -35,7 +40,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_BACKEND_URL: "/api"
-        VITE_WS_URL: "ws://localhost:4000"
+        VITE_WS_URL: ""
     container_name: homelab-frontend
     restart: unless-stopped
     depends_on:

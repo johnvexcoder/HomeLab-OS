@@ -2,7 +2,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 ARG VITE_BACKEND_URL=/api
-ARG VITE_WS_URL=ws://localhost:4000
+ARG VITE_WS_URL=
 ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
 ENV VITE_WS_URL=$VITE_WS_URL
 COPY frontend/package.json frontend/package-lock.json* ./

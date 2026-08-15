@@ -131,16 +131,17 @@ export function BackupsManager() {
     invalidate();
   }
 
-  async function saveSchedule() {
+  async function saveSchedule(enabled: boolean) {
     await scheduleSave.run(async () => {
       await endpoints.admin.settings.update({
-        'backup.enabled': settings?.['backup.enabled'] === 'true',
+        'backup.enabled': enabled,
         'backup.hour': Number.parseInt(settings?.['backup.hour'] ?? '3', 10) || 3,
         'backup.minute': Number.parseInt(settings?.['backup.minute'] ?? '0', 10) || 0,
         'backup.retentionDaily': Number.parseInt(settings?.['backup.retentionDaily'] ?? '7', 10) || 7,
         'backup.retentionWeekly': Number.parseInt(settings?.['backup.retentionWeekly'] ?? '4', 10) || 4,
         'backup.retentionMonthly': Number.parseInt(settings?.['backup.retentionMonthly'] ?? '12', 10) || 12,
       });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
     });
   }
 
@@ -205,7 +206,7 @@ export function BackupsManager() {
         <Row label="Scheduled backups" description="Run daily, weekly (Sundays) and monthly (1st) backups">
           <Toggle
             checked={settings?.['backup.enabled'] === 'true'}
-            onChange={() => void saveSchedule()}
+            onChange={(next) => void saveSchedule(next)}
           />
         </Row>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">

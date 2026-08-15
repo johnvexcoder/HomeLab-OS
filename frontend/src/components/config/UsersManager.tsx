@@ -66,7 +66,13 @@ export function UsersManager() {
     queryFn: endpoints.admin.users.list,
   });
 
+  const { data: settingsData } = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: endpoints.admin.settings.get,
+  });
+
   const users = data?.users ?? [];
+  const twoFactorMaster = settingsData?.settings?.['security.twoFactorEnabled'] === 'true';
 
   function invalidate() {
     void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
@@ -212,7 +218,13 @@ export function UsersManager() {
                       <Badge tone={ROLE_TONE[user.role] ?? 'neutral'}>{user.role}</Badge>
                     </td>
                     <td className="py-2.5 pr-4 text-xs text-text-muted">
-                      {user.twoFactorEnabled ? 'Enabled' : '—'}
+                      {user.twoFactorEnabled ? (
+                        <Badge tone="success" size="sm">Enabled</Badge>
+                      ) : twoFactorMaster ? (
+                        <Badge tone="warn" size="sm">Not enrolled</Badge>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="py-2.5 pr-4">
                       {user.email ? (

@@ -67,7 +67,13 @@ export function AccountPanel() {
     queryFn: endpoints.auth.recoveryStatus,
   });
 
+  const { data: settingsData } = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: endpoints.admin.settings.get,
+  });
+
   const twoFactorEnabled = me?.twoFactorEnabled ?? false;
+  const twoFactorAllowed = settingsData?.settings?.['security.twoFactorEnabled'] === 'true';
   const sessions = data?.sessions ?? [];
   const questionsConfigured = recovery?.questionsConfigured ?? false;
   const recoveryEmail = recovery?.email ?? null;
@@ -334,7 +340,9 @@ export function AccountPanel() {
           description={
             twoFactorEnabled
               ? 'Sign-in requires an authenticator code.'
-              : 'Anyone with the password can sign in. Enable 2FA to require a code too.'
+              : twoFactorAllowed
+                ? '2FA is available on this server — set it up to protect this account.'
+                : 'Anyone with the password can sign in. Enable 2FA to require a code too.'
           }
         >
           {twoFactorEnabled ? (
@@ -533,6 +541,11 @@ export function AccountPanel() {
         <div className="flex flex-col gap-4">
           {setupStep === 'idle' && (
             <div className="flex flex-col gap-3">
+              {!twoFactorEnabled && !twoFactorAllowed && (
+                <div className="rounded-xl border border-crit/25 bg-crit/10 px-4 py-2.5 text-xs text-crit">
+                  2FA is currently disabled on this server. Enable it under Settings &gt; Security before setting it up here.
+                </div>
+              )}
               <p className="text-sm text-text-secondary">
                 {twoFactorEnabled
                   ? 'Two-factor authentication is active on this account. Every sign-in asks for a code from your authenticator app.'
