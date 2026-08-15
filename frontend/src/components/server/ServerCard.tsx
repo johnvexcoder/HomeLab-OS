@@ -120,7 +120,7 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.4, delay: index * 0.05, ease: [0.16, 1, 0.3, 1] }}
     >
-      <Link to={`/servers/${s.id}`} className="card card-hover block h-full p-5">
+      <Link to={`/servers/${s.id}`} className="card card-hover block h-full p-4 sm:p-5">
         {row}
       </Link>
     </motion.div>

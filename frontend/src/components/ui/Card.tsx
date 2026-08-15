@@ -14,7 +14,7 @@ export function Card({ className, hover, glow, padded = true, children, ...rest 
         'card',
         hover && 'card-hover',
         glow && 'glow-accent',
-        padded && 'p-5',
+        padded && 'p-4 sm:p-5',
         className,
       )}
       initial={{ opacity: 0, y: 12 }}
@@ -41,15 +41,15 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={cn('flex items-start justify-between gap-3 mb-4', className)}>
-      <div className="flex items-center gap-3">
+    <div className={cn('flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mb-4', className)}>
+      <div className="flex min-w-0 items-center gap-3">
         {icon && (
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
             {icon}
           </div>
         )}
-        <div>
-          <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-text-primary">{title}</h3>
           {subtitle && <p className="text-xs text-text-muted mt-0.5">{subtitle}</p>}
         </div>
       </div>

@@ -51,7 +51,7 @@ export function NotificationToasts() {
   }
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-50 flex w-[340px] flex-col gap-3">
+    <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-50 flex max-h-[calc(100dvh-2rem)] flex-col gap-3 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[340px]">
       <AnimatePresence>
         {queue.map((n) => {
           const Icon = SEVERITY_ICON[n.severity];
@@ -69,11 +69,11 @@ export function NotificationToasts() {
                 SEVERITY_BORDER[n.severity],
               )}
             >
-              <Icon className={cn('mt-0.5 h-4.5 w-4.5 h-[18px] w-[18px] shrink-0', SEVERITY_STYLE[n.severity])} />
+              <Icon className={cn('mt-0.5 h-[18px] w-[18px] shrink-0', SEVERITY_STYLE[n.severity])} />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <BellRing className="h-3 w-3 text-text-muted" />
-                  <span className="text-[13px] font-semibold text-text-primary">{n.title}</span>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <BellRing className="h-3 w-3 shrink-0 text-text-muted" />
+                  <span className="truncate text-[13px] font-semibold text-text-primary">{n.title}</span>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-text-secondary line-clamp-2">{n.message}</p>
                 <span className="mt-1.5 block text-[10px] font-semibold uppercase tracking-widest text-accent">

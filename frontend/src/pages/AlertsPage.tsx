@@ -102,13 +102,13 @@ export default function AlertsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 rounded-xl border border-surface-border bg-surface p-1">
+        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-surface-border bg-surface p-1">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer',
+                'flex min-h-11 items-center rounded-lg px-3 py-2 text-xs font-semibold transition-colors cursor-pointer',
                 filter === f.id ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary',
               )}
             >

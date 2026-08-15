@@ -61,7 +61,7 @@ export function AuditLog() {
         icon={<ScrollText className="h-4 w-4" />}
         action={<SaveBar busy={isFetching} />}
       >
-        <div className="grid gap-2 sm:grid-cols-[1fr_180px_140px]">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_180px_140px]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
             <Input
@@ -86,7 +86,7 @@ export function AuditLog() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="text-[11px] uppercase tracking-wider text-text-muted">
                 <th className="pb-2 pr-4 font-medium">Time</th>
@@ -131,7 +131,8 @@ export function AuditLog() {
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className={cn('flex h-8 w-8 items-center justify-center rounded-lg border border-surface-border text-text-muted transition-colors hover:text-text-primary', page <= 1 && 'opacity-40 pointer-events-none')}
+              aria-label="Previous page"
+              className={cn('flex h-11 w-11 items-center justify-center rounded-lg border border-surface-border text-text-muted transition-colors hover:text-text-primary', page <= 1 && 'opacity-40 pointer-events-none')}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -139,7 +140,8 @@ export function AuditLog() {
             <button
               onClick={() => setPage((p) => Math.min(pages, p + 1))}
               disabled={page >= pages}
-              className={cn('flex h-8 w-8 items-center justify-center rounded-lg border border-surface-border text-text-muted transition-colors hover:text-text-primary', page >= pages && 'opacity-40 pointer-events-none')}
+              aria-label="Next page"
+              className={cn('flex h-11 w-11 items-center justify-center rounded-lg border border-surface-border text-text-muted transition-colors hover:text-text-primary', page >= pages && 'opacity-40 pointer-events-none')}
             >
               <ChevronRight className="h-4 w-4" />
             </button>

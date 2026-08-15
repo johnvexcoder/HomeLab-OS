@@ -137,7 +137,7 @@ export default function ServerDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-6">
           <div className="text-center">
             <div className="text-[10px] uppercase tracking-widest text-text-muted">Health</div>
             <ProgressRing value={server.health} size={84} stroke={7} label="" />
@@ -173,7 +173,7 @@ export default function ServerDetailPage() {
             <span className="text-sm font-semibold text-text-primary">Performance</span>
             <span className="text-xs text-text-muted">Historical telemetry</span>
           </div>
-          <div className="flex items-center gap-1 rounded-xl border border-surface-border bg-base p-1">
+          <div className="flex flex-wrap items-center gap-1 rounded-xl border border-surface-border bg-base p-1">
             {CHART_TABS.map((t) => {
               const Icon = t.icon;
               return (
@@ -181,7 +181,7 @@ export default function ServerDetailPage() {
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className={cn(
-                    'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer',
+                    'flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors cursor-pointer',
                     tab === t.key ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary',
                   )}
                 >

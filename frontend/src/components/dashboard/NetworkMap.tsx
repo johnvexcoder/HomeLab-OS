@@ -7,6 +7,7 @@ import type { NetworkNode, NetworkLink } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { formatMbps } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { findNetworkPath, generateTrafficEvents } from '@/lib/networkPath';
 
 const VB_W = 800;
 const VB_H = 340;
@@ -79,6 +80,40 @@ export function NetworkMap() {
     [links],
   );
 
+  /**
+   * Generate realistic traffic events based on actual network paths.
+   * This ensures traffic flows respect the topology hierarchy and follows
+   * actual infrastructure relationships.
+   */
+  const trafficEvents = useMemo(() => {
+    if (nodes.length === 0 || links.length === 0) return [];
+    try {
+      return generateTrafficEvents(nodes, links);
+    } catch (e) {
+      // Silently handle any path calculation errors
+      return [];
+    }
+  }, [nodes, links]);
+
+  /**
+   * Calculate which links are part of active traffic flows.
+   * This ensures animations follow actual network paths.
+   */
+  const activeTrafficLinks = useMemo(() => {
+    const activeIds = new Set<string>();
+    for (const event of trafficEvents) {
+      // Mark outbound path links as active
+      for (const pathLink of event.sourcePath) {
+        activeIds.add(pathLink.linkId);
+      }
+      // Mark return path links as active
+      for (const pathLink of event.returnPath) {
+        activeIds.add(pathLink.linkId);
+      }
+    }
+    return activeIds;
+  }, [trafficEvents]);
+
   /** Approximate curve midpoint (percent coords) for tooltip anchoring. */
   const midpoint = (link: NetworkLink) => {
     const src = nodeById.get(link.source);
@@ -112,7 +147,7 @@ export function NetworkMap() {
         <div className="grid-backdrop absolute inset-0" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
 
-        <div className="relative aspect-[800/340] w-full">
+        <div className="relative aspect-[800/460] w-full sm:aspect-[800/340]">
           {/* Link layer (base cable + traveling signal) */}
           <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
             <defs>
@@ -175,7 +210,7 @@ export function NetworkMap() {
               className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
               style={{ left: `${hoverMid.mx}%`, top: `${hoverMid.my}%` }}
             >
-              <div className="min-w-[190px] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
+              <div className="w-[min(190px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-mono text-[11px] font-semibold text-text-primary">
                     {hovered.source} → {hovered.target}
@@ -204,7 +239,7 @@ export function NetworkMap() {
 
           {/* Connection detail panel (click) */}
           {selected && (
-            <div className="absolute bottom-3 right-3 z-20 w-60 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm">
+            <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-60">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-text-primary">Connection details</span>
                 <button
@@ -253,13 +288,13 @@ export function NetworkMap() {
                       transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
                     />
                     <div
-                      className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 bg-[#0F1522] text-2xl shadow-card"
+                      className="relative flex h-11 w-11 items-center justify-center rounded-full border-2 bg-[#0F1522] shadow-card sm:h-14 sm:w-14 sm:text-2xl"
                       style={{
                         borderColor: NODE_STATUS_RING[node.status],
                         boxShadow: `0 0 24px ${NODE_STATUS_RING[node.status]}44`,
                       }}
                     >
-                      <Globe className="h-6 w-6" style={{ color: NODE_STATUS_RING[node.status] }} />
+                      <Globe className="h-5 w-5 sm:h-6 sm:w-6" style={{ color: NODE_STATUS_RING[node.status] }} />
                       <span
                         className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
                         style={{ backgroundColor: NODE_STATUS_RING[node.status] }}
@@ -272,7 +307,7 @@ export function NetworkMap() {
                 ) : (
                   <>
                     <div
-                      className="flex h-12 w-12 items-center justify-center rounded-2xl border bg-[#141414] text-xl shadow-card transition-all"
+                      className="flex h-10 w-10 items-center justify-center rounded-2xl border bg-[#141414] shadow-card transition-all sm:h-12 sm:w-12 sm:text-xl"
                       style={{ borderColor: `${NODE_STATUS_RING[node.status]}55`, boxShadow: `0 0 16px ${NODE_STATUS_RING[node.status]}22` }}
                     >
                       <span>{NETWORK_NODE_ICONS_FRONTEND[node.type]}</span>

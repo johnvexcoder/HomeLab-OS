@@ -19,15 +19,15 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section className={cn('card p-5', className)}>
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
+    <section className={cn('card p-4 sm:p-5', className)}>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 items-center gap-3">
           {icon && (
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
               {icon}
             </div>
           )}
-          <div>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
             {subtitle && <p className="mt-0.5 text-xs text-text-muted">{subtitle}</p>}
           </div>
@@ -54,7 +54,7 @@ export function Row({
         <div className="text-sm font-medium text-text-primary">{label}</div>
         {description && <div className="mt-0.5 text-xs text-text-muted">{description}</div>}
       </div>
-      <div className="flex shrink-0 items-center justify-end gap-3">{children}</div>
+      <div className="flex flex-wrap shrink-0 items-center justify-end gap-3">{children}</div>
     </div>
   );
 }

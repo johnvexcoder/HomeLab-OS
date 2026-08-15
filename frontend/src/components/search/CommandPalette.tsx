@@ -105,7 +105,7 @@ export function CommandPalette() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-[12vh] backdrop-blur-sm"
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-4 py-[8vh] backdrop-blur-sm"
           onClick={() => setOpen(false)}
         >
           <motion.div
@@ -113,11 +113,11 @@ export function CommandPalette() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -8 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full max-w-2xl overflow-hidden rounded-2xl border border-surface-border bg-surface-elevated shadow-card"
+            className="mx-auto flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-surface-border bg-surface-elevated shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 border-b border-surface-border px-4">
-              <Search className="h-4.5 w-4.5 h-[18px] w-[18px] text-text-muted" />
+              <Search className="h-[18px] w-[18px] shrink-0 text-text-muted" />
               <input
                 ref={inputRef}
                 value={query}
@@ -125,12 +125,12 @@ export function CommandPalette() {
                 placeholder="Search servers, alerts, actions…"
                 className="w-full bg-transparent py-4 text-sm text-text-primary placeholder:text-text-muted outline-none"
               />
-              <kbd className="rounded-md border border-surface-border bg-base px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
+              <kbd className="hidden rounded-md border border-surface-border bg-base px-1.5 py-0.5 text-[10px] font-semibold text-text-muted sm:block">
                 ESC
               </kbd>
             </div>
 
-            <div className="max-h-[420px] overflow-y-auto p-2">
+            <div className="max-h-[min(420px,calc(100dvh-16rem))] overflow-y-auto p-2">
               {items.length === 0 && (
                 <div className="flex flex-col items-center gap-2 py-10 text-text-muted">
                   <Activity className="h-8 w-8 opacity-40" />

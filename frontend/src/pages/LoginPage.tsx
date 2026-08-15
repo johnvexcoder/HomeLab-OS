@@ -124,7 +124,7 @@ export default function LoginPage() {
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         className="relative w-full max-w-md"
       >
-        <div className="card p-8">
+        <div className="card p-5 sm:p-8">
           <div className="mb-8 flex flex-col items-center text-center">
             <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10">
               <Activity className="h-7 w-7 text-accent" strokeWidth={2.2} />

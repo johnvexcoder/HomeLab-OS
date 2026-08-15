@@ -122,9 +122,9 @@ export function MetricChart({
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: def.color, boxShadow: `0 0 8px ${def.color}` }} />
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: def.color, boxShadow: `0 0 8px ${def.color}` }} />
           <span className="text-sm font-semibold text-text-primary">{def.label}</span>
           <span className="text-xs text-text-muted">
             {def.max ? `${def.max}% max` : ''}
@@ -136,7 +136,7 @@ export function MetricChart({
               key={r.value}
               onClick={() => onRangeChange?.(r.value)}
               className={cn(
-                'rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer',
+                'flex min-h-11 items-center rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer',
                 range === r.value
                   ? 'bg-accent/15 text-accent'
                   : 'text-text-muted hover:text-text-primary',

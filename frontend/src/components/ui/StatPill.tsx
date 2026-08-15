@@ -13,10 +13,10 @@ export function StatPill({
   className?: string;
 }) {
   return (
-    <div className={cn('flex flex-col gap-0.5', className)}>
+    <div className={cn('flex min-w-0 flex-col gap-0.5', className)}>
       <span className="text-[10px] uppercase tracking-widest text-text-muted">{label}</span>
       {value !== undefined ? (
-        <span className="font-display text-lg font-semibold tabular">
+        <span className="break-words font-display text-lg font-semibold tabular">
           {value}
           {unit && <span className="text-xs font-normal text-text-muted ml-1">{unit}</span>}
         </span>

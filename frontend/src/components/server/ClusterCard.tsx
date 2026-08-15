@@ -8,15 +8,15 @@ export function ClusterCard({ cluster, index }: { cluster: ClusterInfo; index: n
   const statusTone = cluster.status === 'online' ? 'success' : cluster.status === 'degraded' ? 'warn' : 'crit';
 
   return (
-    <Card className="p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-surface-border bg-surface-elevated text-accent">
+    <Card className="p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-surface-border bg-surface-elevated text-accent">
             <ServerCog className="h-5 w-5" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-display text-sm font-bold text-text-primary">{cluster.name}</h3>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="min-w-0 truncate font-display text-sm font-bold text-text-primary">{cluster.name}</h3>
               <Badge tone={statusTone} dot>{cluster.status.toUpperCase()}</Badge>
             </div>
             <p className="mt-0.5 text-xs text-text-muted">

@@ -93,7 +93,9 @@ export function Toggle({
       onClick={() => onChange(!checked)}
       className={cn(
         'flex items-center gap-4 rounded-xl border border-surface-border/70 bg-surface-input px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:pointer-events-none cursor-pointer',
-        label || description ? 'w-full justify-between' : 'w-auto justify-end px-1 py-1 border-transparent bg-transparent',
+        label || description
+          ? 'w-full justify-between'
+          : 'w-auto min-h-11 min-w-11 justify-end px-2 py-1 border-transparent bg-transparent',
         className,
       )}
     >
@@ -111,7 +113,7 @@ export function Toggle({
       >
         <span
           className={cn(
-            'inline-block h-4.5 w-4.5 h-[18px] w-[18px] transform rounded-full shadow transition-transform',
+            'inline-block h-[18px] w-[18px] transform rounded-full shadow transition-transform',
             checked ? 'translate-x-[22px] bg-accent' : 'translate-x-[3px] bg-text-muted',
           )}
         />

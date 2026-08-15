@@ -177,7 +177,7 @@ export function UsersManager() {
         }
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-sm">
+          <table className="w-full min-w-[520px] text-left text-sm">
             <thead>
               <tr className="text-[11px] uppercase tracking-wider text-text-muted">
                 <th className="pb-2 pr-4 font-medium">User</th>
@@ -204,8 +204,8 @@ export function UsersManager() {
                           {user.username.slice(0, 2).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2 truncate font-medium text-text-primary">
-                            {user.username}
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate font-medium text-text-primary">{user.username}</span>
                             {isSelf && <Badge tone="info">you</Badge>}
                             {user.disabled && <Badge tone="crit">disabled</Badge>}
                             {user.mustChangePassword && <Badge tone="warn">must change pw</Badge>}
@@ -372,7 +372,7 @@ export function UsersManager() {
         {editForm && (
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-end gap-3">
-              <Field label="Role" className="min-w-[180px]">
+              <Field label="Role" className="w-full sm:w-[180px]">
                 <Select
                   value={editForm.role}
                   onChange={(e) => setEditForm((f) => (f ? { ...f, role: e.target.value } : f))}

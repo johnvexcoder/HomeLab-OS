@@ -28,7 +28,7 @@ export function QuickActions() {
       <CardHeader
         title="Quick Actions"
         subtitle="One-click operations"
-        icon={<Activity className="h-4.5 w-4.5 h-[18px] w-[18px]" />}
+        icon={<Activity className="h-[18px] w-[18px]" />}
       />
       {actions.length === 0 ? (
         <p className="px-1 text-sm text-text-muted">
@@ -46,7 +46,7 @@ export function QuickActions() {
                 transition={{ duration: 0.35, delay: 0.04 * i }}
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.97 }}
-                className="flex items-center gap-2.5 rounded-xl border border-surface-border bg-surface-elevated px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:border-accent/30 hover:bg-surface-hover cursor-pointer"
+                className="flex min-h-11 items-center gap-2.5 rounded-xl border border-surface-border bg-surface-elevated px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:border-accent/30 hover:bg-surface-hover cursor-pointer"
               >
                 <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}>
                   <Icon className="h-4 w-4" />

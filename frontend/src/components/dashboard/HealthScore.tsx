@@ -77,7 +77,7 @@ export function HealthScore() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/70 px-4 py-4 backdrop-blur-sm"
             onClick={() => setOpen(false)}
           >
             <motion.div
@@ -85,11 +85,11 @@ export function HealthScore() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full max-w-lg rounded-2xl border border-surface-border bg-surface-elevated p-5 shadow-card"
+              className="my-auto w-full max-w-lg rounded-2xl border border-surface-border bg-surface-elevated p-4 shadow-card sm:p-5"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <h3 className="font-display text-lg font-bold text-text-primary">Infrastructure Health</h3>
                   <p className="text-sm text-text-muted">
                     <AnimatedNumber value={health.score} decimals={1} /> / 100 —{' '}
@@ -99,7 +99,7 @@ export function HealthScore() {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-overlay/5 hover:text-text-primary cursor-pointer"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-overlay/5 hover:text-text-primary cursor-pointer"
                   aria-label="Close"
                 >
                   <X className="h-4 w-4" />
@@ -204,14 +204,14 @@ export function QuickStats() {
             className="card card-hover flex items-center justify-between gap-3 p-4"
           >
             <div className="min-w-0">
-              <div className="font-display text-2xl font-bold tabular text-text-primary">
+              <div className="font-display text-xl font-bold tabular text-text-primary sm:text-2xl">
                 <AnimatedNumber value={stat.value} decimals={stat.value < 10 ? 1 : 0} />
                 <span className="ml-1 text-xs font-normal text-text-muted">{stat.unit}</span>
               </div>
               <div className="text-[11px] uppercase tracking-widest text-text-muted">{stat.label}</div>
             </div>
             {series.length >= 2 ? (
-              <Sparkline series={series} className="shrink-0" />
+              <Sparkline series={series} className="hidden min-[420px]:block shrink-0" />
             ) : null}
           </motion.div>
         );

@@ -37,7 +37,7 @@ export function RecentAlerts({ limit = 12 }: { limit?: number }) {
         action={
           <button
             onClick={handleMarkAll}
-            className="flex items-center gap-1 text-xs font-medium text-text-muted transition-colors hover:text-accent cursor-pointer"
+            className="flex min-h-11 items-center gap-1 px-2 text-xs font-medium text-text-muted transition-colors hover:text-accent cursor-pointer"
           >
             <CheckCheck className="h-3.5 w-3.5" /> Read all
           </button>
@@ -80,7 +80,7 @@ export function RecentAlerts({ limit = 12 }: { limit?: number }) {
         <div className="mt-auto pt-3">
           <Link
             to="/alerts"
-            className="flex items-center justify-center gap-1.5 rounded-xl border border-surface-border py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-accent/40 hover:text-accent"
+            className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-surface-border px-2 py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-accent/40 hover:text-accent"
           >
             View all alerts <ArrowRight className="h-3.5 w-3.5" />
           </Link>

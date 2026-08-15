@@ -136,7 +136,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-surface-border bg-surface p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl border border-surface-border bg-surface p-1">
         {visible.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
@@ -145,7 +145,7 @@ export default function SettingsPage() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                'relative flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer',
+                'relative flex min-h-11 items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer',
                 active ? 'text-accent' : 'text-text-muted hover:text-text-primary',
               )}
             >
