@@ -131,8 +131,11 @@ export function NetworkMap() {
                   stroke-linecap: round;
                   transition: stroke 600ms ease, opacity 600ms ease;
                 }
-                /* healthy: fast ping-pong, travels to endpoint then reverses */
-                .net-signal-healthy { animation: homelab-signal 2.2s ease-in-out infinite alternate; }
+                /* healthy: fast round-trip. The pulse races out to the endpoint and immediately
+                   returns, like a request/response cycle (device→internet, internet→device).
+                   Each link runs the same rhythm with its own negative delay so traffic flows
+                   across all containers instead of pulsing in lockstep. */
+                .net-signal-healthy { animation: homelab-signal 1.1s linear infinite alternate; }
                 /* degraded: slow, hesitant, with dwell pauses */
                 .net-signal-warning { animation: homelab-signal-warn 5.5s ease-in-out infinite alternate; opacity: 0.75; }
                 /* offline / unknown: cable stays visible, signal hidden */
@@ -145,16 +148,18 @@ export function NetworkMap() {
                 }
               `}</style>
             </defs>
-            {links.map((link) => {
+            {links.map((link, i) => {
               const src = nodeById.get(link.source);
               const dst = nodeById.get(link.target);
               if (!src || !dst) return null;
+              const delay = (i % 7) * 0.13;
               return (
                 <LinkLayer
                   key={link.id}
                   link={link}
                   src={src}
                   dst={dst}
+                  delay={delay}
                   active={hovered?.id === link.id || selected?.id === link.id}
                   onHover={() => setHovered(link)}
                   onLeave={() => setHovered((h) => (h?.id === link.id ? null : h))}
@@ -350,6 +355,7 @@ function LinkLayer({
   link,
   src,
   dst,
+  delay,
   active,
   onHover,
   onLeave,
@@ -358,6 +364,7 @@ function LinkLayer({
   link: NetworkLink;
   src: NetworkNode;
   dst: NetworkNode;
+  delay: number;
   active: boolean;
   onHover: () => void;
   onLeave: () => void;
@@ -398,7 +405,9 @@ function LinkLayer({
       <path d={dIn} fill="none" stroke={inColor} strokeOpacity="0.28" strokeWidth="2" strokeLinecap="round" className="net-base" />
       <path d={dOut} fill="none" stroke={outColor} strokeOpacity="0.28" strokeWidth="2" strokeLinecap="round" className="net-base" />
 
-      {/* Traveling signal: one pulse per cable that reaches the endpoint, then reverses */}
+      {/* Traveling signal: one pulse per cable that races to the endpoint, then
+          immediately returns — a request/response round trip. Inbound rides the
+          accent cable, outbound rides the cyan cable, desynced per link. */}
       <path
         d={dIn}
         fill="none"
@@ -407,7 +416,7 @@ function LinkLayer({
         pathLength={100}
         strokeDasharray="5 95"
         className={cn('net-signal', `net-signal-${status}`)}
-        style={{ filter: `drop-shadow(0 0 3px ${inColor})` }}
+        style={{ filter: `drop-shadow(0 0 3px ${inColor})`, animationDelay: `-${delay}s` }}
       />
       <path
         d={dOut}
@@ -417,7 +426,7 @@ function LinkLayer({
         pathLength={100}
         strokeDasharray="5 95"
         className={cn('net-signal', `net-signal-${status}`)}
-        style={{ filter: `drop-shadow(0 0 3px ${outColor})` }}
+        style={{ filter: `drop-shadow(0 0 3px ${outColor})`, animationDelay: `-${delay}s` }}
       />
     </g>
   );
