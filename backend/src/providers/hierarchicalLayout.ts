@@ -18,87 +18,19 @@ export interface LayoutResult {
   y: number;
 }
 
-interface HierarchyLevel {
-  nodes: LayoutNode[];
-  depth: number;
-}
-
 /**
- * Calculate the hierarchy depth of each node (distance from root).
- * Nodes with no parent have depth 0.
- */
-function calculateDepths(
-  nodes: LayoutNode[],
-  nodeMap: Map<string, LayoutNode>,
-): Map<string, number> {
-  const depths = new Map<string, number>();
-
-  function getDepth(nodeId: string): number {
-    if (depths.has(nodeId)) return depths.get(nodeId)!;
-
-    const node = nodeMap.get(nodeId);
-    if (!node || !node.parentId) {
-      depths.set(nodeId, 0);
-      return 0;
-    }
-
-    const parentDepth = getDepth(node.parentId);
-    const depth = parentDepth + 1;
-    depths.set(nodeId, depth);
-    return depth;
-  }
-
-  for (const node of nodes) {
-    getDepth(node.id);
-  }
-
-  return depths;
-}
-
-/**
- * Group nodes by their hierarchy level.
- */
-function groupByLevel(
-  nodes: LayoutNode[],
-  depths: Map<string, number>,
-): HierarchyLevel[] {
-  const levels = new Map<number, LayoutNode[]>();
-
-  for (const node of nodes) {
-    const depth = depths.get(node.id) ?? 0;
-    if (!levels.has(depth)) levels.set(depth, []);
-    levels.get(depth)!.push(node);
-  }
-
-  const sorted: HierarchyLevel[] = [];
-  for (const [depth, nodes] of Array.from(levels.entries()).sort((a, b) => a[0] - b[0])) {
-    sorted.push({ depth, nodes });
-  }
-
-  return sorted;
-}
-
-/**
- * Get children of a node.
- */
-function getChildren(nodeId: string, nodeMap: Map<string, LayoutNode>): LayoutNode[] {
-  const children: LayoutNode[] = [];
-  for (const node of nodeMap.values()) {
-    if (node.parentId === nodeId) {
-      children.push(node);
-    }
-  }
-  return children;
-}
-
-/**
- * Calculate positions for nodes in a hierarchical layout.
- * Uses a top-down, left-to-right strategy.
+ * Calculate positions for nodes in a tidy hierarchical tree layout.
+ * Uses a leaf-weighted interval split so every subtree gets a horizontal span
+ * proportional to the number of leaves it holds:
  *
- * @param nodes Array of nodes with parent relationships
- * @param canvasWidth Canvas width in percent (0-100)
- * @param canvasHeight Canvas height in percent (0-100)
- * @returns Map of node IDs to their x, y positions
+ * - each root fills a slice of the full canvas width (weighted by its leaves)
+ * - every node hands its own span to its children, split by leaf count
+ * - x is the center of a node's span, y comes from its depth (top → bottom)
+ *
+ * This guarantees children never leave their parent's column (no cross-parent
+ * collisions), keeps nodes of one subtree visually grouped, and automatically
+ * rearranges everything whenever nodes are added or removed — no hardcoded
+ * coordinates anywhere.
  */
 export function calculateHierarchicalLayout(
   nodes: LayoutNode[],
@@ -108,78 +40,106 @@ export function calculateHierarchicalLayout(
   if (nodes.length === 0) return new Map();
 
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-  const depths = calculateDepths(nodes, nodeMap);
-  const levels = groupByLevel(nodes, depths);
+  const childrenMap = new Map<string, string[]>();
+  for (const node of nodes) {
+    if (node.parentId && nodeMap.has(node.parentId)) {
+      const siblings = childrenMap.get(node.parentId) ?? [];
+      siblings.push(node.id);
+      childrenMap.set(node.parentId, siblings);
+    }
+  }
+
+  const depths = new Map<string, number>();
+  const visiting = new Set<string>();
+  const getDepth = (nodeId: string): number => {
+    if (depths.has(nodeId)) return depths.get(nodeId)!;
+    if (visiting.has(nodeId)) {
+      depths.set(nodeId, 0);
+      return 0;
+    }
+    visiting.add(nodeId);
+    const node = nodeMap.get(nodeId)!;
+    const depth =
+      node.parentId && nodeMap.has(node.parentId) ? getDepth(node.parentId) + 1 : 0;
+    visiting.delete(nodeId);
+    depths.set(nodeId, depth);
+    return depth;
+  };
+  for (const node of nodes) getDepth(node.id);
+
+  let maxDepth = 0;
+  for (const d of depths.values()) if (d > maxDepth) maxDepth = d;
+
+  const leafCount = new Map<string, number>();
+  const countLeaves = (nodeId: string): number => {
+    const kids = childrenMap.get(nodeId) ?? [];
+    if (kids.length === 0) return 1;
+    let total = 0;
+    for (const kid of kids) total += countLeaves(kid);
+    leafCount.set(nodeId, total);
+    return total;
+  };
+  for (const node of nodes) if (!leafCount.has(node.id)) countLeaves(node.id);
 
   const positions = new Map<string, LayoutResult>();
 
-  // Layout parameters
-  const levelHeight = canvasHeight / (levels.length + 1);
-  const minHorizontalGap = 8; // Minimum percent gap between nodes
-  const minVerticalGap = 12; // Minimum percent gap between levels
-  const nodeWidth = 8; // Approximate node width in percent (icon + label)
+  const yOf = (depth: number) => ((depth + 1) / (maxDepth + 2)) * canvasHeight;
 
-  // Calculate y positions for each level
-  const levelYPositions = new Map<number, number>();
-  for (let i = 0; i < levels.length; i++) {
-    const y = ((i + 1) / (levels.length + 1)) * canvasHeight;
-    levelYPositions.set(levels[i].depth, y);
+  const assign = (nodeId: string, start: number, end: number, depth: number) => {
+    positions.set(nodeId, {
+      id: nodeId,
+      x: (start + end) / 2,
+      y: yOf(depth),
+    });
+
+    const kids = childrenMap.get(nodeId) ?? [];
+    if (kids.length === 0) return;
+    let total = 0;
+    for (const kid of kids) total += leafCount.get(kid) ?? 1;
+    if (total <= 0) return;
+
+    let cursor = start;
+    for (const kid of kids) {
+      const span = ((end - start) * (leafCount.get(kid) ?? 1)) / total;
+      assign(kid, cursor, cursor + span, depth + 1);
+      cursor += span;
+    }
+  };
+
+  const roots = nodes.filter((n) => !(n.parentId && nodeMap.has(n.parentId)));
+  let totalLeaves = 0;
+  for (const root of roots) totalLeaves += leafCount.get(root.id) ?? 1;
+  if (totalLeaves <= 0) totalLeaves = roots.length || 1;
+
+  let cursor = 0;
+  for (const root of roots) {
+    const span = (canvasWidth * (leafCount.get(root.id) ?? 1)) / totalLeaves;
+    assign(root.id, cursor, cursor + span, depths.get(root.id) ?? 0);
+    cursor += span;
   }
 
-  // Calculate x positions for nodes at each level
-  for (const level of levels) {
-    const nodeCount = level.nodes.length;
-
-    if (nodeCount === 0) continue;
-
-    // Calculate available horizontal space
-    const totalNodeWidth = nodeCount * nodeWidth;
-    const totalGapWidth = Math.max((canvasWidth - totalNodeWidth) / (nodeCount + 1), minHorizontalGap);
-    const spacing = totalGapWidth + nodeWidth;
-
-    // Calculate starting x position to center nodes
-    const totalWidth = spacing * nodeCount - totalGapWidth;
-    const startX = (canvasWidth - totalWidth) / 2;
-
-    // Assign x positions to nodes, but also consider parent positions for better alignment
-    for (let i = 0; i < nodeCount; i++) {
-      const node = level.nodes[i];
-      let x: number;
-
-      if (node.parentId) {
-        // Position child nodes relative to their parent
-        const parent = nodeMap.get(node.parentId);
-        if (parent && positions.has(node.parentId)) {
-          const parentPos = positions.get(node.parentId)!;
-
-          // Get siblings (children of same parent)
-          const siblings = getChildren(node.parentId, nodeMap);
-          const siblingIndex = siblings.findIndex((s) => s.id === node.id);
-          const siblingCount = siblings.length;
-
-          // Distribute siblings around parent
-          if (siblingCount === 1) {
-            x = parentPos.x;
-          } else {
-            const siblingSpacing = 12; // Spacing between siblings
-            const totalSiblingWidth = siblingCount * nodeWidth + (siblingCount - 1) * siblingSpacing;
-            const startXSibling = parentPos.x - totalSiblingWidth / 2;
-            x = startXSibling + siblingIndex * (nodeWidth + siblingSpacing);
-          }
-
-          // Clamp x to canvas bounds
-          x = Math.max(2, Math.min(x, canvasWidth - nodeWidth - 2));
-        } else {
-          x = startX + i * spacing;
-        }
-      } else {
-        // Root nodes are distributed across the level
-        x = startX + i * spacing;
-      }
-
-      const y = levelYPositions.get(level.depth) ?? 50;
-
-      positions.set(node.id, { id: node.id, x, y });
+  // Guarantee a minimum horizontal gap between neighbours on the same level so
+  // icons + labels never collide, even in dense subtrees.
+  const minGap = 8;
+  const halfNode = 4;
+  const levels = new Map<number, string[]>();
+  for (const node of nodes) {
+    const depth = depths.get(node.id) ?? 0;
+    const row = levels.get(depth) ?? [];
+    row.push(node.id);
+    levels.set(depth, row);
+  }
+  for (const row of levels.values()) {
+    row.sort((a, b) => (positions.get(a)!.x ?? 0) - (positions.get(b)!.x ?? 0));
+    let prevRight = -Infinity;
+    for (const nodeId of row) {
+      const pos = positions.get(nodeId)!;
+      const minCenter = prevRight + halfNode + minGap;
+      if (pos.x < minCenter) pos.x = Math.min(minCenter, canvasWidth - halfNode);
+      prevRight = pos.x + halfNode;
+    }
+    for (const nodeId of row) {
+      positions.get(nodeId)!.x = Math.max(halfNode, Math.min(positions.get(nodeId)!.x, canvasWidth - halfNode));
     }
   }
 

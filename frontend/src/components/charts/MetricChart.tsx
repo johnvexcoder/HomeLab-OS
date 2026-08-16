@@ -48,10 +48,10 @@ export function MetricChart({
   onRangeChange?: (range: HistoryRange) => void;
   height?: number;
 }) {
+  const accent = useAccentHex();
   const def = useMemo(() => {
-    const accent = useAccentHex();
     return metric === 'cpu' ? { ...METRIC_DEFS.cpu, color: accent } : METRIC_DEFS[metric];
-  }, [metric]);
+  }, [metric, accent]);
 
   const { data } = useQuery({
     queryKey: ['history', server.spec.id, range],

@@ -22,6 +22,7 @@ import { NotificationGenerator } from '../telemetry/notification-generator';
 import { uuid } from '../mock-data/servers';
 import { clamp, round } from '../telemetry/random';
 import { config } from '../config';
+import { calculateHierarchicalLayout, applyLayout } from './hierarchicalLayout';
 
 /** Coerce any value to a finite number, falling back to `fallback`. */
 function toFinite(v: unknown, fallback = 0): number {
@@ -590,23 +591,18 @@ export class ProxmoxMetricsProvider {
     const nodes: NetworkNode[] = [];
     const links: NetworkLink[] = [];
 
-    nodes.push({ id: 'internet', label: 'Internet', type: 'internet', status: 'online', x: 6, y: 50, health: 100 });
+    nodes.push({ id: 'internet', label: 'Internet', type: 'internet', status: 'online', x: 50, y: 50, health: 100 });
 
     const servers = this.getServers();
-    const rows = Math.max(1, Math.ceil(servers.length / 2));
-    servers.forEach((s, i) => {
-      const colIdx = Math.floor(i / rows);
-      const rowIdx = i % rows;
-      const x = 30 + colIdx * 36;
-      const y = 16 + (rowIdx / Math.max(rows - 1, 1)) * 68;
-
+    servers.forEach((s) => {
       nodes.push({
         id: s.spec.id,
         label: s.spec.name,
         type: 'hypervisor',
         status: s.status,
-        x,
-        y,
+        x: 50,
+        y: 50,
+        parentId: 'internet',
         ip: s.spec.ip || undefined,
         health: s.health,
       });
@@ -629,8 +625,8 @@ export class ProxmoxMetricsProvider {
           label: g.name,
           type: 'container',
           status: g.running ? 'online' : 'offline',
-          x: x + 8,
-          y: y + 16 + (gi % 4) * 12,
+          x: 50,
+          y: 50,
           parentId: s.spec.id,
           health: g.running ? 100 : 0,
         });
@@ -647,7 +643,7 @@ export class ProxmoxMetricsProvider {
       });
     });
 
-    return { nodes, links };
+    return { nodes: applyLayout(nodes, calculateHierarchicalLayout(nodes, 100, 100)), links };
   }
 
   getClusters(): ClusterInfo[] {

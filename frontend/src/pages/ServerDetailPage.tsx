@@ -39,9 +39,10 @@ const CHART_TABS: Array<{ key: MetricKey; label: string; icon: typeof Cpu }> = [
 export default function ServerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { servers, loading } = useTelemetry();
-  const server = servers.find((s) => s.spec.id === id);
   const [range, setRange] = useState<HistoryRange>('1h');
   const [tab, setTab] = useState<MetricKey>('cpu');
+  const { clusters } = useClusters();
+  const server = servers.find((s) => s.spec.id === id);
 
   if (loading && !server) {
     return (
@@ -69,7 +70,6 @@ export default function ServerDetailPage() {
   const reach = REACH_META[server.reachability];
   const ramPct = pct(server.ramUsedGb, s.ramTotalGb);
   const diskPct = pct(server.diskUsedGb, s.diskTotalGb);
-  const { clusters } = useClusters();
   const cluster = s.clusterId ? clusters.find((c) => c.id === s.clusterId) : undefined;
 
   return (

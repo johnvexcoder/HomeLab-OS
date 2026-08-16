@@ -14,6 +14,7 @@ import type {
 import { config } from '../config';
 import { insertMetrics } from '../db/database';
 import { statsHistoryFor } from './history';
+import { calculateHierarchicalLayout, applyLayout } from './hierarchicalLayout';
 
 /**
  * Wraps the primary provider (Proxmox) and merges the Docker layer into it:
@@ -91,15 +92,15 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       nodes.find((n) => n.type === 'hypervisor');
     if (!host) return { nodes, links };
 
-    containers.slice(0, 40).forEach((c, i) => {
+    containers.slice(0, 40).forEach((c) => {
       const id = `docker-${c.id}`;
       nodes.push({
         id,
         label: c.name,
         type: 'docker',
         status: c.running ? 'online' : 'offline',
-        x: host.x + 10 + (i % 4) * 6,
-        y: host.y + 14 + (i % 6) * 8,
+        x: 50,
+        y: 50,
         parentId: host.id,
         health: c.running ? 100 : 0,
       });
@@ -115,7 +116,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       });
     });
 
-    return { nodes, links };
+    return { nodes: applyLayout(nodes, calculateHierarchicalLayout(nodes, 100, 100)), links };
   }
 
   getClusters(): ClusterInfo[] {
