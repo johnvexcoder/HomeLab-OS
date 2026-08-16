@@ -245,9 +245,10 @@ export function NetworkMap() {
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.4, delay: i * 0.07, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute -translate-x-1/2 -translate-y-1/2"
+                className="absolute"
                 style={{ left: `${originalNode.x}%`, top: `${originalNode.y}%` }}
               >
+                <div className="-translate-x-1/2 -translate-y-1/2">
                 <div className="flex flex-col items-center gap-1">
                   {nodeType === 'internet' ? (
                     <div className="relative flex flex-col items-center">
@@ -292,6 +293,7 @@ export function NetworkMap() {
                     </>
                   )}
                   {originalNode.ip && <span className="font-mono text-[9px] text-text-muted">{originalNode.ip}</span>}
+                </div>
                 </div>
               </motion.div>
             );
