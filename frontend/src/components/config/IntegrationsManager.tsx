@@ -187,19 +187,19 @@ export function IntegrationsManager() {
           const testInfo = testResult?.id === integration.id ? testResult : null;
           return (
             <div key={integration.id} className="rounded-xl border border-surface-border/70 bg-surface-input">
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-overlay/5 text-text-secondary">
                     <FlaskConical className="h-4 w-4" />
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-text-primary">{integration.name}</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-medium text-text-primary">{integration.name}</span>
                       <Badge tone="neutral">{KIND_LABEL[integration.kind] ?? integration.kind}</Badge>
                       {integration.configured ? <Badge tone="success">configured</Badge> : <Badge tone="warn">missing config</Badge>}
                       {!featureMap[featureFor(integration.kind)] && <Badge tone="warn">flag off</Badge>}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-text-muted">
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
                       <Badge tone={integration.status === 'ok' ? 'success' : integration.status === 'error' ? 'crit' : 'neutral'} dot>
                         {integration.status}
                       </Badge>
@@ -208,20 +208,22 @@ export function IntegrationsManager() {
                     </div>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                   <Toggle
                     checked={integration.enabled}
                     onChange={(next) => void toggleEnabled(integration, next)}
                   />
-                  <Button variant="ghost" size="sm" onClick={() => void test(integration.id)} disabled={busyId === integration.id}>
-                    <FlaskConical className="h-3.5 w-3.5" /> Test
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(integration)}>
-                    <Pencil className="h-3.5 w-3.5" /> Edit
-                  </Button>
-                  <Button variant="danger" size="sm" onClick={() => setConfirmDelete(integration)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => void test(integration.id)} disabled={busyId === integration.id}>
+                      <FlaskConical className="h-3.5 w-3.5" /> Test
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(integration)}>
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={() => setConfirmDelete(integration)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -266,7 +268,7 @@ export function IntegrationsManager() {
           </>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Name">
             <Input
               value={form.name}

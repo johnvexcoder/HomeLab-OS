@@ -130,7 +130,7 @@ export default function LoginPage() {
               <Activity className="h-7 w-7 text-accent" strokeWidth={2.2} />
               <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-accent animate-glow-pulse" />
             </div>
-            <h1 className="mt-4 font-display text-2xl font-bold tracking-tight text-text-primary">
+            <h1 className="mt-4 fluid-h1 font-display font-bold tracking-tight text-text-primary">
               HomeLab <span className="text-accent">OS</span>
             </h1>
             <p className="mt-1 text-sm text-text-muted">Sign in to the NOC control center</p>

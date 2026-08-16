@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -63,10 +63,17 @@ export default function SettingsPage() {
   const logout = useAuthStore((s) => s.logout);
   const has = useAuthStore((s) => s.has);
   const [tab, setTab] = useState<TabId>('access');
+  const stripRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (user?.mustChangePassword) setTab('account');
   }, [user?.mustChangePassword]);
+
+  // Keep the active tab visible inside the horizontal strip on narrow screens.
+  useEffect(() => {
+    const el = stripRef.current?.querySelector<HTMLElement>(`[data-tab="${tab}"]`);
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [tab]);
 
   const visible = TABS.filter((t) => !t.permission || has(t.permission));
   const mustChange = user?.mustChangePassword ?? false;
@@ -106,7 +113,7 @@ export default function SettingsPage() {
             <Settings className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Configuration</h1>
+            <h1 className="fluid-h1 font-display font-bold tracking-tight text-text-primary">Configuration</h1>
             <p className="mt-0.5 text-sm text-text-muted">
               Signed in as <b className="text-text-secondary">{user?.username}</b>
               {user?.name && <> ({user.name})</>} · <Badge tone="accent">{user?.role}</Badge>
@@ -136,16 +143,20 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1 rounded-xl border border-surface-border bg-surface p-1">
+      <div
+        ref={stripRef}
+        className="no-scrollbar -mx-4 flex items-center gap-1 overflow-x-auto rounded-none border-b border-surface-border bg-surface px-4 py-1 sm:mx-0 sm:flex-wrap sm:rounded-xl sm:border sm:px-1"
+      >
         {visible.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
           return (
             <button
               key={t.id}
+              data-tab={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                'relative flex min-h-11 items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer',
+                'relative flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer',
                 active ? 'text-accent' : 'text-text-muted hover:text-text-primary',
               )}
             >

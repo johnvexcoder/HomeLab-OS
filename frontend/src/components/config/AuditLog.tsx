@@ -61,7 +61,7 @@ export function AuditLog() {
         icon={<ScrollText className="h-4 w-4" />}
         action={<SaveBar busy={isFetching} />}
       >
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_180px_140px]">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_180px_140px]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
             <Input
@@ -86,7 +86,12 @@ export function AuditLog() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          {items.length === 0 && (
+            <p className="rounded-xl border border-surface-border/70 bg-surface-input px-4 py-8 text-center text-sm text-text-muted min-[769px]:hidden">
+              No audit entries match.
+            </p>
+          )}
+          <table className="table-cards w-full text-left text-sm">
             <thead>
               <tr className="text-[11px] uppercase tracking-wider text-text-muted">
                 <th className="pb-2 pr-4 font-medium">Time</th>
@@ -99,7 +104,7 @@ export function AuditLog() {
             </thead>
             <tbody className="divide-y divide-surface-border/60">
               {items.length === 0 && (
-                <tr>
+                <tr className="hidden min-[769px]:table-row">
                   <td colSpan={6} className="py-8 text-center text-sm text-text-muted">
                     No audit entries match.
                   </td>
@@ -107,16 +112,16 @@ export function AuditLog() {
               )}
               {items.map((entry, i) => (
                 <tr key={`${entry.ts}-${i}`} className="align-top">
-                  <td className="whitespace-nowrap py-2.5 pr-4 text-xs tabular text-text-muted">{formatTs(entry.ts)}</td>
-                  <td className="py-2.5 pr-4 text-xs text-text-secondary">{entry.username ?? '—'}</td>
-                  <td className="py-2.5 pr-4 font-mono text-[11px] text-text-primary">{entry.action}</td>
-                  <td className="max-w-[180px] truncate py-2.5 pr-4 text-xs text-text-secondary" title={entry.target ?? ''}>
+                  <td data-label="Time" className="whitespace-nowrap py-2.5 pr-4 text-xs tabular text-text-muted">{formatTs(entry.ts)}</td>
+                  <td data-label="User" className="py-2.5 pr-4 text-xs text-text-secondary">{entry.username ?? '—'}</td>
+                  <td data-label="Action" className="py-2.5 pr-4 font-mono text-[11px] text-text-primary">{entry.action}</td>
+                  <td data-label="Target" className="max-w-[120px] truncate py-2.5 pr-4 text-xs text-text-secondary" title={entry.target ?? ''}>
                     {entry.target ?? '—'}
                   </td>
-                  <td className="py-2.5 pr-4">
+                  <td data-label="Result" className="py-2.5 pr-4">
                     <Badge tone={RESULT_TONE[entry.result] ?? 'neutral'}>{entry.result}</Badge>
                   </td>
-                  <td className="max-w-[240px] truncate py-2.5 text-xs text-text-muted" title={entry.details ?? ''}>
+                  <td data-label="Details" className="max-w-[170px] truncate py-2.5 text-xs text-text-muted" title={entry.details ?? ''}>
                     {entry.details ?? '—'}
                   </td>
                 </tr>

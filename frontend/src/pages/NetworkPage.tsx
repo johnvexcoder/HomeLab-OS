@@ -16,7 +16,7 @@ export default function NetworkPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Network</h1>
+        <h1 className="fluid-h1 font-display font-bold tracking-tight text-text-primary">Network</h1>
         <p className="mt-1 text-sm text-text-muted">Topology, link health and throughput</p>
       </div>
 
@@ -24,7 +24,7 @@ export default function NetworkPage() {
 
       <NetworkMap />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Link table */}
         <Card className="lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">

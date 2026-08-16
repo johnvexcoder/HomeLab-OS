@@ -177,7 +177,7 @@ export function UsersManager() {
         }
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-left text-sm">
+          <table className="table-cards w-full text-left text-sm">
             <thead>
               <tr className="text-[11px] uppercase tracking-wider text-text-muted">
                 <th className="pb-2 pr-4 font-medium">User</th>
@@ -204,7 +204,7 @@ export function UsersManager() {
                           {user.username.slice(0, 2).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="truncate font-medium text-text-primary">{user.username}</span>
                             {isSelf && <Badge tone="info">you</Badge>}
                             {user.disabled && <Badge tone="crit">disabled</Badge>}
@@ -214,10 +214,10 @@ export function UsersManager() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-2.5 pr-4">
+                    <td data-label="Role" className="py-2.5 pr-4">
                       <Badge tone={ROLE_TONE[user.role] ?? 'neutral'}>{user.role}</Badge>
                     </td>
-                    <td className="py-2.5 pr-4 text-xs text-text-muted">
+                    <td data-label="2FA" className="py-2.5 pr-4 text-xs text-text-muted">
                       {user.twoFactorEnabled ? (
                         <Badge tone="success" size="sm">Enabled</Badge>
                       ) : twoFactorMaster ? (
@@ -226,7 +226,7 @@ export function UsersManager() {
                         '—'
                       )}
                     </td>
-                    <td className="py-2.5 pr-4">
+                    <td data-label="Email" className="py-2.5 pr-4">
                       {user.email ? (
                         <div className="flex items-center gap-1.5 text-xs text-text-muted">
                           <Mail className="h-3 w-3 shrink-0 text-text-muted/70" />
@@ -236,10 +236,10 @@ export function UsersManager() {
                         <span className="text-xs text-text-muted/50">—</span>
                       )}
                     </td>
-                    <td className="py-2.5 pr-4 text-xs text-text-muted">
+                    <td data-label="Last login" className="py-2.5 pr-4 text-xs text-text-muted">
                       {user.lastLoginAt ? relativeTime(user.lastLoginAt) : 'never'}
                     </td>
-                    <td className="py-2.5">
+                    <td data-label="Actions" className="py-2.5">
                       <div className="flex items-center gap-2">
                         {isSelf ? (
                           <span className="text-xs text-text-muted">manage in Account</span>
@@ -294,7 +294,7 @@ export function UsersManager() {
           </>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Username" hint="Letters, numbers, . _ - only">
             <Input
               value={createForm.username}

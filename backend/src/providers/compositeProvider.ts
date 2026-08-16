@@ -12,6 +12,7 @@ import type {
   ServerRuntime,
 } from '../types';
 import { config } from '../config';
+import { round } from '../telemetry/random';
 import { insertMetrics } from '../db/database';
 import { statsHistoryFor } from './history';
 import { calculateHierarchicalLayout, applyLayout } from './hierarchicalLayout';
@@ -110,11 +111,22 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         target: id,
         status: c.running ? 'healthy' : 'warning',
         latencyMs: 0.1,
-        throughputMbps: 0,
+        throughputMbps: round((c.netDownMbps ?? 0) + (c.netUpMbps ?? 0), 2),
         jitterMs: 0.05,
         packetLoss: 0,
       });
     });
+
+    // The guest that hosts Docker (e.g. `pve-pve0-g0`) carries the Docker host's
+    // real traffic on its uplink to the hypervisor.
+    const hostRuntime = this.docker?.getHostRuntime();
+    if (hostRuntime && host) {
+      const hostNet = round(hostRuntime.netUpMbps + hostRuntime.netDownMbps, 2);
+      const uplink = links.find(
+        (l) => (l.source === host.id || l.target === host.id) && l.id !== 'internet',
+      );
+      if (uplink) uplink.throughputMbps = hostNet;
+    }
 
     return { nodes: applyLayout(nodes, calculateHierarchicalLayout(nodes, 100, 100)), links };
   }

@@ -85,7 +85,7 @@ export function SecuritySettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Section
           title="Sessions & login"
           subtitle="Timeouts, attempts and rate limiting"

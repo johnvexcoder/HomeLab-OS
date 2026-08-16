@@ -680,7 +680,7 @@ export function AccountPanel() {
             {editingQuestions && (
               <div className="mt-3 flex flex-col gap-3 border-t border-surface-border/60 pt-3">
                 {qDraft.map((q, i) => (
-                  <div key={i} className="grid gap-2 sm:grid-cols-2">
+                  <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <Field label={`Question ${i + 1}`}>
                       <Input
                         value={q.question}

@@ -26,7 +26,7 @@ export function Greeting() {
           <p className="text-sm font-medium text-text-muted">
             {greetingForHour(now.getHours())}
           </p>
-          <h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-text-primary md:text-4xl">
+          <h1 className="mt-1 fluid-h1 font-display font-bold tracking-tight text-text-primary">
             Welcome back, <span className="text-gradient">{user?.name || user?.username || 'Guest'}</span>
           </h1>
           <p className="mt-1.5 text-sm text-text-secondary">

@@ -19,13 +19,15 @@ export interface LayoutResult {
 }
 
 /**
- * Calculate positions for nodes in a tidy hierarchical tree layout.
- * Uses a leaf-weighted interval split so every subtree gets a horizontal span
- * proportional to the number of leaves it holds:
+ * Calculate positions for nodes in a tidy left-to-right hierarchical layout.
+ * The topology flows Internet → Gateway → Host → Services, exactly like an
+ * enterprise network diagram:
  *
- * - each root fills a slice of the full canvas width (weighted by its leaves)
+ * - x comes from depth: each level occupies its own column (left → right)
+ * - y uses a leaf-weighted interval split so every subtree gets a vertical
+ *   span proportional to the number of leaves it holds
  * - every node hands its own span to its children, split by leaf count
- * - x is the center of a node's span, y comes from its depth (top → bottom)
+ * - y is the center of a node's span
  *
  * This guarantees children never leave their parent's column (no cross-parent
  * collisions), keeps nodes of one subtree visually grouped, and automatically
@@ -83,13 +85,16 @@ export function calculateHierarchicalLayout(
 
   const positions = new Map<string, LayoutResult>();
 
-  const yOf = (depth: number) => ((depth + 1) / (maxDepth + 2)) * canvasHeight;
+  const xOf = (depth: number) => ((depth + 1) / (maxDepth + 2)) * canvasWidth;
 
-  const assign = (nodeId: string, start: number, end: number, depth: number) => {
+  /** Children are split leaf-weighted, with a guaranteed vertical min-gap between them. */
+  const minGap = 10;
+
+  const assign = (nodeId: string, top: number, bottom: number, depth: number) => {
     positions.set(nodeId, {
       id: nodeId,
-      x: (start + end) / 2,
-      y: yOf(depth),
+      x: xOf(depth),
+      y: (top + bottom) / 2,
     });
 
     const kids = childrenMap.get(nodeId) ?? [];
@@ -98,11 +103,16 @@ export function calculateHierarchicalLayout(
     for (const kid of kids) total += leafCount.get(kid) ?? 1;
     if (total <= 0) return;
 
-    let cursor = start;
+    const gaps = minGap * (kids.length - 1);
+    const available = Math.max(0, bottom - top - gaps);
+    let cursor = top;
+    let first = true;
     for (const kid of kids) {
-      const span = ((end - start) * (leafCount.get(kid) ?? 1)) / total;
+      if (!first) cursor += minGap;
+      const span = (available * (leafCount.get(kid) ?? 1)) / total;
       assign(kid, cursor, cursor + span, depth + 1);
       cursor += span;
+      first = false;
     }
   };
 
@@ -111,36 +121,11 @@ export function calculateHierarchicalLayout(
   for (const root of roots) totalLeaves += leafCount.get(root.id) ?? 1;
   if (totalLeaves <= 0) totalLeaves = roots.length || 1;
 
-  let cursor = 0;
+  let cursorY = 0;
   for (const root of roots) {
-    const span = (canvasWidth * (leafCount.get(root.id) ?? 1)) / totalLeaves;
-    assign(root.id, cursor, cursor + span, depths.get(root.id) ?? 0);
-    cursor += span;
-  }
-
-  // Guarantee a minimum horizontal gap between neighbours on the same level so
-  // icons + labels never collide, even in dense subtrees.
-  const minGap = 8;
-  const halfNode = 4;
-  const levels = new Map<number, string[]>();
-  for (const node of nodes) {
-    const depth = depths.get(node.id) ?? 0;
-    const row = levels.get(depth) ?? [];
-    row.push(node.id);
-    levels.set(depth, row);
-  }
-  for (const row of levels.values()) {
-    row.sort((a, b) => (positions.get(a)!.x ?? 0) - (positions.get(b)!.x ?? 0));
-    let prevRight = -Infinity;
-    for (const nodeId of row) {
-      const pos = positions.get(nodeId)!;
-      const minCenter = prevRight + halfNode + minGap;
-      if (pos.x < minCenter) pos.x = Math.min(minCenter, canvasWidth - halfNode);
-      prevRight = pos.x + halfNode;
-    }
-    for (const nodeId of row) {
-      positions.get(nodeId)!.x = Math.max(halfNode, Math.min(positions.get(nodeId)!.x, canvasWidth - halfNode));
-    }
+    const span = (canvasHeight * (leafCount.get(root.id) ?? 1)) / totalLeaves;
+    assign(root.id, cursorY, cursorY + span, depths.get(root.id) ?? 0);
+    cursorY += span;
   }
 
   return positions;

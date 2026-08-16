@@ -101,7 +101,7 @@ export default function ServerDetailPage() {
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">{s.name}</h1>
+              <h1 className="fluid-h1 font-display font-bold tracking-tight text-text-primary">{s.name}</h1>
               <Badge tone="neutral">{role.label}</Badge>
               {cluster ? (
                 <Badge tone="info">
@@ -196,7 +196,7 @@ export default function ServerDetailPage() {
       </motion.div>
 
       {/* Resource breakdown */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <ResourceCard label="CPU Utilization" value={server.cpu} unit="%" color="var(--accent)" detail={`${s.cpuCores} logical cores · ${formatUptime(server.uptimeSeconds)} uptime`} />
         <ResourceCard label="Memory Usage" value={ramPct} unit="%" color="#60A5FA" detail={`${formatBytes(server.ramUsedGb)} used of ${formatBytes(s.ramTotalGb)}`} />
         <ResourceCard label="Storage Usage" value={diskPct} unit="%" color="#F59E0B" detail={`${formatBytes(server.diskUsedGb)} used of ${formatBytes(s.diskTotalGb)}`} />

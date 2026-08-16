@@ -612,7 +612,7 @@ export class ProxmoxMetricsProvider {
         target: s.spec.id,
         status: s.status === 'online' ? 'healthy' : s.status === 'degraded' ? 'warning' : 'critical',
         latencyMs: 1,
-        throughputMbps: round(s.netDownMbps, 0),
+        throughputMbps: round(s.netUpMbps + s.netDownMbps, 1),
         jitterMs: 0.1,
         packetLoss: 0,
       });

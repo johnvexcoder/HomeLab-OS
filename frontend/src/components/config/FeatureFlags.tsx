@@ -44,7 +44,7 @@ export function FeatureFlags() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">Feature flags</h3>
           <p className="mt-0.5 text-xs text-text-muted">Enable or disable capabilities of the dashboard</p>
@@ -52,7 +52,7 @@ export function FeatureFlags() {
         <SaveBar busy={save.busy || busyId !== null} saved={save.saved} error={save.error} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {Object.entries(GROUP_META).map(([group, meta]) => {
           const features = grouped[group] ?? [];
           if (features.length === 0) return null;
@@ -60,20 +60,20 @@ export function FeatureFlags() {
           return (
             <Section key={group} title={meta.label} icon={<Icon className="h-4 w-4" />} subtitle={`${features.length} capabilities`}>
               {features.map((feature) => (
-                <div key={feature.id} className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-4 py-3">
+                <div key={feature.id} className="flex flex-col gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-4 py-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-text-primary">{feature.label}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-text-primary">{feature.label}</span>
                       {!feature.supported && <Badge tone="warn" className="shrink-0">unsupported</Badge>}
                       {feature.enabled && <Badge tone="success" className="shrink-0">on</Badge>}
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-text-muted">{feature.description}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-text-muted">{feature.description}</p>
                   </div>
                   <Toggle
                     checked={feature.enabled}
                     onChange={() => void toggle(feature)}
                     disabled={!feature.supported}
-                    className="shrink-0"
+                    className="shrink-0 sm:ml-2"
                   />
                 </div>
               ))}

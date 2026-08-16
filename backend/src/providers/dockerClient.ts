@@ -11,6 +11,9 @@ export interface DockerContainer {
   name: string;
   running: boolean;
   image: string;
+  /** Live network throughput since the previous poll (Mb/s), when known. */
+  netUpMbps?: number;
+  netDownMbps?: number;
 }
 
 export interface DockerHostInfo {

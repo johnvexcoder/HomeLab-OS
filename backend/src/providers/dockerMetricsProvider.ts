@@ -50,6 +50,7 @@ export class DockerMetricsProvider {
   private lastPollError: string | null = null;
   private lastErrorAt: number | null = null;
   private prevStats: Record<string, DockerContainerStats> = {};
+  private containerNet = new Map<string, { down: number; up: number }>();
   private prevNetAt = 0;
   private prevRx = 0;
   private prevTx = 0;
@@ -143,6 +144,9 @@ export class DockerMetricsProvider {
     let rx = 0;
     let tx = 0;
 
+    const dt = (now - this.prevNetAt) / 1000;
+    const containerNet = new Map<string, { down: number; up: number }>();
+
     for (const s of stats) {
       memSum += s.memUsed;
       rx += s.netRxBytes;
@@ -154,11 +158,22 @@ export class DockerMetricsProvider {
         const cpus = s.onlineCpus > 0 ? s.onlineCpus : 1;
         cpuSum += (cpuDelta / sysDelta) * cpus * 100;
       }
+      if (
+        this.prevNetAt > 0 &&
+        dt > 0 &&
+        p &&
+        s.netRxBytes >= p.netRxBytes &&
+        s.netTxBytes >= p.netTxBytes
+      ) {
+        const down = ((s.netRxBytes - p.netRxBytes) * 8) / dt / 1e6;
+        const up = ((s.netTxBytes - p.netTxBytes) * 8) / dt / 1e6;
+        containerNet.set(s.id, { down: round(Math.max(0, down), 3), up: round(Math.max(0, up), 3) });
+      }
       prev[s.id] = s;
     }
     this.prevStats = prev;
+    this.containerNet = containerNet;
 
-    const dt = (now - this.prevNetAt) / 1000;
     if (this.prevNetAt > 0 && dt > 0 && (rx >= this.prevRx || tx >= this.prevTx)) {
       this.netDownMbps = round(((rx - this.prevRx) * 8) / dt / 1e6, 2);
       this.netUpMbps = round(((tx - this.prevTx) * 8) / dt / 1e6, 2);
@@ -263,7 +278,11 @@ export class DockerMetricsProvider {
   }
 
   getContainers(): DockerContainer[] {
-    return this.containers;
+    return this.containers.map((c) => {
+      const net = this.containerNet.get(c.id);
+      if (!net) return c;
+      return { ...c, netUpMbps: net.up, netDownMbps: net.down };
+    });
   }
 
   /** The Docker host itself (e.g. docker01) as a full server runtime. */

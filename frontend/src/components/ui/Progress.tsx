@@ -19,6 +19,17 @@ export function toneColor(value: number): string {
   return '#34D399';
 }
 
+/**
+ * Color for *health* rings where higher is better. A perfect 100 reads as
+ * light green ("all good"), degrading through amber to red as health drops.
+ */
+export function healthColor(value: number): string {
+  if (value >= 95) return '#4ADE80';
+  if (value >= 80) return '#34D399';
+  if (value >= 60) return '#F59E0B';
+  return '#EF4444';
+}
+
 export function ProgressRing({
   value,
   size = 132,
@@ -32,7 +43,7 @@ export function ProgressRing({
   const [display, setDisplay] = useState(0);
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const resolvedColor = color ?? toneColor(value);
+  const resolvedColor = color ?? healthColor(value);
 
   useEffect(() => {
     const target = value;

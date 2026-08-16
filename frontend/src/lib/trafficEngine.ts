@@ -21,6 +21,8 @@ export interface TrafficEvent {
   dur: number;
   /** Number of packets rendered for this flow. */
   count: number;
+  /** 0..1 organic speed-profile seed (per-packet easing/acceleration variance). */
+  pace: number;
 }
 
 /** Stable FNV-1a hash so per-node randomization is reproducible across refetches. */
@@ -112,45 +114,92 @@ function pathHasOfflineLink(path: string[], links: NetworkLink[]): boolean {
 /**
  * Build all traffic events from the current topology.
  * Deterministic offsets keep the animation stable between telemetry refetches.
+ *
+ * Two layers, mirroring how real traffic behaves:
+ *
+ * 1. Per-source multi-hop flows — every packet rides the real path from its
+ *    leaf up through each intermediate node to the Internet and back, so no
+ *    packet ever teleports onto a child link (parent → child propagation) and
+ *    packets branch naturally off each parent into every child independently.
+ * 2. Ambient per-link traffic — every cable continuously generates its own
+ *    packets in both directions with independent speed/spacing/timing, so the
+ *    map stays alive even between leaf flows.
  */
 export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): TrafficEvent[] {
   const adj = adjacency(links);
   const events: TrafficEvent[] = [];
   const internet = nodes.find((n) => n.type === 'internet');
-  if (!internet) return events;
 
-  for (const node of nodes) {
-    if (SPINE_TYPES.has(node.type)) continue;
-    const path = resolvePath(node.id, internet.id, links, adj);
-    if (!path || path.length < 2) continue;
-    if (pathHasOfflineLink(path, links)) continue;
+  if (internet) {
+    for (const node of nodes) {
+      if (SPINE_TYPES.has(node.type)) continue;
+      const path = resolvePath(node.id, internet.id, links, adj);
+      if (!path || path.length < 2) continue;
+      if (pathHasOfflineLink(path, links)) continue;
 
-    const throughput = linkThroughput(links, node.id, path[1]) || 1;
-    const intensity = clamp(throughput / 1000, 0.15, 1);
+      const throughput = linkThroughput(links, node.id, path[1]) || 1;
+      const intensity = clamp(throughput / 1000, 0.15, 1);
 
-    // Faster + denser traffic for busier links; ~120–220ms per edge.
-    const hopMs = 160 + seeded(node.id, 1) * 80;
-    const dur = Math.round(path.length * hopMs);
-    const cycleMs = Math.round(clamp(2200 - intensity * 1400, 600, 2200));
-    const count = Math.max(1, Math.round(intensity * 5));
+      // Faster + denser traffic for busier links; ~120–220ms per edge.
+      const hopMs = 160 + seeded(node.id, 1) * 80;
+      const dur = Math.round(path.length * hopMs);
+      const cycleMs = Math.round(clamp(2200 - intensity * 1400, 600, 2200));
+      const count = Math.max(1, Math.round(intensity * 4));
 
-    const outbound: TrafficEvent = {
-      id: `${node.id}::out`,
-      path,
-      direction: 'outbound',
-      begin: -cycleMs * (0.1 + seeded(node.id, 2) * 0.9),
-      dur,
-      count,
-    };
-    const inbound: TrafficEvent = {
-      id: `${node.id}::in`,
-      path: [...path].reverse(),
-      direction: 'inbound',
-      begin: -cycleMs * (0.1 + seeded(node.id, 3) * 0.9),
-      dur,
-      count,
-    };
-    events.push(outbound, inbound);
+      const outbound: TrafficEvent = {
+        id: `${node.id}::out`,
+        path,
+        direction: 'outbound',
+        begin: -cycleMs * (0.1 + seeded(node.id, 2) * 0.9),
+        dur,
+        count,
+        pace: seeded(node.id, 6),
+      };
+      const inbound: TrafficEvent = {
+        id: `${node.id}::in`,
+        path: [...path].reverse(),
+        direction: 'inbound',
+        begin: -cycleMs * (0.1 + seeded(node.id, 3) * 0.9),
+        dur,
+        count,
+        pace: seeded(node.id, 7),
+      };
+      events.push(outbound, inbound);
+    }
+  }
+
+  // Ambient per-link traffic: every cable stays alive, both directions.
+  for (const link of links) {
+    if (link.status === 'critical') continue;
+    const a = nodes.find((n) => n.id === link.source);
+    const b = nodes.find((n) => n.id === link.target);
+    if (!a || !b) continue;
+
+    const intensity = clamp(link.throughputMbps / 1000, 0.1, 1);
+    const hopMs = Math.round(clamp(380 - intensity * 220, 160, 380));
+    const cycleMs = Math.round(clamp(2600 - intensity * 1600, 700, 2600));
+    const count = Math.max(1, Math.round(intensity * 3));
+
+    events.push(
+      {
+        id: `${link.id}::seg-ab`,
+        path: [a.id, b.id],
+        direction: 'inbound',
+        begin: -cycleMs * seeded(link.id, 4),
+        dur: hopMs,
+        count,
+        pace: seeded(link.id, 8),
+      },
+      {
+        id: `${link.id}::seg-ba`,
+        path: [b.id, a.id],
+        direction: 'outbound',
+        begin: -cycleMs * seeded(link.id, 5),
+        dur: hopMs,
+        count,
+        pace: seeded(link.id, 9),
+      },
+    );
   }
 
   return events;
