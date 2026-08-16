@@ -88,7 +88,7 @@ export function ProgressRing({
         <span className="font-display text-2xl font-bold tabular" style={{ color: resolvedColor }}>
           {Math.round(display)}
         </span>
-        {label && <span className="text-[10px] uppercase tracking-widest text-text-muted mt-0.5">{label}</span>}
+        {label && <span className="text-[11px] font-medium uppercase tracking-wider text-text-secondary mt-1">{label}</span>}
         {sublabel && <span className="text-[10px] text-text-muted mt-0.5">{sublabel}</span>}
       </div>
     </div>
@@ -112,12 +112,16 @@ export function ProgressBar({
   return (
     <div className={cn('w-full', className)}>
       <div
-        className="w-full overflow-hidden rounded-full bg-overlay/5"
+        className="w-full overflow-hidden rounded-full bg-surface-border/40"
         style={{ height }}
+        role="progressbar"
+        aria-valuenow={Math.round(value)}
+        aria-valuemin={0}
+        aria-valuemax={100}
       >
         <motion.div
-          className="h-full rounded-full"
-          style={{ backgroundColor: resolvedColor, boxShadow: `0 0 8px ${resolvedColor}55` }}
+          className="h-full rounded-full transition-shadow"
+          style={{ backgroundColor: resolvedColor, boxShadow: `inset 0 0 6px ${resolvedColor}33, 0 0 12px ${resolvedColor}44` }}
           initial={false}
           animate={{ width: `${Math.min(100, Math.max(0, value))}%` }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}

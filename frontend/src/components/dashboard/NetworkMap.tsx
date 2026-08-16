@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Globe, Network, RefreshCw, WifiOff, X, Radio } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
@@ -7,7 +7,7 @@ import type { NetworkNode, NetworkLink } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { formatMbps } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-import { createNetworkLayout, getActiveLinks, type TrafficFlow } from '@/lib/networkEngine';
+import { generateTraffic, topologySignature, type TrafficEvent } from '@/lib/trafficEngine';
 
 const VB_W = 800;
 const VB_H = 340;
@@ -15,6 +15,9 @@ const VB_H = 340;
 /** Inbound (data arriving) rides the active accent, outbound (data leaving) rides cyan. */
 const IN_COLOR = 'var(--accent)';
 const OUT_COLOR = '#22D3EE';
+
+/** Twin-cable split (px, viewBox space) between the inbound/outbound arcs. */
+const CABLE_SPLIT = 7;
 
 /**
  * Cable appearance is driven by link status. Healthy keeps the green/cyan
@@ -57,17 +60,13 @@ export function NetworkMap() {
 
   const [hovered, setHovered] = useState<NetworkLink | null>(null);
   const [selected, setSelected] = useState<NetworkLink | null>(null);
-  const [currentTime, setCurrentTime] = useState(Date.now());
-
-  // Update current time for animation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 50); // Update every 50ms for smooth animation
-    return () => clearInterval(interval);
-  }, []);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+
+  // Traffic events are keyed off a stable topology signature so packets do not
+  // restart every time the 5s telemetry refetch produces fresh objects.
+  const signature = useMemo(() => topologySignature(nodes, links), [nodes, links]);
+  const trafficEvents = useMemo(() => generateTraffic(nodes, links), [signature]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const external = useMemo<ExternalState>(() => {
     const wan = links.find((l) => l.source === 'internet' || l.target === 'internet');
@@ -88,28 +87,6 @@ export function NetworkMap() {
     () => links.reduce((a, l) => a + l.throughputMbps, 0),
     [links],
   );
-
-  // Generate layout and traffic flows using advanced network engine
-  const { layoutNodes, trafficFlows } = useMemo(() => {
-    if (nodes.length === 0 || links.length === 0) {
-      return { layoutNodes: new Map(), trafficFlows: [] };
-    }
-    try {
-      const result = createNetworkLayout(nodes, links);
-      return {
-        layoutNodes: result.nodes,
-        trafficFlows: result.flows,
-      };
-    } catch (e) {
-      console.error('Failed to calculate network layout:', e);
-      return { layoutNodes: new Map(), trafficFlows: [] };
-    }
-  }, [nodes, links]);
-
-  // Calculate active links based on current traffic flows
-  const activeTrafficLinks = useMemo(() => {
-    return getActiveLinks(trafficFlows, currentTime);
-  }, [trafficFlows, currentTime]);
 
   /** Approximate curve midpoint (percent coords) for tooltip anchoring. */
   const midpoint = (link: NetworkLink) => {
@@ -145,14 +122,10 @@ export function NetworkMap() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
 
         <div className="relative aspect-[800/460] w-full sm:aspect-[800/340]">
-          {/* Link layer (base cable + traveling signal) */}
+          {/* Link layer (base cables + traveling packets) */}
           <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
             <defs>
               <style>{`
-                @keyframes homelab-signal {
-                  from { stroke-dashoffset: 0; }
-                  to { stroke-dashoffset: -100; }
-                }
                 @keyframes homelab-signal-warn {
                   0% { stroke-dashoffset: 0; }
                   32% { stroke-dashoffset: -45; }
@@ -163,19 +136,14 @@ export function NetworkMap() {
                   stroke-linecap: round;
                   transition: stroke 600ms ease, opacity 600ms ease;
                 }
-                /* healthy: fast round-trip. The pulse races out to the endpoint and immediately
-                   returns, like a request/response cycle (device→internet, internet→device).
-                   Each link runs the same rhythm with its own negative delay so traffic flows
-                   across all containers instead of pulsing in lockstep. */
-                .net-signal-healthy { animation: homelab-signal 1.1s linear infinite alternate; }
                 /* degraded: slow, hesitant, with dwell pauses */
                 .net-signal-warning { animation: homelab-signal-warn 5.5s ease-in-out infinite alternate; opacity: 0.75; }
-                /* offline / unknown: cable stays visible, signal hidden */
-                .net-signal-critical { opacity: 0; }
-                .net-signal-unknown { opacity: 0; }
                 .net-base { transition: stroke 600ms ease, stroke-opacity 600ms ease; }
                 .link-active .net-base { stroke-opacity: 0.65; }
+                /* Traffic packets: pure SVG animateMotion, no JS timers. */
+                .net-packet { pointer-events: none; }
                 @media (prefers-reduced-motion: reduce) {
+                  .net-packet { display: none; }
                   .net-signal { animation: none !important; opacity: 0; }
                 }
               `}</style>
@@ -184,14 +152,12 @@ export function NetworkMap() {
               const src = nodeById.get(link.source);
               const dst = nodeById.get(link.target);
               if (!src || !dst) return null;
-              const delay = (i % 7) * 0.13;
               return (
                 <LinkLayer
                   key={link.id}
                   link={link}
                   src={src}
                   dst={dst}
-                  delay={delay}
                   active={hovered?.id === link.id || selected?.id === link.id}
                   onHover={() => setHovered(link)}
                   onLeave={() => setHovered((h) => (h?.id === link.id ? null : h))}
@@ -199,6 +165,9 @@ export function NetworkMap() {
                 />
               );
             })}
+
+            {/* Multi-hop traffic packets — follow real parent/child paths. */}
+            <TrafficLayer events={trafficEvents} nodeById={nodeById} />
           </svg>
 
           {/* Hover tooltip */}
@@ -266,22 +235,18 @@ export function NetworkMap() {
           )}
 
           {/* Node layer (HTML for full styling freedom) */}
-          {Array.from(layoutNodes.values()).map((layoutNode) => {
-            const originalNode = nodeById.get(layoutNode.id);
-            const i = Array.from(layoutNodes.keys()).indexOf(layoutNode.id);
-            if (!originalNode) return null;
-
-            const nodeStatus = (layoutNode.status || 'online') as keyof typeof NODE_STATUS_RING;
-            const nodeType = (layoutNode.type || 'container') as keyof typeof NETWORK_NODE_ICONS_FRONTEND;
+          {nodes.map((originalNode, i) => {
+            const nodeStatus = (originalNode.status || 'online') as keyof typeof NODE_STATUS_RING;
+            const nodeType = (originalNode.type || 'container') as keyof typeof NETWORK_NODE_ICONS_FRONTEND;
 
             return (
               <motion.div
-                key={layoutNode.id}
+                key={originalNode.id}
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.4, delay: i * 0.07, ease: [0.16, 1, 0.3, 1] }}
                 className="absolute -translate-x-1/2 -translate-y-1/2"
-                style={{ left: `${layoutNode.x}%`, top: `${layoutNode.y}%` }}
+                style={{ left: `${originalNode.x}%`, top: `${originalNode.y}%` }}
               >
                 <div className="flex flex-col items-center gap-1">
                   {nodeType === 'internet' ? (
@@ -306,7 +271,7 @@ export function NetworkMap() {
                         />
                       </div>
                       <div className="mt-1 rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
-                        <span className="text-[10px] font-semibold text-text-primary">{layoutNode.label}</span>
+                        <span className="text-[10px] font-semibold text-text-primary">{originalNode.label}</span>
                       </div>
                     </div>
                   ) : (
@@ -322,7 +287,7 @@ export function NetworkMap() {
                         />
                       </div>
                       <div className="rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
-                        <span className="text-[10px] font-semibold text-text-primary">{layoutNode.label}</span>
+                        <span className="text-[10px] font-semibold text-text-primary">{originalNode.label}</span>
                       </div>
                     </>
                   )}
@@ -396,7 +361,6 @@ function LinkLayer({
   link,
   src,
   dst,
-  delay,
   active,
   onHover,
   onLeave,
@@ -405,7 +369,6 @@ function LinkLayer({
   link: NetworkLink;
   src: NetworkNode;
   dst: NetworkNode;
-  delay: number;
   active: boolean;
   onHover: () => void;
   onLeave: () => void;
@@ -420,8 +383,8 @@ function LinkLayer({
   const my = (y1 + y2) / 2 + Math.abs(x2 - x1) * 0.12;
 
   // Twin cables: inbound rides above the centerline, outbound below.
-  const dIn = `M ${x1} ${y1} Q ${mx} ${my - 7} ${x2} ${y2}`;
-  const dOut = `M ${x2} ${y2} Q ${mx} ${my + 7} ${x1} ${y1}`;
+  const dIn = `M ${x1} ${y1} Q ${mx} ${my - CABLE_SPLIT} ${x2} ${y2}`;
+  const dOut = `M ${x2} ${y2} Q ${mx} ${my + CABLE_SPLIT} ${x1} ${y1}`;
 
   const status = normalizeStatus(link.status);
   const inColor = status === 'healthy' ? IN_COLOR : LINK_COLOR[status];
@@ -446,31 +409,102 @@ function LinkLayer({
       <path d={dIn} fill="none" stroke={inColor} strokeOpacity="0.28" strokeWidth="2" strokeLinecap="round" className="net-base" />
       <path d={dOut} fill="none" stroke={outColor} strokeOpacity="0.28" strokeWidth="2" strokeLinecap="round" className="net-base" />
 
-      {/* Traveling signal: one pulse per cable that races to the endpoint, then
-          immediately returns — a request/response round trip. Inbound rides the
-          accent cable, outbound rides the cyan cable, desynced per link. */}
-      <path
-        d={dIn}
-        fill="none"
-        stroke={inColor}
-        strokeWidth="2.5"
-        pathLength={100}
-        strokeDasharray="5 95"
-        className={cn('net-signal', `net-signal-${status}`)}
-        style={{ filter: `drop-shadow(0 0 3px ${inColor})`, animationDelay: `-${delay}s` }}
-      />
-      <path
-        d={dOut}
-        fill="none"
-        stroke={outColor}
-        strokeWidth="2.5"
-        pathLength={100}
-        strokeDasharray="5 95"
-        className={cn('net-signal', `net-signal-${status}`)}
-        style={{ filter: `drop-shadow(0 0 3px ${outColor})`, animationDelay: `-${delay}s` }}
-      />
+      {/* Degraded links keep a slow, hesitant status pulse (not real traffic). */}
+      {status === 'warning' && (
+        <>
+          <path
+            d={dIn}
+            fill="none"
+            stroke={inColor}
+            strokeWidth="2.5"
+            pathLength={100}
+            strokeDasharray="5 95"
+            className="net-signal net-signal-warning"
+            style={{ filter: `drop-shadow(0 0 3px ${inColor})` }}
+          />
+          <path
+            d={dOut}
+            fill="none"
+            stroke={outColor}
+            strokeWidth="2.5"
+            pathLength={100}
+            strokeDasharray="5 95"
+            className="net-signal net-signal-warning"
+            style={{ filter: `drop-shadow(0 0 3px ${outColor})` }}
+          />
+        </>
+      )}
     </g>
   );
+}
+
+/**
+ * Renders animated packets riding the real multi-hop path: outbound follows the
+ * cyan (below) cables node→…→internet, inbound follows the accent (above)
+ * cables internet→…→node. Pure SVG animateMotion — zero JS timers per packet.
+ */
+function TrafficLayer({ events, nodeById }: { events: TrafficEvent[]; nodeById: Map<string, NetworkNode> }) {
+  return (
+    <g className="net-traffic">
+      {events.map((ev) => {
+        const d = buildPacketPath(ev.path, nodeById, ev.direction);
+        if (!d) return null;
+        const color = ev.direction === 'inbound' ? IN_COLOR : OUT_COLOR;
+        const durS = ev.dur / 1000;
+        return Array.from({ length: ev.count }).map((_, i) => {
+          const stagger = (i * (ev.dur / ev.count)) / 1000;
+          return (
+            <g
+              key={`${ev.id}-${i}`}
+              className="net-packet"
+              style={{ filter: `drop-shadow(0 0 2px ${color})` }}
+            >
+              <circle r="2.4" fill={color} />
+              <animateMotion
+                dur={`${durS}s`}
+                begin={`${(ev.begin + stagger).toFixed(3)}s`}
+                path={d}
+                repeatCount="indefinite"
+              />
+            </g>
+          );
+        });
+      })}
+    </g>
+  );
+}
+
+/**
+ * Concatenates the per-hop cable curves for a traversal path so a packet moves
+ * seamlessly across every edge (no teleporting). Inbound rides the upper arc,
+ * outbound the lower arc — mirroring the base cables exactly.
+ */
+function buildPacketPath(
+  path: string[],
+  nodeById: Map<string, NetworkNode>,
+  direction: 'outbound' | 'inbound',
+): string | null {
+  const points = path.map((id) => nodeById.get(id)).filter(Boolean) as NetworkNode[];
+  if (points.length < 2) return null;
+
+  const segments: string[] = [];
+  const yOffset = direction === 'inbound' ? -CABLE_SPLIT : CABLE_SPLIT;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const x1 = (a.x / 100) * VB_W;
+    const y1 = (a.y / 100) * VB_H;
+    const x2 = (b.x / 100) * VB_W;
+    const y2 = (b.y / 100) * VB_H;
+    const mx = (x1 + x2) / 2;
+    const my = (y1 + y2) / 2 + Math.abs(x2 - x1) * 0.12;
+
+    if (i === 0) segments.push(`M ${x1} ${y1}`);
+    segments.push(`Q ${mx} ${my + yOffset} ${x2} ${y2}`);
+  }
+
+  return segments.join(' ');
 }
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {

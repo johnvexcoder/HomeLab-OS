@@ -115,6 +115,22 @@
     color: #111;
   }
 
+  /* Accessibility: Ensure sufficient contrast for text */
+  @media (prefers-contrast: more) {
+    --text-secondary: 90 90 90;
+    --text-muted: 70 70 70;
+  }
+
+  /* Focus visible for keyboard navigation */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+
   /* Slim, premium scrollbars */
   ::-webkit-scrollbar {
     width: 8px;

@@ -138,8 +138,8 @@ export function Modal({
                   type="button"
                   onClick={onClose}
                   disabled={busy}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-overlay/5 hover:text-text-primary disabled:opacity-50 cursor-pointer"
-                  aria-label="Close"
+                  className="flex min-h-12 min-w-12 h-12 w-12 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-overlay/5 hover:text-text-primary disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  aria-label="Close modal"
                 >
                   <X className="h-4 w-4" />
                 </button>

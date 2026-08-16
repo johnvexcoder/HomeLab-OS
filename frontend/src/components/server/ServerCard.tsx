@@ -153,7 +153,7 @@ function MetricRow({
         <span className={cn('truncate text-xs font-semibold tabular', tone)}>{value}</span>
       </div>
       {/* Subtle glow keeps the spark readable on dark panels without going neon */}
-      <div className="mt-1 h-7" style={{ filter: `drop-shadow(0 0 2px ${color.startsWith('#') ? `${color}55` : color})` }}>
+      <div className="mt-1 overflow-visible" style={{ height: 28, filter: `drop-shadow(0 0 2px ${color.startsWith('#') ? `${color}55` : color})` }}>
         <Sparkline data={spark ?? []} color={color} height={28} width={120} id={`${label}-card`} />
       </div>
     </div>
