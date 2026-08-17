@@ -44,6 +44,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
 
   onNotifications(listener: (notifications: Notification[]) => void): void {
     this.primary.onNotifications(listener);
+    this.docker?.onNotifications?.(listener);
   }
 
   getServers(): ServerRuntime[] {

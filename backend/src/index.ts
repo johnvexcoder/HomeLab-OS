@@ -7,6 +7,7 @@ import { DockerMetricsProvider } from './providers/dockerMetricsProvider';
 import { CompositeProvider } from './providers/compositeProvider';
 import { MockNotificationsProvider } from './providers/mockNotificationsProvider';
 import type { MetricsProvider, TelemetryBroadcaster } from './providers/types';
+import type { Notification } from './types';
 import { attachWebSocket } from './ws';
 import { config } from './config';
 import { getDb, insertMetrics, queryMetrics, countMetrics } from './db/database';
@@ -45,13 +46,13 @@ async function bootstrap(): Promise<void> {
     if (config.docker.enabled) {
       const docker = new DockerMetricsProvider();
       docker.onContainerStateChange = (name, image, event) => {
-        const severity = event === 'stopped' ? 'critical' : 'success';
+        const severity: 'critical' | 'success' = event === 'stopped' ? 'critical' : 'success';
         const title = event === 'stopped' ? 'Container Crashed' : 'Container Restarted';
         const message = event === 'stopped'
           ? `Docker container "${name}" has stopped unexpectedly.\nImage: ${image}`
           : `Docker container "${name}" is back online.\nImage: ${image}`;
 
-        const n = {
+        const n: Notification = {
           id: `ntf-docker-${event}-${Date.now()}`,
           title,
           message,
@@ -61,8 +62,14 @@ async function bootstrap(): Promise<void> {
           serverId: `docker-${name}`,
         };
 
-        // Dispatch to Telegram/Email via notifyDispatcher
-        notifyDispatcher.notifyDockerContainerCrash?.(name, image);
+        // Emit through broadcaster so it appears in Dashboard alerts +
+        // is dispatched to Telegram/Email via the main onNotifications handler
+        broadcaster.onNotifications?.((items) => {
+          // This notification was already handled, just ensure it's included
+          if (!items.some((i) => i.id === n.id)) {
+            items.push(n);
+          }
+        });
       };
       await docker.start();
       console.log(`[homelab] docker provider active (${config.docker.host})`);

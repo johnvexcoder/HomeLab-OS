@@ -8,7 +8,7 @@ import {
 } from './dockerClient';
 import { getBoolSetting, setSetting } from '../security/settings';
 import { config } from '../config';
-import type { MetricSnapshot, Reachability, ServerRuntime, ServerStatus } from '../types';
+import type { MetricSnapshot, Reachability, ServerRuntime, ServerStatus, Notification } from '../types';
 
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
 const round = (v: number, d = 1): number => {
@@ -119,6 +119,7 @@ export class DockerMetricsProvider {
   }
 
   onContainerStateChange?: (name: string, image: string, event: 'stopped' | 'started' | 'added' | 'removed') => void;
+  onNotifications?: (listener: (notifications: Notification[]) => void) => void;
 
   private async poll(): Promise<void> {
     if (this.polling) return;

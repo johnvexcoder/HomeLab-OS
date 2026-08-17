@@ -386,7 +386,7 @@ export function NetworkMap() {
               const nodeType = originalNode.type;
               const isInteractive = hoveredNode?.id === originalNode.id || selectedNode?.id === originalNode.id;
               const isInternet = nodeType === 'internet';
-              const box = isInternet ? Math.round(metrics.nodeSize * 1.5) : Math.round(metrics.nodeSize);
+              const box = isInternet ? Math.round(metrics.nodeSize * 1.125) : Math.round(metrics.nodeSize * 0.75);
 
               return (
                 <div
@@ -431,7 +431,7 @@ export function NetworkMap() {
                           >
                             <Globe className="h-[45%] w-[45%]" style={{ color: NODE_STATUS_RING[nodeStatus] }} />
                             <span
-                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
+                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B]"
                               style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
                             />
                           </div>
@@ -450,7 +450,7 @@ export function NetworkMap() {
                           >
                             <span>{NETWORK_NODE_ICONS_FRONTEND[nodeType]}</span>
                             <span
-                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
+                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B]"
                               style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
                             />
                           </div>
