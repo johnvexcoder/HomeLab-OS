@@ -333,6 +333,7 @@ export function sendTelegramMessage(text: string): Promise<boolean> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
         timeout: 10_000,
+        family: 4,
       },
       (res) => {
         let body = '';
