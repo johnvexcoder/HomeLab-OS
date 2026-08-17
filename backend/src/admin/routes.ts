@@ -35,6 +35,7 @@ import { revokeAllSessions } from '../security/session';
 import { verifyPassword } from '../security/crypto';
 import { assertSensitiveAllowed } from '../security/rateLimit';
 import { passwordStrength } from '../security/passwordPolicy';
+import { notifyDispatcher } from '../services/notifyDispatch';
 import { listQuickActions, saveQuickActions } from '../services/quickActions';
 
 /**
@@ -144,6 +145,7 @@ export function createAdminRouter(): Router {
     if (applied.length > 0) {
       captureSnapshot('auto: settings change', user.username, `keys: ${applied.join(', ')}`);
       audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'settings.updated', target: applied.join(','), result: 'success' });
+      notifyDispatcher.notifySettingsChange(user.username, 'updated settings', `Changed: ${applied.join(', ')}`);
     }
     res.json({ ok: true, applied, invalid });
   });
@@ -169,6 +171,7 @@ export function createAdminRouter(): Router {
     if (feature.id === 'guest_mode') setSetting('access.guest.enabled', String(enabled));
     captureSnapshot('auto: feature flag change', user.username, `feature ${feature.id} → ${enabled}`);
     audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'feature.updated', target: feature.id, result: 'success', details: `enabled=${enabled}` });
+    notifyDispatcher.notifyConfigChange(user.username, `feature "${feature.label}"`, `Set to ${enabled ? 'ENABLED' : 'DISABLED'}`);
     res.json({ ok: true, feature: { id: feature.id, enabled } });
   });
 
@@ -211,6 +214,7 @@ export function createAdminRouter(): Router {
     try {
       const created = createUser({ username, name: String(req.body?.name ?? ''), role, password, mustChangePassword: Boolean(req.body?.mustChangePassword), email });
       audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'user.created', target: created.username, result: 'success', details: `role=${role}${email ? ', email set' : ''}` });
+      notifyDispatcher.notifyConfigChange(user.username, `user "${created.username}"`, `Created with role ${role}`);
       res.json({ user: created });
     } catch (err) {
       res.status(409).json({ error: 'username_taken' });
@@ -276,6 +280,7 @@ export function createAdminRouter(): Router {
 
     const updated = updateUser(target.id, patch);
     audit({ ts: Date.now(), userId: actor.id, username: actor.username, role: actor.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'user.updated', target: target.username, result: 'success', details: Object.keys(patch).join(',') });
+    notifyDispatcher.notifySettingsChange(actor.username, `updated user "${target.username}"`, `Changed: ${Object.keys(patch).join(', ')}`);
     res.json({ user: updated });
   });
 
@@ -417,6 +422,7 @@ export function createAdminRouter(): Router {
       secrets: req.body?.secrets && typeof req.body.secrets === 'object' ? req.body.secrets : {},
     });
     audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'integration.created', target: integration.name, result: 'success' });
+    notifyDispatcher.notifyConfigChange(user.username, `integration "${integration.name}"`, `Created ${integration.kind} integration`);
     res.json({ integration });
   });
 
@@ -435,6 +441,7 @@ export function createAdminRouter(): Router {
       secrets: req.body?.secrets !== undefined && typeof req.body.secrets === 'object' ? req.body.secrets : undefined,
     });
     audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'integration.updated', target: integration?.name ?? req.params.id, result: 'success' });
+    notifyDispatcher.notifyConfigChange(user.username, `integration "${integration?.name ?? req.params.id}"`, `Updated`);
     res.json({ integration });
   });
 
@@ -495,6 +502,7 @@ export function createAdminRouter(): Router {
     }
     const result = restoreBackup(row.file);
     audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'backup.restored', target: row.file, result: result.restored ? 'success' : 'failure', details: result.message });
+    notifyDispatcher.notifySettingsChange(user.username, `restored backup "${row.file}"`, result.restored ? 'Backup restored successfully' : `Restore failed: ${result.message}`);
     res.json(result);
   });
 

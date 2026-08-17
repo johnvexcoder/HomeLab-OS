@@ -12,6 +12,7 @@ import { config } from './config';
 import { getDb, insertMetrics, queryMetrics, countMetrics } from './db/database';
 import { bootstrapSecurity } from './security/boot';
 import { startBackupScheduler } from './services/backupScheduler';
+import { notifyDispatcher } from './services/notifyDispatch';
 
 async function bootstrap(): Promise<void> {
   getDb();
@@ -51,8 +52,16 @@ async function bootstrap(): Promise<void> {
 
   const notifications = new MockNotificationsProvider();
 
-  // Ingest live notifications into the provider.
-  broadcaster.onNotifications((items) => items.forEach((n) => notifications.ingest(n)));
+  // Ingest live notifications into the provider + dispatch to external channels.
+  broadcaster.onNotifications((items) => {
+    items.forEach((n) => notifications.ingest(n));
+    notifyDispatcher.dispatchNotifications(items);
+  });
+
+  // Detect server state transitions (online/offline/degraded) and notify.
+  broadcaster.onTick((snapshots) => {
+    notifyDispatcher.checkStateChanges(snapshots);
+  });
 
   const app = createApp({ metrics, notifications });
   const server = http.createServer(app);

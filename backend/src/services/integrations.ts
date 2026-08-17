@@ -298,3 +298,83 @@ export function markIntegrationError(id: string, error: string): void {
 }
 
 export { rotateSecrets };
+
+/* ------------------------------------------------------------------ */
+/* Delivery helpers — send messages to configured Telegram / Email     */
+/* ------------------------------------------------------------------ */
+
+/** Find the first enabled+configured integration of a given kind. */
+function findActiveIntegration(kind: IntegrationKind): IntegrationRow | null {
+  const row = getDb()
+    .prepare('SELECT * FROM integrations WHERE kind = ? AND enabled = 1 AND configured = 1 ORDER BY updated_at DESC LIMIT 1')
+    .get(kind) as IntegrationRow | undefined;
+  return row ?? null;
+}
+
+/** Send a plain-text message via the Telegram Bot API. */
+export async function sendTelegramMessage(text: string): Promise<boolean> {
+  const row = findActiveIntegration('telegram');
+  if (!row) return false;
+  const token = secretValue(row.id, 'botToken');
+  const config = row.config ? JSON.parse(row.config) : {};
+  const chatId = config.chatId;
+  if (!token || !chatId) return false;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) {
+      getDb()
+        .prepare('UPDATE integrations SET status = ?, last_success_at = ?, last_error_at = ?, last_error = ? WHERE id = ?')
+        .run('ok', Date.now(), null, null, row.id);
+      return true;
+    }
+    const body = await res.text().catch(() => '');
+    markIntegrationError(row.id, `Telegram API ${res.status}: ${body.slice(0, 200)}`);
+    return false;
+  } catch (err) {
+    markIntegrationError(row.id, `Telegram send failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+/** Send an alert email via the configured SMTP integration or global SMTP settings. */
+export async function sendAlertEmail(subject: string, body: string): Promise<boolean> {
+  const { smtpConfigured } = await import('../security/smtp');
+  const { sendEmail } = await import('../security/smtp');
+  const { getSmtpConfig } = await import('../security/smtp');
+  if (!smtpConfigured()) return false;
+  const cfg = getSmtpConfig();
+  try {
+    await sendEmail({ host: cfg.host, port: cfg.port, user: cfg.user, password: cfg.password, from: cfg.from, to: cfg.from, subject, text: body });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Dispatch a notification to all enabled channels (Telegram + Email). */
+export async function dispatchToChannels(title: string, message: string, severity: string): Promise<void> {
+  const emoji = severity === 'critical' ? '🔴' : severity === 'warning' ? '🟡' : severity === 'success' ? '🟢' : 'ℹ️';
+  const telegramText = `${emoji} <b>${title}</b>\n\n${message}`;
+
+  const htmlBody = [
+    `HomeLab OS Notification`,
+    ``,
+    `${title}`,
+    ``,
+    message,
+    ``,
+    `Severity: ${severity}`,
+    `Time: ${new Date().toISOString()}`,
+  ].join('\n');
+
+  await Promise.allSettled([
+    sendTelegramMessage(telegramText).catch(() => {}),
+    sendAlertEmail(`[HomeLab] ${title}`, htmlBody).catch(() => {}),
+  ]);
+}

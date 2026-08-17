@@ -50,19 +50,21 @@ export function Modal({
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const lastFocus = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
 
     lastFocus.current = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
-    const initial = panel?.querySelector<HTMLElement>('input, select, textarea, button');
+    const initial = panel?.querySelector<HTMLElement>('input, select, textarea');
     (initial ?? panel)?.focus();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !panel) return;
@@ -88,7 +90,7 @@ export function Modal({
       window.removeEventListener('keydown', onKey);
       lastFocus.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return createPortal(
     <AnimatePresence>

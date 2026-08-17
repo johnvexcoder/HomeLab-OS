@@ -43,6 +43,7 @@ import { getBoolSetting, getIntSetting, getJsonSetting } from '../security/setti
 import { permissionsForRole, guestPermissionsFor, type Role } from '../security/permissions';
 import { passwordStrength } from '../security/passwordPolicy';
 import { smtpConfigured, sendOtpEmail } from '../security/smtp';
+import { notifyDispatcher } from '../services/notifyDispatch';
 
 type TwoFactorMethod = 'totp' | 'email' | 'question';
 type RecoveryMethod = 'questions' | 'email';
@@ -775,6 +776,8 @@ function finalizeLogin(req: Request, res: Response, user: UserRow, ip: string): 
     modes: modePayload(),
     session: { csrf },
   });
+
+  notifyDispatcher.notifyLogin(user.username, ip, user.role);
 }
 
 function getGuestScopes(): string[] {

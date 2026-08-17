@@ -10,6 +10,7 @@ let seq = 1;
  */
 export class NotificationGenerator {
   private lastHighCpuAt: Record<string, number> = {};
+  private lastHighRamAt: Record<string, number> = {};
   private lastTempWarnAt: Record<string, number> = {};
   private lastRandomAt = 0;
   private readonly ambient: boolean;
@@ -32,6 +33,23 @@ export class NotificationGenerator {
           '{workload}': TEMPLATE_SERVERS[snap.serverId]?.workload ?? 'a workload',
           '{server}': snap.serverId,
         }));
+      }
+
+      // High RAM — only re-fire every ~6 minutes per server
+      if (snap.ramUsedGb > 0 && snap.ramTotalGb > 0) {
+        const ramPct = (snap.ramUsedGb / snap.ramTotalGb) * 100;
+        if (ramPct > 90 && now - (this.lastHighRamAt[snap.serverId] ?? 0) > 6 * MIN) {
+          this.lastHighRamAt[snap.serverId] = now;
+          out.push({
+            id: `ntf-${now}-${seq++}`,
+            title: 'High Memory Usage',
+            message: `Memory usage on ${snap.serverId} reached ${Math.round(ramPct)}% (${snap.ramUsedGb.toFixed(1)} GB / ${snap.ramTotalGb.toFixed(1)} GB).`,
+            severity: 'warning',
+            timestamp: now,
+            read: false,
+            serverId: snap.serverId,
+          });
+        }
       }
 
       // High temperature — every ~10 minutes
