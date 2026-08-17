@@ -42,6 +42,7 @@ export class DockerMetricsProvider {
   private containers: DockerContainer[] = [];
   private hostInfo: DockerHostInfo | null = null;
   private diskUsedGb = 0;
+  private diskTotalGb = 0;
   private cpuPct = 0;
   private memUsedGb = 0;
   private netUpMbps = 0;
@@ -107,6 +108,7 @@ export class DockerMetricsProvider {
       const [info, disk] = await Promise.all([this.client.getInfo(), this.client.getDiskUsage()]);
       this.hostInfo = info;
       this.diskUsedGb = round(toFinite(disk.used) / 1e9, 1);
+      this.diskTotalGb = round(toFinite(this.client.getDiskTotalBytes()) / 1e9, 1);
 
       const running = this.containers.filter((c) => c.running);
       const stats = (
@@ -227,7 +229,7 @@ export class DockerMetricsProvider {
       cpuModel: `Docker ${info.dockerVersion} (${info.architecture})`,
       cpuCores: info.ncpu,
       ramTotalGb,
-      diskTotalGb: 0,
+      diskTotalGb: this.diskTotalGb || 1,
       sensors: [],
       profile: {
         baseCpu: this.cpuPct,

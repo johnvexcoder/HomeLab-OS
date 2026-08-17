@@ -211,7 +211,7 @@ export function QuickStats() {
               <div className="text-[11px] uppercase tracking-widest text-text-muted">{stat.label}</div>
             </div>
             {series.length >= 2 ? (
-              <Sparkline series={series} className="hidden min-[420px]:block shrink-0" />
+              <Sparkline series={series} className="shrink-0" />
             ) : null}
           </motion.div>
         );

@@ -572,7 +572,7 @@ export class ProxmoxMetricsProvider {
     const totalUptimeDays = servers.reduce((a, s) => a + s.uptimeSeconds / 86400, 0);
     const totalRamUsed = servers.reduce((a, s) => a + s.ramUsedGb, 0);
     const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
-    const totalNet = servers.reduce((a, s) => a + s.netDownMbps, 0);
+    const totalNetMbps = servers.reduce((a, s) => a + s.netUpMbps + s.netDownMbps, 0);
     const guests = [...this.guests.values()].flat();
     const running = guests.filter((g) => g.running).length;
 
@@ -582,7 +582,7 @@ export class ProxmoxMetricsProvider {
       { id: 'containers', label: 'VMs & CTs', value: running, unit: '', delta: 0, tone: 'neutral' },
       { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0, tone: h.avgCpu > 70 ? 'warn' : 'good' },
       { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0, tone: 'good' },
-      { id: 'network', label: 'Network', value: round(totalNet / 1000, 2), unit: 'Gb/s', delta: 0, tone: 'neutral' },
+      { id: 'network', label: 'Internet Speed', value: round(totalNetMbps, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
       { id: 'uptime', label: 'Uptime', value: round(totalUptimeDays, 0), unit: 'days', delta: 0, tone: 'good' },
     ];
   }

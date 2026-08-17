@@ -103,6 +103,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         x: 50,
         y: 50,
         parentId: host.id,
+        ip: host.ip || undefined,
         health: c.running ? 100 : 0,
       });
       links.push({

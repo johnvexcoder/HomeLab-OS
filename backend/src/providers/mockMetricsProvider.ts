@@ -82,7 +82,7 @@ export class MockMetricsProvider implements MetricsProvider {
     const totalUptimeDays = servers.reduce((a, s) => a + s.uptimeSeconds / 86400, 0);
     const totalRamUsed = servers.reduce((a, s) => a + s.ramUsedGb, 0);
     const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
-    const totalNet = servers.reduce((a, s) => a + s.netDownMbps, 0);
+    const totalNet = servers.reduce((a, s) => a + s.netUpMbps + s.netDownMbps, 0);
     const containers = servers.reduce((a, s) => a + s.spec.profile.containers, 0);
 
     return [
@@ -91,7 +91,7 @@ export class MockMetricsProvider implements MetricsProvider {
       { id: 'containers', label: 'Containers', value: containers, unit: '', delta: 2, tone: 'neutral' },
       { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 1.2, tone: h.avgCpu > 70 ? 'warn' : 'good' },
       { id: 'ram', label: 'Memory', value: round((totalRamUsed / totalRam) * 100, 1), unit: '%', delta: 0.4, tone: 'good' },
-      { id: 'network', label: 'Network', value: round(totalNet / 1000, 1), unit: 'Gb/s', delta: -3.1, tone: 'neutral' },
+      { id: 'network', label: 'Internet Speed', value: round(totalNet, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
       { id: 'uptime', label: 'Uptime', value: round(totalUptimeDays, 0), unit: 'days', delta: 0.1, tone: 'good' },
     ];
   }

@@ -14,14 +14,14 @@ export function useStatsHistory(range: HistoryRange = '15m') {
 }
 
 export function useNetwork() {
-  const { data, error, refetch, isLoading } = useQuery({
+  const { data, error, refetch, isLoading, isFetching } = useQuery({
     queryKey: ['network'],
     queryFn: endpoints.network,
     refetchInterval: 5_000,
     staleTime: 2_000,
   });
 
-  return { topology: data, error, refetch, isLoading };
+  return { topology: data, error, refetch, isLoading, isFetching };
 }
 
 export function useClusters() {

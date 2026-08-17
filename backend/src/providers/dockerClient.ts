@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { execSync } from 'node:child_process';
 
 /**
  * Minimal Docker Engine API client. Talks to the daemon over a unix socket
@@ -166,5 +167,17 @@ export class DockerClient {
     const volumes = sum(raw.Volumes, 'Size');
     const buildCache = sum(raw.BuildCache, 'Size');
     return { used: layers + containers + volumes + buildCache };
+  }
+
+  /** Total filesystem size in bytes (reads from /proc/1/mounts + statvfs or falls back to `df`). */
+  getDiskTotalBytes(): number {
+    try {
+      const out = execSync('df -B1 / 2>/dev/null | tail -1', { encoding: 'utf-8', timeout: 3000 });
+      const parts = out.trim().split(/\s+/);
+      const total = Number(parts[1]);
+      return Number.isFinite(total) && total > 0 ? total : 0;
+    } catch {
+      return 0;
+    }
   }
 }

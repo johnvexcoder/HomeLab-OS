@@ -152,8 +152,10 @@ function nodeHalfBox(nodeSize: number): number {
  */
 export function desiredColumns(count: number): number {
   if (count <= 0) return 1;
-  if (count <= 6) return 1;
-  for (let k = 2; k <= 12; k++) {
+  if (count <= 2) return 1;
+  if (count <= 5) return 2;
+  if (count <= 8) return 3;
+  for (let k = 4; k <= 12; k++) {
     if (count <= (2 * k) ** 2) return k;
   }
   return 12;

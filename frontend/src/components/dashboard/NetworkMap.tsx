@@ -81,7 +81,7 @@ function useElementSize<T extends HTMLElement>() {
 }
 
 export function NetworkMap() {
-  const { topology, refetch, isLoading, error } = useNetwork();
+  const { topology, refetch, isLoading, error, isFetching } = useNetwork();
   const nodes = topology?.nodes ?? [];
   const links = topology?.links ?? [];
   const { ref, size } = useElementSize<HTMLDivElement>();
@@ -171,8 +171,9 @@ export function NetworkMap() {
           <button
             onClick={() => refetch()}
             className="flex items-center gap-1 text-xs font-medium text-text-muted transition-colors hover:text-accent cursor-pointer"
+            disabled={isFetching}
           >
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
           </button>
         }
       />
