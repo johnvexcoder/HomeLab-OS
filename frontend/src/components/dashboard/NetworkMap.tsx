@@ -410,7 +410,7 @@ export function NetworkMap() {
                       className="flex flex-col items-center gap-0.5 rounded-lg transition-all duration-200"
                       style={isInteractive
                         ? { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)' }
-                        : { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)' }}
+                        : { boxShadow: 'none', background: 'rgba(0,0,0,0.25)' }}
                     >
                       {isInternet ? (
                         <div className="relative flex flex-col items-center">

@@ -7,7 +7,6 @@ import { DockerMetricsProvider } from './providers/dockerMetricsProvider';
 import { CompositeProvider } from './providers/compositeProvider';
 import { MockNotificationsProvider } from './providers/mockNotificationsProvider';
 import type { MetricsProvider, TelemetryBroadcaster } from './providers/types';
-import type { Notification } from './types';
 import { attachWebSocket } from './ws';
 import { config } from './config';
 import { getDb, insertMetrics, queryMetrics, countMetrics } from './db/database';
