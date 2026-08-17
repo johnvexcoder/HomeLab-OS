@@ -44,6 +44,8 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "3000:80"
     healthcheck:
