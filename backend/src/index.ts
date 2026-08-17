@@ -51,7 +51,7 @@ async function bootstrap(): Promise<void> {
           ? `Docker container "${name}" has stopped unexpectedly.\nImage: ${image}`
           : `Docker container "${name}" is back online.\nImage: ${image}`;
 
-        const n: Notification = {
+        const n = {
           id: `ntf-docker-${event}-${Date.now()}`,
           title,
           message,
@@ -61,8 +61,8 @@ async function bootstrap(): Promise<void> {
           serverId: `docker-${name}`,
         };
 
-        // Emit through broadcaster so it appears in Dashboard alerts AND is dispatched to Telegram/Email
-        broadcaster.onNotifications?.([n]);
+        // Dispatch to Telegram/Email via notifyDispatcher
+        notifyDispatcher.notifyDockerContainerCrash?.(name, image);
       };
       await docker.start();
       console.log(`[homelab] docker provider active (${config.docker.host})`);
