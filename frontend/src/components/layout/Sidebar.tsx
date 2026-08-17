@@ -85,12 +85,8 @@ export function Sidebar() {
   const setMobileOpen = useUiStore((s) => s.setMobileSidebarOpen);
   const unread = useNotificationStore((s) => s.unread);
   const isDesktop = useMediaQuery('(min-width: 1024px)');
-  const isTablet = useMediaQuery('(min-width: 768px)');
 
-  // Desktop collapse only hides labels; the drawer is always fully expanded.
   const labelsHidden = isDesktop && collapsed;
-  // Tablet shows sidebar as off-canvas, desktop shows inline.
-  const isMobile = !isTablet;
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -104,14 +100,12 @@ export function Sidebar() {
   return (
     <motion.aside
       aria-label="Main navigation"
-      className="fixed inset-y-0 left-0 z-50 flex flex-col border-r border-surface-border bg-surface-input/90 backdrop-blur-xl md:sticky md:top-0 md:z-30 md:h-dvh"
+      className="fixed inset-y-0 left-0 z-50 flex flex-col border-r border-surface-border bg-surface-input/90 backdrop-blur-xl"
       initial={false}
       animate={
         isDesktop
-          ? { width: collapsed ? 76 : 248 }
-          : isMobile
-            ? { x: mobileOpen ? 0 : '-100%', width: 264 }
-            : { x: mobileOpen ? 0 : '-100%', width: 264 }
+          ? { width: collapsed ? 76 : 248, x: 0 }
+          : { x: mobileOpen ? 0 : '-100%', width: 264 }
       }
       transition={{ type: 'spring', stiffness: 320, damping: 34 }}
     >
