@@ -42,17 +42,17 @@ type TabId =
   | 'theme'
   | 'account';
 
-const TABS: Array<{ id: TabId; label: string; icon: React.ComponentType<{ className?: string }>; permission?: string; group: 'core' | 'system' | 'personal' }> = [
-  { id: 'account', label: 'Account', icon: Settings, group: 'personal' },
-  { id: 'theme', label: 'Theme', icon: Palette, group: 'personal' },
-  { id: 'access', label: 'Access', icon: KeyRound, permission: 'settings.view', group: 'core' },
-  { id: 'security', label: 'Security', icon: Shield, permission: 'settings.view', group: 'core' },
-  { id: 'features', label: 'Features', icon: Activity, permission: 'settings.view', group: 'system' },
-  { id: 'quick-actions', label: 'Quick Actions', icon: Zap, permission: 'settings.view', group: 'system' },
-  { id: 'users', label: 'Users', icon: Users, permission: 'users.view', group: 'system' },
-  { id: 'integrations', label: 'Integrations', icon: Cable, permission: 'integrations.view', group: 'system' },
-  { id: 'backups', label: 'Backups', icon: Archive, permission: 'backups.view', group: 'system' },
-  { id: 'audit', label: 'Audit', icon: ScrollText, permission: 'audit.view', group: 'system' },
+const TABS: Array<{ id: TabId; label: string; icon: React.ComponentType<{ className?: string }>; permission?: string }> = [
+  { id: 'account', label: 'Account', icon: Settings },
+  { id: 'theme', label: 'Theme', icon: Palette },
+  { id: 'access', label: 'Access', icon: KeyRound, permission: 'settings.view' },
+  { id: 'security', label: 'Security', icon: Shield, permission: 'settings.view' },
+  { id: 'features', label: 'Features', icon: Activity, permission: 'settings.view' },
+  { id: 'quick-actions', label: 'Actions', icon: Zap, permission: 'settings.view' },
+  { id: 'users', label: 'Users', icon: Users, permission: 'users.view' },
+  { id: 'integrations', label: 'Integrations', icon: Cable, permission: 'integrations.view' },
+  { id: 'backups', label: 'Backups', icon: Archive, permission: 'backups.view' },
+  { id: 'audit', label: 'Audit', icon: ScrollText, permission: 'audit.view' },
 ];
 
 export default function SettingsPage() {
@@ -71,101 +71,59 @@ export default function SettingsPage() {
 
   const render = () => {
     switch (tab) {
-      case 'access':
-        return <AccessSettings />;
-      case 'security':
-        return <SecuritySettings />;
-      case 'features':
-        return <FeatureFlags />;
-      case 'quick-actions':
-        return <QuickActionsManager />;
-      case 'users':
-        return <UsersManager />;
-      case 'integrations':
-        return <IntegrationsManager />;
-      case 'backups':
-        return <BackupsManager />;
-      case 'audit':
-        return <AuditLog />;
-      case 'theme':
-        return <ThemePanel />;
-      case 'account':
-        return <AccountPanel />;
-      default:
-        return null;
+      case 'access':    return <AccessSettings />;
+      case 'security':  return <SecuritySettings />;
+      case 'features':  return <FeatureFlags />;
+      case 'quick-actions': return <QuickActionsManager />;
+      case 'users':     return <UsersManager />;
+      case 'integrations': return <IntegrationsManager />;
+      case 'backups':   return <BackupsManager />;
+      case 'audit':     return <AuditLog />;
+      case 'theme':     return <ThemePanel />;
+      case 'account':   return <AccountPanel />;
+      default:          return null;
     }
   };
 
   return (
-    <div className="flex flex-col gap-5 sm:gap-6">
+    <div className="flex flex-col gap-4 sm:gap-5">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-            <Settings className="h-5 w-5 sm:h-6 sm:w-6" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+            <Settings className="h-5 w-5" />
           </div>
           <div>
             <h1 className="fluid-h1 font-display font-bold tracking-tight text-text-primary">Configuration</h1>
             <p className="mt-0.5 text-xs sm:text-sm text-text-muted">
               Signed in as <b className="text-text-secondary">{user?.username}</b>
               {user?.name && <> ({user.name})</>} · <Badge tone="accent">{user?.role}</Badge>
-              <span className="mx-2 text-text-muted/40">·</span>
+              <span className="mx-1.5 text-text-muted/40">·</span>
               <span className="text-text-muted">v{APP_VERSION}</span>
             </p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => void logout()}>
-          <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sign out</span>
+          <LogOut className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Sign out</span>
         </Button>
       </div>
 
+      {/* Alerts */}
       {mustChange && (
         <div className="flex items-center gap-3 rounded-xl border border-warn/25 bg-warn/10 px-4 py-3 text-sm text-warn">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            Your password must be changed before you can configure anything. Set a new one in the Account tab.
-          </span>
+          Your password must be changed before you can configure anything. Set a new one in the Account tab.
         </div>
       )}
-
       {modes?.readOnly && (
         <div className="flex items-center gap-3 rounded-xl border border-warn/25 bg-warn/10 px-4 py-3 text-sm text-warn">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>Read-only mode is active — settings can be viewed but changes are blocked server-side.</span>
+          Read-only mode is active — settings can be viewed but changes are blocked server-side.
         </div>
       )}
 
-      {/* Mobile: vertical card grid · Tablet+: horizontal icon strip with wrapping */}
-      <div className="hidden md:block">
-        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-surface-border bg-surface p-1">
-          {visible.map((t) => {
-            const Icon = t.icon;
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  'relative flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-pointer',
-                  active ? 'text-accent' : 'text-text-muted hover:text-text-primary',
-                )}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="config-tab-lg"
-                    className="absolute inset-0 rounded-lg bg-accent/10"
-                    transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-                  />
-                )}
-                <Icon className="relative h-4 w-4" />
-                <span className="relative">{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Mobile: grouped card grid */}
-      <div className="md:hidden grid grid-cols-2 gap-2">
+      {/* Navigation — compact pill bar, wraps on all viewports */}
+      <div className="flex flex-wrap gap-1 rounded-xl border border-surface-border bg-surface p-1">
         {visible.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
@@ -174,38 +132,32 @@ export default function SettingsPage() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                'relative flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm font-medium transition-all cursor-pointer',
-                active
-                  ? 'border-accent/40 bg-accent/10 text-accent shadow-glow'
-                  : 'border-surface-border bg-surface-elevated text-text-secondary hover:border-accent/20 hover:text-text-primary',
+                'relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                active ? 'text-accent' : 'text-text-muted hover:text-text-secondary',
               )}
             >
-              <div className={cn(
-                'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
-                active ? 'bg-accent/15 text-accent' : 'bg-overlay/5 text-text-muted',
-              )}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <span className="truncate">{t.label}</span>
               {active && (
                 <motion.span
-                  layoutId="config-tab-mobile"
-                  className="absolute inset-0 rounded-xl ring-1 ring-accent/30"
+                  layoutId="config-tab"
+                  className="absolute inset-0 rounded-lg bg-accent/10"
                   transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                 />
               )}
+              <Icon className="relative h-3.5 w-3.5 shrink-0" />
+              <span className="relative hidden sm:inline">{t.label}</span>
             </button>
           );
         })}
       </div>
 
+      {/* Content */}
       <AnimatePresence mode="wait">
         <motion.div
           key={tab}
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.2 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.18 }}
         >
           {render()}
         </motion.div>
