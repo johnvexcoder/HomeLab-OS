@@ -12,7 +12,7 @@ export function Hosts() {
   const totalDown = links.reduce((a, l) => a + l.throughputMbps, 0);
 
   return (
-    <Card>
+    <Card className="h-full">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text-primary">Hosts</h3>
         <span className="text-xs text-text-muted">L2/L3 devices</span>
