@@ -5,6 +5,7 @@ services:
       dockerfile: backend/Dockerfile
     container_name: homelab-backend
     restart: unless-stopped
+    network_mode: host
     environment:
       - PORT=4000
       - HOST=0.0.0.0
@@ -25,8 +26,6 @@ services:
     volumes:
       - homelab-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "4000:4000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
       interval: 10s
