@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Globe, Network, RefreshCw, WifiOff, X, Radio, Power, AlertCircle } from 'lucide-react';
+import { Globe, Network, RefreshCw, WifiOff, X, Radio } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
 import type { NetworkNode, NetworkLink } from '@/types';
@@ -90,31 +90,12 @@ export function NetworkMap() {
   const [selectedLink, setSelectedLink] = useState<NetworkLink | null>(null);
   const [hoveredNode, setHoveredNode] = useState<NetworkNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
-  const [recentlyRecovered, setRecentlyRecovered] = useState<Set<string>>(new Set());
 
   const prevNodesRef = useRef<Map<string, NetworkNode['status']>>(new Map());
 
   useEffect(() => {
     const prev = prevNodesRef.current;
     const curr = new Map(nodes.map((n) => [n.id, n.status]));
-    const recovered: string[] = [];
-    for (const [id, status] of curr) {
-      const prevStatus = prev.get(id);
-      if (prevStatus && prevStatus !== 'online' && status === 'online') {
-        recovered.push(id);
-      }
-    }
-    if (recovered.length > 0) {
-      setRecentlyRecovered(new Set(recovered));
-      const t = setTimeout(() => {
-        setRecentlyRecovered((s) => {
-          const next = new Set(s);
-          recovered.forEach((id) => next.delete(id));
-          return next;
-        });
-      }, 8000);
-      return () => clearTimeout(t);
-    }
     prevNodesRef.current = curr;
   }, [nodes]);
 
@@ -294,18 +275,6 @@ export function NetworkMap() {
                     {hoveredNode.ip && (
                       <div className="mt-1.5 font-mono text-[10px] text-text-muted">{hoveredNode.ip}</div>
                     )}
-                    {hoveredNode.status === 'offline' && (
-                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-crit">
-                        <Power className="h-3 w-3" />
-                        Node is offline
-                      </div>
-                    )}
-                    {hoveredNode.status === 'degraded' && (
-                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-warn">
-                        <AlertCircle className="h-3 w-3" />
-                        Node is degraded
-                      </div>
-                    )}
                   </>
                 ) : (
                   <>
@@ -417,9 +386,6 @@ export function NetworkMap() {
               const nodeType = originalNode.type;
               const isInteractive = hoveredNode?.id === originalNode.id || selectedNode?.id === originalNode.id;
               const isInternet = nodeType === 'internet';
-              const isOffline = nodeStatus === 'offline';
-              const isRecovered = recentlyRecovered.has(originalNode.id);
-              const isDegraded = nodeStatus === 'degraded';
               const box = isInternet ? Math.round(metrics.nodeSize * 1.5) : Math.round(metrics.nodeSize);
 
               return (
@@ -431,15 +397,8 @@ export function NetworkMap() {
                   <motion.button
                     type="button"
                     initial={{ opacity: 0, scale: 0.7 }}
-                    animate={{
-                      opacity: isOffline ? 0.55 : 1,
-                      scale: isRecovered ? [1, 1.08, 1] : 1,
-                    }}
-                    transition={
-                      isRecovered
-                        ? { duration: 0.5, repeat: 3, repeatType: 'reverse' }
-                        : { duration: 0.4, delay: Math.min(i * 0.035, 0.7), ease: [0.16, 1, 0.3, 1] }
-                    }
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.4, delay: Math.min(i * 0.035, 0.7), ease: [0.16, 1, 0.3, 1] }}
                     className="flex cursor-pointer flex-col items-center border-none bg-transparent p-0 outline-none"
                     style={{ maxWidth: Math.round(metrics.labelMaxWidth + 16) }}
                     onMouseEnter={() => setHoveredNode(originalNode)}
@@ -451,7 +410,7 @@ export function NetworkMap() {
                       className="flex flex-col items-center gap-0.5 rounded-lg transition-all duration-200"
                       style={isInteractive
                         ? { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)' }
-                        : { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)', opacity: isOffline ? 0.55 : 1 }}
+                        : { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)' }}
                     >
                       {isInternet ? (
                         <div className="relative flex flex-col items-center">
@@ -475,7 +434,6 @@ export function NetworkMap() {
                               className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
                               style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
                             />
-                            {isOffline && <Power className="-rotate-90 absolute h-[35%] w-[35%] stroke-crit/80" />}
                           </div>
                         </div>
                       ) : (
@@ -487,8 +445,7 @@ export function NetworkMap() {
                               height: box,
                               fontSize: metrics.iconSize,
                               borderColor: `${NODE_STATUS_RING[nodeStatus]}55`,
-                              boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}${isOffline ? '00' : isInteractive ? '44' : '22'}`,
-                              filter: isOffline ? 'grayscale(0.5) brightness(0.7)' : 'none',
+                              boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}44`,
                             }}
                           >
                             <span>{NETWORK_NODE_ICONS_FRONTEND[nodeType]}</span>
@@ -496,14 +453,6 @@ export function NetworkMap() {
                               className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
                               style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
                             />
-                            {isOffline && (
-                              <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/60">
-                                <Power className="h-[40%] w-[40%] stroke-crit/80" />
-                              </div>
-                            )}
-                            {isDegraded && !isOffline && (
-                              <AlertCircle className="absolute -bottom-0.5 -right-0.5 h-4 w-4 stroke-warn fill-warn/30" />
-                            )}
                           </div>
                           {metrics.labelVisible && (
                             <div
@@ -515,22 +464,13 @@ export function NetworkMap() {
                                 style={{
                                   fontSize: metrics.labelSize,
                                   lineHeight: 1.15,
-                                  color: isOffline ? 'var(--color-text-muted)' : 'var(--color-text-primary)',
-                                  opacity: isOffline ? 0.6 : 1,
+                                  color: 'var(--color-text-primary)',
+                                  opacity: 1,
                                 }}
                                 title={originalNode.label}
                               >
                                 {originalNode.label}
                               </span>
-                              {isOffline && (
-                                <span className="block text-[9px] font-medium text-crit/70">Offline</span>
-                              )}
-                              {isDegraded && !isOffline && (
-                                <span className="block text-[9px] font-medium text-warn/70">Degraded</span>
-                              )}
-                              {isRecovered && (
-                                <span className="block text-[9px] font-medium text-success/70 animate-pulse">Just recovered</span>
-                              )}
                             </div>
                           )}
                           {metrics.ipVisible && originalNode.ip && (
