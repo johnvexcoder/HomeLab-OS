@@ -58,11 +58,11 @@ export function HealthScore() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex min-h-44 items-center justify-center outline-none cursor-pointer transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accent/50 rounded-lg"
+        className="flex min-h-36 sm:min-h-44 items-center justify-center outline-none cursor-pointer transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accent/50 rounded-lg"
         title="Click for details"
         aria-label="Infrastructure health breakdown - click for details"
       >
-        <ProgressRing value={health.score} size={168} stroke={10} label="Health" sublabel="Score" />
+        <ProgressRing value={health.score} size={148} stroke={10} label="Health" sublabel="Score" />
       </button>
 
       <div className="grid grid-cols-3 gap-2">

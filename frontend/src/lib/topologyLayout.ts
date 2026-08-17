@@ -89,8 +89,11 @@ export interface TopologyLayout {
   cables: Map<string, CableLayout>;
 }
 
-const MAX_NODE = 46;
 const MIN_NODE = 14;
+/** Max node size scales with canvas width so nodes are bigger on desktop. */
+function maxNodeFor(width: number): number {
+  return clamp(Math.round(46 * (width / 680)), 46, 80);
+}
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
@@ -171,7 +174,7 @@ export function computeTopologyLayout(
     width,
     height,
     metrics: {
-      nodeSize: MAX_NODE,
+      nodeSize: maxNodeFor(width),
       iconSize: 22,
       labelSize: 11,
       ipSize: 9,
@@ -256,10 +259,11 @@ export function computeTopologyLayout(
   const usableH = Math.max(1, height - PAD_Y * 2);
 
   const count = nodes.length;
+  const nodeMax = maxNodeFor(width);
   let nodeSize = clamp(
-    46 * (1 - 0.16 * Math.log10(Math.max(1, count) / 8)),
+    nodeMax * (1 - 0.16 * Math.log10(Math.max(1, count) / 8)),
     MIN_NODE,
-    MAX_NODE,
+    nodeMax,
   );
 
   const famCols = new Map<string, number>();

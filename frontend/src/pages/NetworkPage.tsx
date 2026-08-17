@@ -24,16 +24,16 @@ export default function NetworkPage() {
 
       <NetworkMap />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-3 lg:grid-cols-3">
         {/* Link table */}
-        <Card className="lg:col-span-2">
+        <Card className="md:col-span-2 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-primary">Link Status</h3>
             <span className="text-xs text-text-muted">{links.length} links</span>
           </div>
           
           {/* Desktop table view */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-surface-border text-[10px] uppercase tracking-widest text-text-muted">
@@ -73,7 +73,7 @@ export default function NetworkPage() {
           </div>
 
           {/* Mobile card view */}
-          <div className="md:hidden flex flex-col gap-3">
+          <div className="sm:hidden flex flex-col gap-3">
             {links.map((l) => (
               <div key={l.id} className="rounded-lg border border-surface-border bg-surface-input p-3">
                 <div className="mb-2 flex items-center justify-between">

@@ -101,7 +101,7 @@ export default function AlertsPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="flex flex-wrap items-center gap-1 rounded-xl border border-surface-border bg-surface p-1">
           {FILTERS.map((f) => (
             <button

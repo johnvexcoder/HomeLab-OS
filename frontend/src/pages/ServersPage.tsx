@@ -81,7 +81,7 @@ export default function ServersPage() {
       )}
 
       {loading && servers.length === 0 ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-80" />
           ))}
@@ -91,7 +91,7 @@ export default function ServersPage() {
           {standalone.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted">Standalone Nodes</h2>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {standalone.map((server, i) => (
                   <ServerCard key={server.spec.id} server={server} index={i} />
                 ))}
@@ -101,7 +101,7 @@ export default function ServersPage() {
           {clusteredServers.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted">Cluster Nodes</h2>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {clusteredServers.map((server, i) => (
                   <ServerCard key={server.spec.id} server={server} index={i} />
                 ))}
@@ -110,7 +110,7 @@ export default function ServersPage() {
           )}
         </>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {visible.map((server, i) => (
             <ServerCard key={server.spec.id} server={server} index={i} />
           ))}

@@ -30,7 +30,7 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
         <Topbar />
         <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="mx-auto w-full max-w-[1440px] px-4 py-4 sm:px-6 sm:py-6 box-border">
+          <div className="mx-auto w-full max-w-[1440px] px-3 py-3 sm:px-5 sm:py-5 md:px-6 md:py-6 box-border">
             <Outlet />
           </div>
         </main>

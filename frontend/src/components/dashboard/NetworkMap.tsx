@@ -182,7 +182,7 @@ export function NetworkMap() {
         <div className="grid-backdrop absolute inset-0" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
 
-        <div ref={ref} className="relative aspect-[800/700] w-full sm:aspect-[800/420]">
+        <div ref={ref} className="relative aspect-[800/600] w-full sm:aspect-[800/400] md:aspect-[800/380]">
           {/* Link layer (base cables + traveling packets) */}
           <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
             <defs>
@@ -300,7 +300,7 @@ export function NetworkMap() {
 
           {/* Detail panel (node or connection, click) */}
           {(selectedNode || selectedLink) && (
-            <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-64">
+            <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-72">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-text-primary">
                   {selectedNode ? 'Device details' : 'Connection details'}

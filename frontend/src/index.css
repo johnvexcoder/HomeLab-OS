@@ -299,3 +299,29 @@
 .animate-glow-pulse {
   animation: glow-pulse 2.4s ease-in-out infinite;
 }
+
+/* Tablet-specific polish: tighter spacing, better touch targets */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .card {
+    border-radius: 16px;
+  }
+}
+
+/* Premium hover lift for interactive cards on tablet+ */
+@media (hover: hover) and (pointer: fine) {
+  .card-hover:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* Smooth scrolling for the entire page */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Prevent layout shift from scrollbar */
+html {
+  scrollbar-gutter: stable;
+}

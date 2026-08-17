@@ -64,7 +64,7 @@ export function Topbar() {
   }
 
   return (
-    <header className="relative z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-surface-border bg-base/70 px-3 backdrop-blur-xl sm:gap-4 sm:px-6">
+    <header className="relative z-20 flex h-14 md:h-16 shrink-0 items-center justify-between gap-3 border-b border-surface-border bg-base/70 px-3 backdrop-blur-xl sm:gap-4 sm:px-5 md:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           onClick={() => setMobileMenuOpen(true)}

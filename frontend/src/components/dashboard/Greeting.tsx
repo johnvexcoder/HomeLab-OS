@@ -33,7 +33,7 @@ export function Greeting() {
             Your infrastructure is operational. Here’s what’s happening right now.
           </p>
         </div>
-        <div className="hidden text-right md:block">
+        <div className="hidden text-right sm:block">
           <div className="font-display text-4xl font-bold tabular text-text-primary">
             {formatClock(now)}
           </div>
