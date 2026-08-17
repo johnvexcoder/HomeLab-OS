@@ -4,6 +4,8 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { StatusDot } from '@/components/ui/Status';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
 import { formatMbps } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { Power, AlertCircle } from 'lucide-react';
 
 export function Hosts() {
   const { topology } = useNetwork();
@@ -21,11 +23,31 @@ export function Hosts() {
         {nodes.map((node) => (
           <div
             key={node.id}
-            className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5"
+            className={cn(
+              'flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5 transition-all',
+              node.status === 'offline' && 'opacity-55 grayscale',
+              node.status === 'degraded' && 'border-warn/40',
+            )}
           >
-            <span className="text-xl">{NETWORK_NODE_ICONS_FRONTEND[node.type]}</span>
+            <span className="relative text-xl">
+              {NETWORK_NODE_ICONS_FRONTEND[node.type]}
+              {node.status === 'offline' && (
+                <Power className="absolute -bottom-1 -right-1 h-3 w-3 rotate-90 stroke-crit fill-crit/20" />
+              )}
+              {node.status === 'degraded' && (
+                <AlertCircle className="absolute -bottom-1 -right-1 h-3 w-3 stroke-warn fill-warn/20" />
+              )}
+            </span>
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold text-text-primary">{node.label}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-text-primary">{node.label}</span>
+                {node.status === 'offline' && (
+                  <span className="text-xs font-medium text-crit">Offline</span>
+                )}
+                {node.status === 'degraded' && (
+                  <span className="text-xs font-medium text-warn">Degraded</span>
+                )}
+              </div>
               <div className="text-[11px] text-text-muted">{node.ip ?? node.type}</div>
             </div>
             <StatusDot status={node.status} />

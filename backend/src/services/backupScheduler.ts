@@ -1,5 +1,6 @@
 import { createBackup } from './backups';
 import { getBoolSetting, getIntSetting, setSetting, getSetting } from '../security/settings';
+import { notifyDispatcher } from './notifyDispatch';
 
 /**
  * Auto-backup scheduler. Checks once per minute whether a scheduled backup is
@@ -41,7 +42,9 @@ export async function runSchedule(): Promise<void> {
     try {
       await createBackup(schedule.type, `scheduled ${schedule.type} backup`);
       setSetting(key, dayKey);
-    } catch {
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      notifyDispatcher.notifyBackupFailure(schedule.type, errorMsg);
       // leave key unset so the next minute retries
     }
   }

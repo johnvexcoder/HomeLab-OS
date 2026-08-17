@@ -298,7 +298,7 @@ export function markIntegrationError(id: string, error: string): void {
   getDb().prepare('UPDATE integrations SET status = ?, last_error_at = ?, last_error = ? WHERE id = ?').run('error', Date.now(), error.slice(0, 500), id);
 }
 
-export { rotateSecrets };
+export { rotateSecrets, findActiveIntegration };
 
 /* ------------------------------------------------------------------ */
 /* Delivery helpers — send messages to configured Telegram / Email     */

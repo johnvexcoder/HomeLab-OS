@@ -57,6 +57,7 @@ export class DockerMetricsProvider {
   private prevTx = 0;
   private serverId: string | null = null;
   private runtime: ServerRuntime | null = null;
+  private prevContainerStates = new Map<string, { running: boolean; image: string; name: string }>();
 
   private history: ServerRuntime['history'] = {
     cpu: [],
@@ -92,6 +93,33 @@ export class DockerMetricsProvider {
     this.interval = null;
   }
 
+  private detectContainerStateChanges(): void {
+    const curr = new Map(this.containers.map((c) => [c.id, { running: c.running, image: c.image, name: c.name }]));
+
+    for (const [id, prev] of this.prevContainerStates) {
+      const now = curr.get(id);
+      if (!now) {
+        this.onContainerStateChange?.(prev.name, prev.image, 'removed');
+        continue;
+      }
+      if (prev.running && !now.running) {
+        this.onContainerStateChange?.(now.name, now.image, 'stopped');
+      } else if (!prev.running && now.running) {
+        this.onContainerStateChange?.(now.name, now.image, 'started');
+      }
+    }
+
+    for (const [id, now] of curr) {
+      if (!this.prevContainerStates.has(id) && now.running) {
+        this.onContainerStateChange?.(now.name, now.image, 'added');
+      }
+    }
+
+    this.prevContainerStates = curr;
+  }
+
+  onContainerStateChange?: (name: string, image: string, event: 'stopped' | 'started' | 'added' | 'removed') => void;
+
   private async poll(): Promise<void> {
     if (this.polling) return;
     if (!this.featureEnabled()) {
@@ -105,6 +133,7 @@ export class DockerMetricsProvider {
     try {
       await this.client.ping();
       this.containers = await this.client.listContainers();
+      this.detectContainerStateChanges();
       const [info, disk] = await Promise.all([this.client.getInfo(), this.client.getDiskUsage()]);
       this.hostInfo = info;
       this.diskUsedGb = round(toFinite(disk.used) / 1e9, 1);

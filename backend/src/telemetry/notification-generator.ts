@@ -12,6 +12,8 @@ export class NotificationGenerator {
   private lastHighCpuAt: Record<string, number> = {};
   private lastHighRamAt: Record<string, number> = {};
   private lastTempWarnAt: Record<string, number> = {};
+  private lastDiskWarnAt: Record<string, number> = {};
+  private lastDiskCritAt: Record<string, number> = {};
   private lastRandomAt = 0;
   private readonly ambient: boolean;
 
@@ -59,6 +61,34 @@ export class NotificationGenerator {
           '{temp}': String(Math.round(snap.tempC)),
           '{server}': snap.serverId,
         }));
+      }
+
+      // Disk space — warn at >85%, critical at >95%
+      if (snap.diskUsedGb > 0 && snap.diskTotalGb > 1) {
+        const diskPct = (snap.diskUsedGb / snap.diskTotalGb) * 100;
+        if (diskPct > 95 && now - (this.lastDiskCritAt[snap.serverId] ?? 0) > 30 * MIN) {
+          this.lastDiskCritAt[snap.serverId] = now;
+          out.push({
+            id: `ntf-${now}-${seq++}`,
+            title: 'Disk Space Critical',
+            message: `Disk usage on ${snap.serverId} is critically high at ${Math.round(diskPct)}% (${snap.diskUsedGb.toFixed(1)} / ${snap.diskTotalGb.toFixed(1)} GB).`,
+            severity: 'critical',
+            timestamp: now,
+            read: false,
+            serverId: snap.serverId,
+          });
+        } else if (diskPct > 85 && now - (this.lastDiskWarnAt[snap.serverId] ?? 0) > 30 * MIN) {
+          this.lastDiskWarnAt[snap.serverId] = now;
+          out.push({
+            id: `ntf-${now}-${seq++}`,
+            title: 'Disk Space Warning',
+            message: `Disk usage on ${snap.serverId} reached ${Math.round(diskPct)}% (${snap.diskUsedGb.toFixed(1)} / ${snap.diskTotalGb.toFixed(1)} GB).`,
+            severity: 'warning',
+            timestamp: now,
+            read: false,
+            serverId: snap.serverId,
+          });
+        }
       }
     }
 

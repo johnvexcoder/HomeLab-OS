@@ -91,6 +91,16 @@ interface PveNetworkIface {
   address?: string;
 }
 
+interface PveStorage {
+  storage: string;
+  type: string;
+  content: string;
+  total: number;
+  used: number;
+  active: number;
+  enabled: number;
+}
+
 interface PollDetail {
   node: PveNode;
   status: PveNodeStatus;
@@ -99,6 +109,7 @@ interface PollDetail {
   rrd: PveRrdPoint[];
   sensors: PveSensor[];
   network: PveNetworkIface[];
+  storage: PveStorage[];
 }
 
 type TickListener = (snapshots: MetricSnapshot[]) => void;
@@ -134,6 +145,9 @@ export class ProxmoxMetricsProvider {
   private readonly endpointErrors = new Map<string, string>();
   /** Endpoints the PVE server itself does not implement (HTTP 501) — never retried, never reported. */
   private readonly unsupportedEndpoints = new Set<string>();
+  private prevNodeStatus = new Map<string, string>();
+  private lastStorageWarnAt = new Map<string, number>();
+  private lastStorageCritAt = new Map<string, number>();
 
   constructor() {
     if (!this.host || !this.tokenId || !this.tokenSecret) {
@@ -194,6 +208,8 @@ export class ProxmoxMetricsProvider {
       const nodes = await this.api<PveNode[]>('/nodes');
       const details = await Promise.all(nodes.map((n) => this.pollNode(n)));
       for (const detail of details) this.applyDetail(detail);
+      this.detectNodeAlerts(details);
+      this.detectStorageAlerts(details);
       this.lastPollError = null;
       this.lastPollAt = Date.now();
       this.emitTick();
@@ -216,7 +232,8 @@ export class ProxmoxMetricsProvider {
       this.fetchOr<PveRrdPoint[]>(`/nodes/${name}/rrddata?timeframe=hour&cf=AVERAGE`, []),
       this.fetchOr<PveSensor[]>(`/nodes/${name}/sensors`, []),
       this.fetchOr<PveNetworkIface[]>(`/nodes/${name}/network`, []),
-    ]).then(([status, qemu, lxc, rrd, sensors, network]) => ({ node, status, qemu, lxc, rrd, sensors, network }));
+      this.fetchOr<PveStorage[]>(`/nodes/${name}/storage`, []),
+    ]).then(([status, qemu, lxc, rrd, sensors, network, storage]) => ({ node, status, qemu, lxc, rrd, sensors, network, storage }));
   }
 
   /** Fetch a per-node endpoint, remembering failures instead of swallowing them. */
@@ -273,6 +290,81 @@ export class ProxmoxMetricsProvider {
         running: g.status === 'running',
       })),
     );
+  }
+
+  private detectNodeAlerts(details: PollDetail[]): void {
+    const MIN = 60_000;
+    for (const detail of details) {
+      const nodeName = detail.node.node;
+      const currStatus = detail.node.status;
+      const prevStatus = this.prevNodeStatus.get(nodeName);
+      this.prevNodeStatus.set(nodeName, currStatus);
+
+      if (!prevStatus || prevStatus === currStatus) continue;
+
+      if (currStatus !== 'online' && prevStatus === 'online') {
+        this.emitNotification({
+          id: `ntf-proxmox-node-${nodeName}-${Date.now()}`,
+          title: 'Proxmox Node Offline',
+          message: `Proxmox node "${nodeName}" has gone offline (was ${prevStatus}).`,
+          severity: 'critical',
+          timestamp: Date.now(),
+          read: false,
+          serverId: `pve-${nodeName}`,
+        });
+      } else if (currStatus === 'online' && prevStatus !== 'online') {
+        this.emitNotification({
+          id: `ntf-proxmox-node-${nodeName}-${Date.now()}`,
+          title: 'Proxmox Node Online',
+          message: `Proxmox node "${nodeName}" is back online.`,
+          severity: 'success',
+          timestamp: Date.now(),
+          read: false,
+          serverId: `pve-${nodeName}`,
+        });
+      }
+    }
+  }
+
+  private detectStorageAlerts(details: PollDetail[]): void {
+    const MIN = 60_000;
+    const now = Date.now();
+    for (const detail of details) {
+      const nodeName = detail.node.node;
+      for (const s of detail.storage) {
+        if (!s.total || s.total <= 0 || !s.active) continue;
+        const pct = (s.used / s.total) * 100;
+        const key = `${nodeName}:${s.storage}`;
+
+        if (pct > 95 && now - (this.lastStorageCritAt.get(key) ?? 0) > 30 * MIN) {
+          this.lastStorageCritAt.set(key, now);
+          this.emitNotification({
+            id: `ntf-storage-crit-${key}-${now}`,
+            title: 'Proxmox Storage Critical',
+            message: `Storage "${s.storage}" on node "${nodeName}" is at ${pct.toFixed(1)}% usage (${(s.used / 1e9).toFixed(1)} / ${(s.total / 1e9).toFixed(1)} GB).`,
+            severity: 'critical',
+            timestamp: now,
+            read: false,
+            serverId: `pve-${nodeName}`,
+          });
+        } else if (pct > 85 && now - (this.lastStorageWarnAt.get(key) ?? 0) > 30 * MIN) {
+          this.lastStorageWarnAt.set(key, now);
+          this.emitNotification({
+            id: `ntf-storage-warn-${key}-${now}`,
+            title: 'Proxmox Storage Warning',
+            message: `Storage "${s.storage}" on node "${nodeName}" is at ${pct.toFixed(1)}% usage (${(s.used / 1e9).toFixed(1)} / ${(s.total / 1e9).toFixed(1)} GB).`,
+            severity: 'warning',
+            timestamp: now,
+            read: false,
+            serverId: `pve-${nodeName}`,
+          });
+        }
+      }
+    }
+  }
+
+  private emitNotification(n: Notification): void {
+    this.notifListeners.forEach((l) => l([n]));
   }
 
   /* ---------------------------------------------------------------- */

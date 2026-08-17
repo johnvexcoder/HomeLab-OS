@@ -13,6 +13,8 @@ import { getDb, insertMetrics, queryMetrics, countMetrics } from './db/database'
 import { bootstrapSecurity } from './security/boot';
 import { startBackupScheduler } from './services/backupScheduler';
 import { notifyDispatcher } from './services/notifyDispatch';
+import { startSslChecker } from './services/sslChecker';
+import { startUptimeKumaMonitor } from './services/uptimeKumaMonitor';
 
 async function bootstrap(): Promise<void> {
   getDb();
@@ -42,6 +44,10 @@ async function bootstrap(): Promise<void> {
 
     if (config.docker.enabled) {
       const docker = new DockerMetricsProvider();
+      docker.onContainerStateChange = (name, image, event) => {
+        if (event === 'stopped') notifyDispatcher.notifyDockerContainerCrash(name, image);
+        else if (event === 'started') notifyDispatcher.notifyDockerContainerRestart(name, image);
+      };
       await docker.start();
       console.log(`[homelab] docker provider active (${config.docker.host})`);
       const composite = new CompositeProvider(proxmox, docker);
@@ -68,6 +74,10 @@ async function bootstrap(): Promise<void> {
 
   attachWebSocket(server, broadcaster);
   startBackupScheduler();
+  startSslChecker();
+  startUptimeKumaMonitor();
+  startSslChecker();
+  startUptimeKumaMonitor();
 
   server.listen(config.port, config.host, () => {
     console.log(`[homelab] backend listening on http://${config.host}:${config.port}`);
