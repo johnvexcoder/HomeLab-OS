@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import https from 'node:https';
 import net from 'node:net';
 import { getDb } from '../db/database';
 import { getEncryptionKey, rotateSecrets } from '../security/secrets';
@@ -312,34 +313,51 @@ function findActiveIntegration(kind: IntegrationKind): IntegrationRow | null {
 }
 
 /** Send a plain-text message via the Telegram Bot API. */
-export async function sendTelegramMessage(text: string): Promise<boolean> {
-  const row = findActiveIntegration('telegram');
-  if (!row) return false;
-  const token = secretValue(row.id, 'botToken');
-  const config = row.config ? JSON.parse(row.config) : {};
-  const chatId = config.chatId;
-  if (!token || !chatId) return false;
+export function sendTelegramMessage(text: string): Promise<boolean> {
+  return new Promise<boolean>(async (resolve) => {
+    const row = findActiveIntegration('telegram');
+    if (!row) { resolve(false); return; }
+    const token = secretValue(row.id, 'botToken');
+    const config = row.config ? JSON.parse(row.config) : {};
+    const chatId = config.chatId;
+    if (!token || !chatId) { resolve(false); return; }
 
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-      signal: AbortSignal.timeout(10_000),
+    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
+    const url = new URL(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`);
+
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        port: 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        timeout: 10_000,
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            getDb()
+              .prepare('UPDATE integrations SET status = ?, last_success_at = ?, last_error_at = ?, last_error = ? WHERE id = ?')
+              .run('ok', Date.now(), null, null, row.id);
+            resolve(true);
+          } else {
+            markIntegrationError(row.id, `Telegram API ${res.statusCode}: ${body.slice(0, 200)}`);
+            resolve(false);
+          }
+        });
+      },
+    );
+    req.on('error', (err) => {
+      markIntegrationError(row.id, `Telegram send failed: ${err.message}`);
+      resolve(false);
     });
-    if (res.ok) {
-      getDb()
-        .prepare('UPDATE integrations SET status = ?, last_success_at = ?, last_error_at = ?, last_error = ? WHERE id = ?')
-        .run('ok', Date.now(), null, null, row.id);
-      return true;
-    }
-    const body = await res.text().catch(() => '');
-    markIntegrationError(row.id, `Telegram API ${res.status}: ${body.slice(0, 200)}`);
-    return false;
-  } catch (err) {
-    markIntegrationError(row.id, `Telegram send failed: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
-  }
+    req.on('timeout', () => { req.destroy(); markIntegrationError(row.id, 'Telegram send timed out'); resolve(false); });
+    req.write(payload);
+    req.end();
+  });
 }
 
 /** Send an alert email via the configured SMTP integration or global SMTP settings. */
