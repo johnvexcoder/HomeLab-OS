@@ -95,6 +95,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
 
     containers.slice(0, 40).forEach((c) => {
       const id = `docker-${c.id}`;
+      const dockerIp = host.ip || nodes.find((n) => n.type === 'hypervisor')?.ip || undefined;
       nodes.push({
         id,
         label: c.name,
@@ -103,7 +104,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         x: 50,
         y: 50,
         parentId: host.id,
-        ip: host.ip || undefined,
+        ip: dockerIp,
         health: c.running ? 100 : 0,
       });
       links.push({

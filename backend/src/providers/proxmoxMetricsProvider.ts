@@ -628,6 +628,7 @@ export class ProxmoxMetricsProvider {
           x: 50,
           y: 50,
           parentId: s.spec.id,
+          ip: s.spec.ip || undefined,
           health: g.running ? 100 : 0,
         });
         links.push({
