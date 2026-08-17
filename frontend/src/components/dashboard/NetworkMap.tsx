@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Globe, Network, RefreshCw, WifiOff, X, Radio } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
@@ -8,9 +8,7 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { formatMbps } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { generateTraffic, topologySignature, type TrafficEvent } from '@/lib/trafficEngine';
-
-const VB_W = 800;
-const VB_H = 340;
+import { computeTopologyLayout, type TopologyLayout, type LayoutedNode } from '@/lib/topologyLayout';
 
 /**
  * Traffic direction colors:
@@ -19,9 +17,6 @@ const VB_H = 340;
  */
 const IN_COLOR = '#22D3EE';
 const OUT_COLOR = 'var(--accent)';
-
-/** Twin-cable split (viewBox units) between the inbound/outbound arcs. */
-const CABLE_SPLIT = 7;
 
 const LINK_COLOR = {
   healthy: 'var(--accent)',
@@ -68,31 +63,28 @@ const NODE_STATUS_LABEL: Record<NetworkNode['status'], string> = {
   offline: 'Offline',
 };
 
-/** Cubic "S" cable routing (enterprise-style, no harsh diagonals). */
-function cableCurve(
-  src: NetworkNode,
-  dst: NetworkNode,
-  offset: number,
-): { d: string; x1: number; y1: number; x2: number; y2: number; hx: number } {
-  const x1 = (src.x / 100) * VB_W;
-  const y1 = (src.y / 100) * VB_H;
-  const x2 = (dst.x / 100) * VB_W;
-  const y2 = (dst.y / 100) * VB_H;
-  const hx = Math.min(Math.abs(x2 - x1) * 0.45, 110);
-  return {
-    d: `M ${x1} ${y1} C ${x1 + hx} ${y1 + offset}, ${x2 - hx} ${y2 + offset}, ${x2} ${y2}`,
-    x1,
-    y1,
-    x2,
-    y2,
-    hx,
-  };
+/** Measures a container's pixel size (the engine lays out in exact px). */
+function useElementSize<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r) setSize({ width: r.width, height: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return { ref, size };
 }
 
 export function NetworkMap() {
   const { topology, refetch, isLoading, error } = useNetwork();
   const nodes = topology?.nodes ?? [];
   const links = topology?.links ?? [];
+  const { ref, size } = useElementSize<HTMLDivElement>();
 
   const [hoveredLink, setHoveredLink] = useState<NetworkLink | null>(null);
   const [selectedLink, setSelectedLink] = useState<NetworkLink | null>(null);
@@ -100,11 +92,34 @@ export function NetworkMap() {
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  const linkById = useMemo(() => new Map(links.map((l) => [l.id, l])), [links]);
 
   // Traffic events are keyed off a stable topology signature so packets do not
   // restart every time the 5s telemetry refetch produces fresh objects.
   const signature = useMemo(() => topologySignature(nodes, links), [nodes, links]);
   const trafficEvents = useMemo(() => generateTraffic(nodes, links), [signature]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Endpoint lookup: hop (a→b) → the link id that connects them.
+  const endpointMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of links) {
+      m.set(`${l.source}||${l.target}`, l.id);
+      m.set(`${l.target}||${l.source}`, l.id);
+    }
+    return m;
+  }, [links]);
+
+  const layout: TopologyLayout | null = useMemo(
+    () => (size.width > 0 && size.height > 0 ? computeTopologyLayout(nodes, links, size.width, size.height) : null),
+    [nodes, links, size.width, size.height],
+  );
+  const { width, height, metrics, nodes: layoutNodes, cables } = layout ?? {
+    width: 0,
+    height: 0,
+    metrics: null,
+    nodes: new Map<string, LayoutedNode>(),
+    cables: new Map(),
+  };
 
   const external = useMemo<ExternalState>(() => {
     const wan = links.find((l) => l.source === 'internet' || l.target === 'internet');
@@ -127,15 +142,12 @@ export function NetworkMap() {
       ? totalTx.toLocaleString(undefined, { maximumFractionDigits: 0 })
       : totalTx.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
-  /** Curve midpoint (%) for tooltip anchoring. */
+  /** Curve midpoint (px) for tooltip anchoring. */
   const linkMid = (link: NetworkLink) => {
-    const src = nodeById.get(link.source);
-    const dst = nodeById.get(link.target);
-    if (!src || !dst) return null;
-    return {
-      mx: (src.x + dst.x) / 2,
-      my: (src.y + dst.y) / 2,
-    };
+    const a = layoutNodes.get(link.source);
+    const b = layoutNodes.get(link.target);
+    if (!a || !b) return null;
+    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
   };
 
   const tooltip = hoveredLink ? linkMid(hoveredLink) : null;
@@ -153,7 +165,7 @@ export function NetworkMap() {
     <Card className="h-full">
       <CardHeader
         title="Network Map"
-        subtitle="Left-to-right topology · live traffic"
+        subtitle="Adaptive topology · live traffic"
         icon={<Network className="h-[18px] w-[18px]" />}
         action={
           <button
@@ -169,9 +181,9 @@ export function NetworkMap() {
         <div className="grid-backdrop absolute inset-0" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
 
-        <div className="relative aspect-[800/540] w-full sm:aspect-[800/400]">
+        <div ref={ref} className="relative aspect-[800/700] w-full sm:aspect-[800/420]">
           {/* Link layer (base cables + traveling packets) */}
-          <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+          <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
             <defs>
               <style>{`
                 @keyframes net-cable-pulse {
@@ -202,15 +214,13 @@ export function NetworkMap() {
               `}</style>
             </defs>
             {links.map((link, i) => {
-              const src = nodeById.get(link.source);
-              const dst = nodeById.get(link.target);
-              if (!src || !dst) return null;
+              const cab = cables.get(link.id);
+              if (!cab) return null;
               return (
                 <LinkLayer
                   key={link.id}
                   link={link}
-                  src={src}
-                  dst={dst}
+                  cable={cab}
                   index={i}
                   active={hoveredLink?.id === link.id || selectedLink?.id === link.id}
                   onHover={() => setHoveredLink(link)}
@@ -221,7 +231,7 @@ export function NetworkMap() {
             })}
 
             {/* Multi-hop + ambient traffic packets */}
-            <TrafficLayer events={trafficEvents} nodeById={nodeById} />
+            {layout && <TrafficLayer events={trafficEvents} layout={layout} endpointMap={endpointMap} />}
           </svg>
 
           {/* Hover tooltip (link or node) */}
@@ -229,8 +239,8 @@ export function NetworkMap() {
             <div
               className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
               style={{
-                left: `${(hoveredNode?.x ?? tooltip!.mx)}%`,
-                top: `${(hoveredNode ? hoveredNode.y + 6 : tooltip!.my)}%`,
+                left: hoveredNode ? (layoutNodes.get(hoveredNode.id)?.x ?? 0) : tooltip!.mx,
+                top: (hoveredNode ? (layoutNodes.get(hoveredNode.id)?.y ?? 0) + 8 : tooltip!.my) ?? 0,
               }}
             >
               <div className="w-[min(190px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
@@ -358,79 +368,107 @@ export function NetworkMap() {
           )}
 
           {/* Node layer (HTML for full styling freedom) */}
-          {nodes.map((originalNode, i) => {
-            const nodeStatus = (originalNode.status || 'online') as keyof typeof NODE_STATUS_RING;
-            const nodeType = originalNode.type;
-            const isInteractive = hoveredNode?.id === originalNode.id || selectedNode?.id === originalNode.id;
+          {layout &&
+            metrics &&
+            nodes.map((originalNode, i) => {
+              const p = layoutNodes.get(originalNode.id);
+              if (!p) return null;
+              const nodeStatus = (originalNode.status || 'online') as keyof typeof NODE_STATUS_RING;
+              const nodeType = originalNode.type;
+              const isInteractive = hoveredNode?.id === originalNode.id || selectedNode?.id === originalNode.id;
+              const isInternet = nodeType === 'internet';
+              const box = isInternet ? Math.round(metrics.nodeSize * 1.5) : Math.round(metrics.nodeSize);
 
-            return (
-              <motion.button
-                key={originalNode.id}
-                type="button"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.4, delay: i * 0.07, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute cursor-pointer border-none bg-transparent p-0 outline-none"
-                style={{ left: `${originalNode.x}%`, top: `${originalNode.y}%` }}
-                onMouseEnter={() => setHoveredNode(originalNode)}
-                onMouseLeave={() => setHoveredNode((h) => (h?.id === originalNode.id ? null : h))}
-                onClick={() => selectNode(originalNode)}
-                aria-label={`${originalNode.label} — ${NODE_STATUS_LABEL[originalNode.status]}. Click for details`}
-              >
+              return (
                 <div
-                  className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 rounded-lg transition-all duration-200"
-                  style={isInteractive ? { boxShadow: '0 0 0 2px ' + NODE_STATUS_RING[nodeStatus] + '55', background: 'rgba(0,0,0,0.25)' } : undefined}
+                  key={originalNode.id}
+                  className="absolute"
+                  style={{ left: p.x, top: p.y, transform: 'translate(-50%, -50%)' }}
                 >
-                  {nodeType === 'internet' ? (
-                    <div className="relative flex flex-col items-center">
-                      <motion.div
-                        className="absolute inset-0 rounded-full border"
-                        style={{ borderColor: `${NODE_STATUS_RING[nodeStatus]}66` }}
-                        animate={{ scale: [1, 1.5], opacity: [0.7, 0] }}
-                        transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
-                      />
-                      <div
-                        className="relative flex h-11 w-11 items-center justify-center rounded-full border-2 bg-[#0F1522] shadow-card sm:h-14 sm:w-14 sm:text-2xl"
-                        style={{
-                          borderColor: NODE_STATUS_RING[nodeStatus],
-                          boxShadow: `0 0 24px ${NODE_STATUS_RING[nodeStatus]}44`,
-                        }}
-                      >
-                        <Globe className="h-5 w-5 sm:h-6 sm:w-6" style={{ color: NODE_STATUS_RING[nodeStatus] }} />
-                        <span
-                          className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
-                          style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
-                        />
-                      </div>
-                      <div className="mt-1 rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
-                        <span className="text-[10px] font-semibold text-text-primary">{originalNode.label}</span>
-                      </div>
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.7 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.4, delay: Math.min(i * 0.035, 0.7), ease: [0.16, 1, 0.3, 1] }}
+                    className="flex cursor-pointer flex-col items-center border-none bg-transparent p-0 outline-none"
+                    style={{ maxWidth: Math.round(metrics.labelMaxWidth + 16) }}
+                    onMouseEnter={() => setHoveredNode(originalNode)}
+                    onMouseLeave={() => setHoveredNode((h) => (h?.id === originalNode.id ? null : h))}
+                    onClick={() => selectNode(originalNode)}
+                    aria-label={`${originalNode.label} — ${NODE_STATUS_LABEL[originalNode.status]}. Click for details`}
+                  >
+                    <div
+                      className="flex flex-col items-center gap-0.5 rounded-lg transition-all duration-200"
+                      style={isInteractive ? { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)' } : undefined}
+                    >
+                      {isInternet ? (
+                        <div className="relative flex flex-col items-center">
+                          <motion.div
+                            className="absolute inset-0 rounded-full border"
+                            style={{ borderColor: `${NODE_STATUS_RING[nodeStatus]}66` }}
+                            animate={{ scale: [1, 1.5], opacity: [0.7, 0] }}
+                            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
+                          />
+                          <div
+                            className="relative flex items-center justify-center rounded-full border-2 bg-[#0F1522] shadow-card"
+                            style={{
+                              width: box,
+                              height: box,
+                              borderColor: NODE_STATUS_RING[nodeStatus],
+                              boxShadow: `0 0 24px ${NODE_STATUS_RING[nodeStatus]}44`,
+                            }}
+                          >
+                            <Globe className="h-[45%] w-[45%]" style={{ color: NODE_STATUS_RING[nodeStatus] }} />
+                            <span
+                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
+                              style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div
+                            className="relative flex items-center justify-center rounded-xl border bg-[#141414] shadow-card"
+                            style={{
+                              width: box,
+                              height: box,
+                              fontSize: metrics.iconSize,
+                              borderColor: `${NODE_STATUS_RING[nodeStatus]}55`,
+                              boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}${isInteractive ? '44' : '22'}`,
+                            }}
+                          >
+                            <span>{NETWORK_NODE_ICONS_FRONTEND[nodeType]}</span>
+                            <span
+                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
+                              style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
+                            />
+                          </div>
+                          {metrics.labelVisible && (
+                            <div
+                              className="rounded-md border border-surface-border bg-black/60 px-1.5 py-0.5 backdrop-blur-sm"
+                              style={{ maxWidth: Math.round(metrics.labelMaxWidth + 12) }}
+                            >
+                              <span
+                                className="block truncate text-center font-semibold text-text-primary"
+                                style={{ fontSize: metrics.labelSize, lineHeight: 1.15 }}
+                                title={originalNode.label}
+                              >
+                                {originalNode.label}
+                              </span>
+                            </div>
+                          )}
+                          {metrics.ipVisible && originalNode.ip && (
+                            <span className="font-mono text-text-muted" style={{ fontSize: metrics.ipSize }}>
+                              {originalNode.ip}
+                            </span>
+                          )}
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      <div
-                        className="relative flex h-10 w-10 items-center justify-center rounded-2xl border bg-[#141414] shadow-card transition-all sm:h-12 sm:w-12 sm:text-xl"
-                        style={{
-                          borderColor: `${NODE_STATUS_RING[nodeStatus]}55`,
-                          boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}${isInteractive ? '44' : '22'}`,
-                        }}
-                      >
-                        <span>{NETWORK_NODE_ICONS_FRONTEND[nodeType]}</span>
-                        <span
-                          className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B] animate-pulse"
-                          style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
-                        />
-                      </div>
-                      <div className="rounded-md border border-surface-border bg-black/60 px-2 py-0.5 backdrop-blur-sm">
-                        <span className="text-[10px] font-semibold text-text-primary">{originalNode.label}</span>
-                      </div>
-                    </>
-                  )}
-                  {originalNode.ip && <span className="font-mono text-[9px] text-text-muted">{originalNode.ip}</span>}
+                  </motion.button>
                 </div>
-              </motion.button>
-            );
-          })}
+              );
+            })}
 
           {isLoading && nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -494,8 +532,7 @@ export function NetworkMap() {
 
 function LinkLayer({
   link,
-  src,
-  dst,
+  cable,
   index,
   active,
   onHover,
@@ -503,16 +540,15 @@ function LinkLayer({
   onSelect,
 }: {
   link: NetworkLink;
-  src: NetworkNode;
-  dst: NetworkNode;
+  cable: { dIn: string; dOut: string };
   index: number;
   active: boolean;
   onHover: () => void;
   onLeave: () => void;
   onSelect: () => void;
 }) {
-  const inCurve = cableCurve(src, dst, -CABLE_SPLIT);
-  const outCurve = cableCurve(dst, src, CABLE_SPLIT);
+  const inCurve = cable.dIn;
+  const outCurve = cable.dOut;
 
   const status = normalizeStatus(link.status);
   const inColor = status === 'healthy' ? IN_COLOR : LINK_COLOR[status];
@@ -530,7 +566,7 @@ function LinkLayer({
     <g className={cn(active && 'link-active')}>
       {/* Invisible hit area for hover + click (wide stroke, covers both cables) */}
       <path
-        d={inCurve.d}
+        d={inCurve}
         fill="none"
         stroke="transparent"
         strokeWidth="20"
@@ -543,7 +579,7 @@ function LinkLayer({
 
       {/* Soft glow underlay — reads as energized cable */}
       <path
-        d={inCurve.d}
+        d={inCurve}
         fill="none"
         stroke={inColor}
         strokeOpacity={glowOpacity}
@@ -553,7 +589,7 @@ function LinkLayer({
         style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${inColor})` }}
       />
       <path
-        d={outCurve.d}
+        d={outCurve}
         fill="none"
         stroke={outColor}
         strokeOpacity={glowOpacity}
@@ -565,7 +601,7 @@ function LinkLayer({
 
       {/* Base cables */}
       <path
-        d={inCurve.d}
+        d={inCurve}
         fill="none"
         stroke={inColor}
         strokeOpacity={baseOpacity}
@@ -575,7 +611,7 @@ function LinkLayer({
         style={{ animationDelay: `${index * 0.37}s` }}
       />
       <path
-        d={outCurve.d}
+        d={outCurve}
         fill="none"
         stroke={outColor}
         strokeOpacity={baseOpacity}
@@ -589,7 +625,7 @@ function LinkLayer({
       {status === 'warning' && (
         <>
           <path
-            d={inCurve.d}
+            d={inCurve}
             fill="none"
             stroke={inColor}
             strokeWidth="2.5"
@@ -599,7 +635,7 @@ function LinkLayer({
             style={{ filter: `drop-shadow(0 0 3px ${inColor})` }}
           />
           <path
-            d={outCurve.d}
+            d={outCurve}
             fill="none"
             stroke={outColor}
             strokeWidth="2.5"
@@ -620,11 +656,19 @@ function LinkLayer({
  * cables internet→…→node. Pure SVG animateMotion — zero JS timers per packet,
  * with spline easing so motion feels organic (never perfectly synchronized).
  */
-function TrafficLayer({ events, nodeById }: { events: TrafficEvent[]; nodeById: Map<string, NetworkNode> }) {
+function TrafficLayer({
+  events,
+  layout,
+  endpointMap,
+}: {
+  events: TrafficEvent[];
+  layout: TopologyLayout;
+  endpointMap: Map<string, string>;
+}) {
   return (
     <g className="net-traffic">
       {events.map((ev) => {
-        const d = buildPacketPath(ev.path, nodeById, ev.direction);
+        const d = buildPacketPath(ev.path, ev.direction, layout, endpointMap);
         if (!d) return null;
         const color = ev.direction === 'inbound' ? IN_COLOR : OUT_COLOR;
         const durS = ev.dur / 1000;
@@ -665,24 +709,31 @@ function TrafficLayer({ events, nodeById }: { events: TrafficEvent[]; nodeById: 
 /**
  * Concatenates the per-hop cable curves for a traversal path so a packet moves
  * seamlessly across every edge (no teleporting). Inbound rides the upper arc,
- * outbound the lower arc — mirroring the base cables exactly.
+ * outbound the lower arc — mirroring the base cables exactly, regardless of
+ * whether the hop traverses with or against the link's source→target direction.
  */
 function buildPacketPath(
   path: string[],
-  nodeById: Map<string, NetworkNode>,
   direction: 'outbound' | 'inbound',
+  layout: TopologyLayout,
+  endpointMap: Map<string, string>,
 ): string | null {
-  const points = path.map((id) => nodeById.get(id)).filter(Boolean) as NetworkNode[];
-  if (points.length < 2) return null;
-
-  const offset = direction === 'inbound' ? -CABLE_SPLIT : CABLE_SPLIT;
+  if (path.length < 2) return null;
   let d = '';
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i];
-    const b = points[i + 1];
-    const { x1, y1, x2, y2, hx } = cableCurve(a, b, offset);
-    if (i === 0) d += `M ${x1} ${y1}`;
-    d += ` C ${x1 + hx} ${y1 + offset}, ${x2 - hx} ${y2 + offset}, ${x2} ${y2}`;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = layout.nodes.get(path[i]);
+    const b = layout.nodes.get(path[i + 1]);
+    if (!a || !b) return null;
+    const cab = layout.cables.get(endpointMap.get(`${a.id}||${b.id}`) ?? '');
+    if (!cab) return null;
+    // Travel with the link direction (a is the link's source) or against it.
+    const forward = cab.x1 === a.x && cab.y1 === a.y;
+    const [c1x, c1y, c2x, c2y] = direction === 'inbound' ? cab.cIn : cab.cOut;
+    const [cx1, cy1, cx2, cy2] = forward
+      ? [c1x, c1y, c2x, c2y]
+      : [c2x, c2y, c1x, c1y];
+    if (i === 0) d += `M ${a.x} ${a.y}`;
+    d += ` C ${cx1} ${cy1}, ${cx2} ${cy2}, ${b.x} ${b.y}`;
   }
   return d;
 }
