@@ -13,11 +13,22 @@
 </p>
 
 <p align="center">
-  <b>v1.0.15</b> ·
+  <b>v1.0.17</b> ·
   <img src="https://img.shields.io/badge/React_18-TS_5-Vite_6-34D399" alt="React 18 · TypeScript · Vite" />
   <img src="https://img.shields.io/badge/Express-WS-SQLite-34D399" alt="Express · WebSocket · SQLite" />
   <img src="https://img.shields.io/badge/Tailwind-Framer_Motion-ECharts-34D399" alt="Tailwind · Framer Motion · ECharts" />
 </p>
+
+---
+
+## Demo / Mock Mode
+
+When running in mock mode (`MOCK_MODE=true`, the default), the dashboard boots with a demo account:
+
+> **Username:** `admin`
+> **Password:** `homelab-demo`
+
+The settings page will display a blurred background with a login popup overlay. Sign in to access configuration. The dashboard renders a simulated 6-host fleet with realistic telemetry — no Proxmox or Docker connection required.
 
 ---
 
@@ -26,8 +37,8 @@
 | | |
 | --- | --- |
 | ![Dashboard](img/dashboard.png) | ![Network map](img/network-map.png) |
-| ![Server overview](img/server-overview.png) | ![Link status & hosts](img/link-status_and_hosts.png) |
-| ![Alert feed](img/alert-page.png) | ![Login](img/login-page.png) |
+| ![Server overview](img/server-overview.png) | ![Alert feed](img/alert-page.png) |
+| ![Settings](img/settings-page.png) | ![Login](img/login-page.png) |
 
 ---
 
@@ -35,14 +46,53 @@
 
 | Route | Purpose |
 | --- | --- |
-| `/` | **Dashboard** — greeting, live clock, infrastructure health score, quick statistics, quick actions, animated network map, recent alerts, server overview |
-| `/servers` | Fleet grid with per-server animated sparklines |
-| `/servers/:id` | Server detail — ECharts performance history, live metrics, resource breakdown, hardware telemetry |
+| `/` | **Dashboard** — greeting, live clock, infrastructure health score, 8 quick-stat cards (Nodes, Online, VMs/CTs, CPU, Memory, Download, Upload, Uptime), quick actions, animated network map, hosts panel with scroll, recent alerts, server overview with Docker profile cards |
+| `/servers` | Fleet grid with per-server animated sparklines, Docker container profile cards per VM |
+| `/servers/:id` | Server detail — locked header card format, 4 live metric cards, per-metric line graphs (CPU, Memory, Storage, Temperature, Network), resource breakdown, network throughput, hardware telemetry |
 | `/alerts` | Full notification feed with severity filters and read state |
-| `/network` | Topology, link table (latency/throughput/loss/jitter) and host inventory |
-| `/settings` | Access, security, features, quick actions, users, integrations, backups, audit log, account, and **Theme** |
+| `/network` | Topology, link table (latency/throughput/loss/jitter) with aggregate split download/upload, and host inventory |
+| `/settings` | Access, security, features, quick actions, users, integrations, backups, audit log, account, and **Theme** — login modal overlay with blurred background when unauthenticated |
 
 Global **search (⌘K / Ctrl+K)** reaches servers, alerts and quick actions from anywhere.
+
+---
+
+## What's New in v1.0.17
+
+### New Features
+- **8-card QuickStats layout** — split Internet Speed into Download and Upload cards with directional arrows; VMs & CTs shown as a single split card with internal divider
+- **Realtime network bandwidth** — reads Linux `/proc/net/dev` every 3 seconds for live download/upload throughput on the dashboard
+- **Docker Profile Cards** — per-VM cards showing container list, status, image, ports, bandwidth, container count, and a Details link; scrollable when container count exceeds card height
+- **Docker02 host support** — second Docker VM fully modeled in mock data with 10 containers (jellyfin, uptime-kuma, prometheus, grafana, etc.), appears in Hosts panel and Network Map
+- **Docker Host API endpoint** — `GET /api/docker/hosts` returns per-host container profiles with IP resolution
+- **Docker Container API endpoint** — `GET /api/docker/containers` returns flat container list with port mappings
+- **Login modal overlay** — settings page shows blurred background with centered login popup when unauthenticated; blur dissolves on successful login
+- **Per-metric line graphs on server detail** — individual CPU, Memory, Storage, Temperature, and Network charts with time range selector, replacing the single tabbed chart
+- **Locked server detail header card** — consistent 2-column grid layout across all servers regardless of role or data
+- **Hosts panel scroll** — device list scrolls when it exceeds the left-column height (Infrastructure Health + Quick Actions); no scrollbar when devices fit
+- **Aggregate throughput split** — Hosts panel and Network page show split Download ↑ / Upload ↓ instead of combined throughput
+- **Docker02 server profile** — full CPU, RAM, storage, sensors, and simulation profile for the second Docker host
+
+### Fixes
+- **Uptime font color** — explicit `text-text-primary` on each uptime number span to match other cards
+- **VM guest labels** — ServerCard bottom row shows "CTs" instead of "VMs" for VM guests (children with `parentId`)
+- **Docker notification dispatch** — `index.ts` restructured with direct `dispatchNotification()` helper that calls `notifications.ingest()` + `notifyDispatcher` + `wsBroadcast()` instead of relying on broken provider chaining
+- **WebSocket broadcast** — `attachWebSocket` now returns `WsHandles` with explicit `broadcastNotifications()` method
+- **Network Map cable duplication** — `LinkLayer` collapses second curve when link is critical/offline to prevent duplicate cables
+- **Docker Host uptime persistence** — `dockerMetricsProvider.ts` stores `startedAt` in settings DB with 30-day max age so uptime survives backend restarts
+- **Host IP resolution** — `getHostIp()` utility uses `os.networkInterfaces()` to populate the Docker host spec IP field
+- **Demo credentials** — always reset to `admin / homelab-demo` on every backend start in mock mode, preventing stale password mismatches
+- **404 badge error** — removed broken image references from README screenshot table
+
+### Changes
+- QuickStats type extended with optional `value2`, `label2`, `unit2` for split display cards
+- Mock fleet expanded from 5 to 6 hosts (added Docker02 with full server spec and sensor array)
+- Mock Docker profiles: docker02 has 10 containers, docker01 has none
+- Login page route (`/login`) redirects to `/settings` — login is now a modal overlay, not a separate page
+- `LoginPage.tsx` deprecated in favor of `LoginModal.tsx` component
+- `RequireAuth` shows blurred content + login popup for anonymous users instead of redirecting to a blank login page
+- Server detail page `MetricChart` range selector syncs across all per-metric charts
+- Docker container list includes port mappings extracted from Docker API response
 
 ---
 
@@ -85,6 +135,7 @@ A dark, premium NOC aesthetic:
                                        │  telemetry/notification-generator       │
                                        │  db/ (SQLite · history + notifications) │
                                        │  security/  (auth · 2FA · SMTP · locks) │
+                                       │  services/  (networkBandwidth reader)   │
                                        └────────────────────────────────────────┘
 ```
 
@@ -94,6 +145,7 @@ A dark, premium NOC aesthetic:
 2. A **WebSocket** (`/ws`) pushes `{ type: 'telemetry', data: MetricSnapshot[] }` every 2 s and `{ type: 'notifications', data: Notification[] }` when events fire.
 3. Snapshots update the zustand store; sparkline ring-buffers append; every value is animated via Framer Motion.
 4. Historical charts read `GET /api/servers/:id/history?range=15m|1h|6h|24h` (SQLite, bucketed).
+5. Network bandwidth is read from `/proc/net/dev` every 3 seconds and pushed via QuickStats.
 
 ### How servers are discovered — no agent required
 
@@ -102,7 +154,7 @@ on your hosts. Discovery is entirely a backend concern:
 
 - `MetricsProvider` (`backend/src/providers/types.ts`) is the single contract for data:
   servers, history, global health, stats and network topology.
-- The default `MockMetricsProvider` returns a believable 5-host fleet (PVE0, Docker01, NAS01, Gateway, Switch01)
+- The default `MockMetricsProvider` returns a believable 6-host fleet (PVE0, Docker01, Docker02, NAS01, Gateway, Switch01)
   so the whole UI works out of the box.
 - **Proxmox VE is a first-class live provider** (`backend/src/providers/proxmoxMetricsProvider.ts`). Set
   `MOCK_MODE=false` and provide a Proxmox API token (see `SETUP.md`). The backend then discovers every node,
@@ -203,8 +255,13 @@ When serving over HTTPS set `NODE_ENV=production` and `COOKIE_SECURE=true` on th
 
 ### 3. First sign-in
 
-On first boot the backend creates a **super admin** and writes its credentials to
-`DATA_DIR/.admin-initial-password` (e.g. `admin / <generated-password>`). Sign in at `/login`.
+In mock/demo mode the default credentials are:
+
+> **Username:** `admin`
+> **Password:** `homelab-demo`
+
+In production mode, on first boot the backend creates a **super admin** and writes its credentials to
+`DATA_DIR/.admin-initial-password` (e.g. `admin / <generated-password>`). Sign in at `/settings`.
 To pin your own password instead, set `ADMIN_INITIAL_PASSWORD` in the backend environment.
 
 ### 4. Telegram notifications
@@ -305,6 +362,10 @@ Other recovery commands: `status`, `emergency-unlock`, `reset-settings`,
 | `PROXMOX_TOKEN_SECRET` | — | Proxmox API token secret |
 | `PROXMOX_VERIFY_TLS` | `false` | Validate the Proxmox TLS chain (self-signed by default) |
 | `PROXMOX_POLL_INTERVAL_MS` | `5000` | How often the backend polls Proxmox |
+| `DOCKER_ENABLED` | `false` | Enable Docker container monitoring |
+| `DOCKER_HOST` | `/var/run/docker.sock` | Docker socket path or `tcp://host:port` |
+| `DOCKER_POLL_INTERVAL_MS` | `10000` | Docker polling interval |
+| `DOCKER_HOST_GUEST` | `docker` | Name substring to match the PVE guest hosting Docker |
 | `SECRET_ENCRYPTION_KEY` | — | Encrypts stored secrets; set a long random string |
 | `ADMIN_INITIAL_PASSWORD` | — | First-boot super admin password (auto-generated if empty) |
 | `COOKIE_SECURE` | `false` | Session cookie `Secure` flag (with `NODE_ENV=production`) |
@@ -332,6 +393,8 @@ A full `.env.example` with placeholders is committed at the repo root. **Never c
 | POST | `/api/notifications/read` | `{ ids: string[] }` |
 | POST | `/api/notifications/read-all` | Mark everything read |
 | GET | `/api/search?q=` | Global search (servers, alerts, actions) |
+| GET | `/api/docker/containers` | Flat container list with ports |
+| GET | `/api/docker/hosts` | Per-host container profiles with IPs |
 | POST | `/api/auth/login` · `/logout` · `/me` | Authentication |
 | POST | `/api/auth/2fa/*` | 2FA setup / verify / disable |
 | GET/POST | `/api/admin/users`, `/integrations`, `/backups`, `/settings` | Administration |
@@ -348,7 +411,7 @@ A full `.env.example` with placeholders is committed at the repo root. **Never c
 
 ## Mock Data
 
-The simulation (`backend/src/telemetry/engine.ts`) drives five believable hosts — **PVE0** (Proxmox hypervisor), **Docker01** (64 containers), **NAS01** (ZFS storage), **Gateway** (OPNsense), **Switch01** (UniFi):
+The simulation (`backend/src/telemetry/engine.ts`) drives six believable hosts — **PVE0** (Proxmox hypervisor), **Docker01** (application host), **Docker02** (media + monitoring stack with 10 containers), **NAS01** (ZFS storage), **Gateway** (OPNsense), **Switch01** (UniFi):
 
 - CPU from smooth waves + noise + bursts; RAM drifts toward baseline; temperature follows CPU load
 - Network bursts on random intervals; load, processes and uptime evolve realistically
@@ -371,6 +434,7 @@ The simulation (`backend/src/telemetry/engine.ts`) drives five believable hosts 
 │   │   ├── providers/             MetricsProvider / NotificationsProvider contracts + mocks
 │   │   ├── routes/                REST endpoints (public + admin)
 │   │   ├── security/              auth, 2FA, SMTP, settings, secrets, session
+│   │   ├── services/              networkBandwidth (Linux /proc/net/dev reader)
 │   │   ├── telemetry/             engine, notification generator, random helpers
 │   │   └── ws/                    WebSocket broadcast server
 │   └── Dockerfile
@@ -381,12 +445,13 @@ The simulation (`backend/src/telemetry/engine.ts`) drives five believable hosts 
         ├── components/
         │   ├── charts/            ECharts wrapper + metric charts
         │   ├── config/            Settings panels (users, integrations, account, theme…)
-        │   ├── dashboard/         greeting, health, stats, actions, map, overview
+        │   ├── dashboard/         greeting, health, stats, actions, map, overview, Docker profiles
         │   ├── hardware/          SensorTile + HardwareTelemetry panel
         │   ├── layout/            Sidebar, Topbar, AppLayout
         │   ├── notifications/     toast queue
         │   ├── search/            ⌘K command palette
         │   ├── server/            ServerCard
+        │   ├── auth/              LoginModal (popup overlay with blur)
         │   └── ui/                primitives (Card, Button, Sparkline, Modal…)
         ├── hooks/                 useTelemetry, useNotifications, useClock…
         ├── lib/                   utils, constants, sensor registry, version
@@ -424,6 +489,8 @@ Append to `QUICK_ACTIONS` in `backend/src/routes/index.ts` and it flows into `�
 - Actual Telegram message delivery and email notification delivery (integration stubs are in place)
 - Alert routing rules and escalation
 - Additional hardware sensor kinds
+- Multi-host Docker monitoring (simultaneous containers across multiple VMs)
+- Per-VM resource metrics via Proxmox guest agent
 
 ---
 
@@ -434,7 +501,7 @@ MIT — do whatever you want with it.
 ---
 
 <p align="center">
-  <sub>v1.0.15 · HomeLab OS</sub>
+  <sub>v1.0.17 · HomeLab OS</sub>
   <br />
   <sub>
     Author: <a href="https://github.com/johnvexcoder">John Vex Coder</a> :octocat:

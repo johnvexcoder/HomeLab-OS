@@ -28,19 +28,18 @@ import { Skeleton, StatusDot } from '@/components/ui/Status';
 import { ROLE_META, REACH_META, CAPABILITY_META } from '@/lib/constants';
 import { formatUptime, formatBytes, formatMbps, pct, cn } from '@/lib/utils';
 
-const CHART_TABS: Array<{ key: MetricKey; label: string; icon: typeof Cpu }> = [
-  { key: 'cpu', label: 'CPU', icon: Cpu },
-  { key: 'ram', label: 'Memory', icon: MemoryStick },
-  { key: 'disk', label: 'Storage', icon: HardDrive },
-  { key: 'netDown', label: 'Network', icon: NetworkIcon },
-  { key: 'temp', label: 'Temperature', icon: Thermometer },
+const METRIC_GRAPHS: Array<{ key: MetricKey; label: string; icon: typeof Cpu; color: string }> = [
+  { key: 'cpu', label: 'CPU', icon: Cpu, color: 'var(--accent)' },
+  { key: 'ram', label: 'Memory', icon: MemoryStick, color: '#60A5FA' },
+  { key: 'disk', label: 'Storage', icon: HardDrive, color: '#F59E0B' },
+  { key: 'temp', label: 'Temperature', icon: Thermometer, color: '#F97316' },
+  { key: 'netDown', label: 'Network', icon: NetworkIcon, color: '#34D399' },
 ];
 
 export default function ServerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { servers, loading } = useTelemetry();
   const [range, setRange] = useState<HistoryRange>('1h');
-  const [tab, setTab] = useState<MetricKey>('cpu');
   const { clusters } = useClusters();
   const server = servers.find((s) => s.spec.id === id);
 
@@ -82,15 +81,16 @@ export default function ServerDetailPage() {
         <ArrowLeft className="h-4 w-4" /> All servers
       </Link>
 
-      {/* Header */}
+      {/* Header card — locked 2-col format on desktop */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-        className="card flex flex-col gap-6 p-6 lg:flex-row lg:items-center lg:justify-between"
+        className="card grid grid-cols-1 gap-6 p-6 md:grid-cols-[1fr_auto]"
       >
-        <div className="flex items-center gap-4">
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated text-3xl">
+        {/* Left: info */}
+        <div className="flex items-start gap-4">
+          <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated text-3xl">
             {s.logo}
             <span
               className={cn(
@@ -99,7 +99,7 @@ export default function ServerDetailPage() {
               )}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="fluid-h1 font-display font-bold tracking-tight text-text-primary">{s.name}</h1>
               <Badge tone="neutral">{role.label}</Badge>
@@ -137,7 +137,8 @@ export default function ServerDetailPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-6">
+        {/* Right: health ring + stats grid */}
+        <div className="flex items-center gap-6">
           <div className="text-center">
             <div className="text-[10px] uppercase tracking-widest text-text-muted">Health</div>
             <ProgressRing value={server.health} size={84} stroke={7} label="" />
@@ -161,39 +162,23 @@ export default function ServerDetailPage() {
         <LiveMetric label="Temperature" icon={Thermometer} value={server.tempC} unit="°C" color="#F97316" />
       </div>
 
-      {/* Charts */}
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-        className="card p-5"
-      >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-text-primary">Performance</span>
-            <span className="text-xs text-text-muted">Historical telemetry</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-1 rounded-xl border border-surface-border bg-base p-1">
-            {CHART_TABS.map((t) => {
-              const Icon = t.icon;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className={cn(
-                    'flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors cursor-pointer',
-                    tab === t.key ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary',
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <MetricChart server={server} metric={tab} range={range} onRangeChange={setRange} height={280} />
-      </motion.div>
+      {/* Per-metric line graphs */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {METRIC_GRAPHS.map((m) => {
+          const Icon = m.icon;
+          return (
+            <motion.div
+              key={m.key}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+              className="card p-4"
+            >
+              <MetricChart server={server} metric={m.key} range={range} onRangeChange={setRange} height={180} />
+            </motion.div>
+          );
+        })}
+      </div>
 
       {/* Resource breakdown */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

@@ -168,6 +168,10 @@ export interface QuickStat {
   unit: string;
   delta: number;
   tone: Tone;
+  /** Optional secondary value for split cards (e.g. VMs & CTs) */
+  value2?: number;
+  label2?: string;
+  unit2?: string;
 }
 
 export interface GlobalHealth {

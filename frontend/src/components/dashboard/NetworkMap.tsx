@@ -571,6 +571,10 @@ function LinkLayer({
   const outColor = status === 'healthy' ? OUT_COLOR : LINK_COLOR[status];
   const isOffLink = status === 'critical';
 
+  // When offline, collapse both arcs into one cable so the link looks like a
+  // single line that changed color instead of splitting into two mirrored lines.
+  const curve2 = isOffLink ? inCurve : outCurve;
+
   // Activity-based appearance: busier links glow brighter, pulse and carry
   // more packets; idle links stay dim and calm.
   const intensity = Math.min(1, Math.max(0, link.throughputMbps / 1000));
@@ -605,16 +609,18 @@ function LinkLayer({
         className="net-glow"
         style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${inColor})` }}
       />
-      <path
-        d={outCurve}
-        fill="none"
-        stroke={outColor}
-        strokeOpacity={glowOpacity}
-        strokeWidth={glowWidth}
-        strokeLinecap="round"
-        className="net-glow"
-        style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${outColor})` }}
-      />
+      {!isOffLink && (
+        <path
+          d={outCurve}
+          fill="none"
+          stroke={outColor}
+          strokeOpacity={glowOpacity}
+          strokeWidth={glowWidth}
+          strokeLinecap="round"
+          className="net-glow"
+          style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${outColor})` }}
+        />
+      )}
 
       {/* Base cables */}
       <path
@@ -628,7 +634,7 @@ function LinkLayer({
         style={{ animationDelay: `${index * 0.37}s` }}
       />
       <path
-        d={outCurve}
+        d={curve2}
         fill="none"
         stroke={outColor}
         strokeOpacity={baseOpacity}

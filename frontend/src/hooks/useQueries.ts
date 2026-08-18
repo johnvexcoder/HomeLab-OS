@@ -56,3 +56,25 @@ export function useQuickStats() {
 
   return { stats: data ?? [], isLoading };
 }
+
+export function useDockerContainers() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['docker-containers'],
+    queryFn: () => endpoints.docker.containers(),
+    refetchInterval: 5_000,
+    staleTime: 2_000,
+  });
+
+  return { containers: data?.containers ?? [], isLoading };
+}
+
+export function useDockerHosts() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['docker-hosts'],
+    queryFn: () => endpoints.docker.hosts(),
+    refetchInterval: 5_000,
+    staleTime: 2_000,
+  });
+
+  return { profiles: data?.profiles ?? [], isLoading };
+}

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Server, ArrowRight } from 'lucide-react';
 import { useTelemetry } from '@/hooks/useTelemetry';
 import { ServerCard } from '@/components/server/ServerCard';
+import { DockerProfileCards } from '@/components/dashboard/DockerProfileCard';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Status';
 
@@ -35,6 +36,7 @@ export function ServerOverview() {
           {servers.map((server, i) => (
             <ServerCard key={server.spec.id} server={server} index={i} />
           ))}
+          <DockerProfileCards />
         </div>
       )}
     </Card>

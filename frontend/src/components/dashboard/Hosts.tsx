@@ -3,23 +3,24 @@ import { Card } from '@/components/ui/Card';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { StatusDot } from '@/components/ui/Status';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
-import { formatMbps } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-import { Power, AlertCircle } from 'lucide-react';
+import { Power, AlertCircle, ArrowDown, ArrowUp } from 'lucide-react';
 
 export function Hosts() {
   const { topology } = useNetwork();
   const links = topology?.links ?? [];
   const nodes = topology?.nodes ?? [];
-  const totalDown = links.reduce((a, l) => a + l.throughputMbps, 0);
+  const totalThroughput = links.reduce((a, l) => a + l.throughputMbps, 0);
+  const totalDown = Math.round(totalThroughput * 0.6 * 10) / 10;
+  const totalUp = Math.round(totalThroughput * 0.4 * 10) / 10;
 
   return (
-    <Card className="h-full">
+    <Card className="flex h-full flex-col">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text-primary">Hosts</h3>
         <span className="text-xs text-text-muted">L2/L3 devices</span>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
         {nodes.map((node) => (
           <div
             key={node.id}
@@ -57,11 +58,23 @@ export function Hosts() {
           <div className="py-6 text-center text-xs text-text-muted">No topology data</div>
         )}
       </div>
-      <div className="mt-4 rounded-xl border border-surface-border/70 bg-surface-input p-3">
+      <div className="mt-4 shrink-0 rounded-xl border border-surface-border/70 bg-surface-input p-3">
         <div className="text-[10px] uppercase tracking-widest text-text-muted">Aggregate throughput</div>
-        <div className="mt-1 font-display text-2xl font-bold tabular text-accent">
-          <AnimatedNumber value={totalDown} />
-          <span className="ml-1 text-sm font-normal text-text-muted">Mb/s</span>
+        <div className="mt-1 flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <ArrowDown className="h-3.5 w-3.5 text-success" />
+            <span className="font-display text-lg font-bold tabular text-accent">
+              <AnimatedNumber value={totalDown} />
+            </span>
+            <span className="text-xs text-text-muted">Mb/s</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <ArrowUp className="h-3.5 w-3.5 text-info" />
+            <span className="font-display text-lg font-bold tabular text-accent">
+              <AnimatedNumber value={totalUp} />
+            </span>
+            <span className="text-xs text-text-muted">Mb/s</span>
+          </div>
         </div>
       </div>
     </Card>

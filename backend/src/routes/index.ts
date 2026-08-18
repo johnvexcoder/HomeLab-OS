@@ -152,5 +152,15 @@ export function createRouter(ctx: ApiContext): Router {
     res.json(listQuickActions().filter((a) => a.enabled));
   });
 
+  router.get('/docker/containers', requireAuthOrGuest('servers.view', 'serverStatus'), (_req: Request, res: Response) => {
+    const containers = metrics.getDockerContainers?.() ?? [];
+    res.json({ containers });
+  });
+
+  router.get('/docker/hosts', requireAuthOrGuest('servers.view', 'serverStatus'), (_req: Request, res: Response) => {
+    const profiles = metrics.getDockerHostProfiles?.() ?? [];
+    res.json({ profiles });
+  });
+
   return router;
 }

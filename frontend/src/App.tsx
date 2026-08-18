@@ -7,7 +7,6 @@ import ServerDetailPage from '@/pages/ServerDetailPage';
 import AlertsPage from '@/pages/AlertsPage';
 import NetworkPage from '@/pages/NetworkPage';
 import SettingsPage from '@/pages/SettingsPage';
-import LoginPage from '@/pages/LoginPage';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 
 const queryClient = new QueryClient({
@@ -25,7 +24,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login" element={<Navigate to="/settings" replace />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/servers" element={<ServersPage />} />

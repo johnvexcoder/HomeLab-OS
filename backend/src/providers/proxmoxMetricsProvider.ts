@@ -23,6 +23,7 @@ import { uuid } from '../mock-data/servers';
 import { clamp, round } from '../telemetry/random';
 import { config } from '../config';
 import { calculateHierarchicalLayout, applyLayout } from './hierarchicalLayout';
+import { getNetworkBandwidth } from '../services/networkBandwidth';
 
 /** Coerce any value to a finite number, falling back to `fallback`. */
 function toFinite(v: unknown, fallback = 0): number {
@@ -661,21 +662,24 @@ export class ProxmoxMetricsProvider {
   getQuickStats(): QuickStat[] {
     const h = this.getGlobalHealth();
     const servers = this.getServers();
-    const totalUptimeDays = servers.reduce((a, s) => a + s.uptimeSeconds / 86400, 0);
+    const totalUptimeSeconds = servers.reduce((a, s) => a + s.uptimeSeconds, 0);
     const totalRamUsed = servers.reduce((a, s) => a + s.ramUsedGb, 0);
     const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
-    const totalNetMbps = servers.reduce((a, s) => a + s.netUpMbps + s.netDownMbps, 0);
     const guests = [...this.guests.values()].flat();
     const running = guests.filter((g) => g.running).length;
+
+    const bw = getNetworkBandwidth();
 
     return [
       { id: 'servers', label: 'Nodes', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
       { id: 'online', label: 'Online', value: h.onlineServers, unit: '', delta: 0, tone: 'good' },
-      { id: 'containers', label: 'VMs & CTs', value: running, unit: '', delta: 0, tone: 'neutral' },
+      { id: 'containers', label: 'VMs & CTs', value: running, unit: '', delta: 0, tone: 'neutral',
+        value2: 0, label2: 'CTs', unit2: '' },
       { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0, tone: h.avgCpu > 70 ? 'warn' : 'good' },
       { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0, tone: 'good' },
-      { id: 'network', label: 'Internet Speed', value: round(totalNetMbps, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
-      { id: 'uptime', label: 'Uptime', value: round(totalUptimeDays, 0), unit: 'days', delta: 0, tone: 'good' },
+      { id: 'download', label: 'Download', value: bw.downloadMbps, unit: 'Mbps', delta: 0, tone: 'neutral' },
+      { id: 'upload', label: 'Upload', value: bw.uploadMbps, unit: 'Mbps', delta: 0, tone: 'neutral' },
+      { id: 'uptime', label: 'Uptime', value: totalUptimeSeconds, unit: 'sec', delta: 0, tone: 'good' },
     ];
   }
 

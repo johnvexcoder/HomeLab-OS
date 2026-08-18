@@ -3,6 +3,7 @@ import { useTelemetry } from '@/hooks/useTelemetry';
 import { useClusters } from '@/hooks/useQueries';
 import { ServerCard } from '@/components/server/ServerCard';
 import { ClusterCard } from '@/components/server/ClusterCard';
+import { DockerProfileCards } from '@/components/dashboard/DockerProfileCard';
 import { ProviderDiagnosticsBanner } from '@/components/provider/ProviderDiagnosticsBanner';
 import { Skeleton } from '@/components/ui/Status';
 import type { ServerRole } from '@/types';
@@ -95,6 +96,7 @@ export default function ServersPage() {
                 {standalone.map((server, i) => (
                   <ServerCard key={server.spec.id} server={server} index={i} />
                 ))}
+                <DockerProfileCards />
               </div>
             </div>
           )}

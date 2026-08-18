@@ -46,12 +46,28 @@ export interface MetricsProvider {
   getNetwork(): { nodes: NetworkNode[]; links: NetworkLink[] };
   getClusters(): ClusterInfo[];
   getBootStats(): BootStats;
+  getDockerContainers?(): DockerContainerInfo[];
+  getDockerHostProfiles?(): DockerHostProfile[];
   /** Optional: provider name shown on /api/health (defaults to mock/proxmox). */
   getSourceName?(): string;
   /** Optional: last poll error, surfaced on /api/health for real integrations. */
   getLastPollError?(): string | null;
   /** Optional: per-endpoint diagnostics for real integrations (e.g. PVE auth failures). */
   getDiagnostics?(): ProviderDiagnostics;
+}
+
+export interface DockerContainerInfo {
+  id: string;
+  name: string;
+  running: boolean;
+  image: string;
+  ports?: string[];
+}
+
+export interface DockerHostProfile {
+  hostName: string;
+  hostIp: string;
+  containers: DockerContainerInfo[];
 }
 
 export interface ProviderDiagnostics {

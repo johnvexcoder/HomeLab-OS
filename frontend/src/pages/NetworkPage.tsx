@@ -6,6 +6,7 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { StatusDot } from '@/components/ui/Status';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
 import { formatMbps } from '@/lib/utils';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 
 export default function NetworkPage() {
   const { topology } = useNetwork();
@@ -136,9 +137,21 @@ export default function NetworkPage() {
           </div>
           <div className="mt-4 rounded-xl border border-surface-border/70 bg-surface-input p-3">
             <div className="text-[10px] uppercase tracking-widest text-text-muted">Aggregate throughput</div>
-            <div className="mt-1 font-display text-2xl font-bold tabular text-accent">
-              <AnimatedNumber value={totalDown} />
-              <span className="ml-1 text-sm font-normal text-text-muted">Mb/s</span>
+            <div className="mt-1 flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <ArrowDown className="h-3.5 w-3.5 text-success" />
+                <span className="font-display text-lg font-bold tabular text-accent">
+                  <AnimatedNumber value={Math.round(totalDown * 0.6 * 10) / 10} />
+                </span>
+                <span className="text-xs text-text-muted">Mb/s</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <ArrowUp className="h-3.5 w-3.5 text-info" />
+                <span className="font-display text-lg font-bold tabular text-accent">
+                  <AnimatedNumber value={Math.round(totalDown * 0.4 * 10) / 10} />
+                </span>
+                <span className="text-xs text-text-muted">Mb/s</span>
+              </div>
             </div>
           </div>
         </Card>

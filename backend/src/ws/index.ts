@@ -41,7 +41,14 @@ type PushMessage =
  * Connections are closed GRACEFULLY (close frame + FIN) on timeout so proxies
  * never observe a reset socket.
  */
-export function attachWebSocket(httpServer: HttpServer, broadcaster: TelemetryBroadcaster): WebSocketServer {
+export interface WsHandles {
+  wss: WebSocketServer;
+  /** Push notifications to all connected WS clients (used for Docker events
+   *  that bypass the Proxmox notification pipeline). */
+  broadcastNotifications(notifications: Notification[]): void;
+}
+
+export function attachWebSocket(httpServer: HttpServer, broadcaster: TelemetryBroadcaster): WsHandles {
   const wss = new WebSocketServer({
     server: httpServer,
     path: '/ws',
@@ -100,7 +107,7 @@ export function attachWebSocket(httpServer: HttpServer, broadcaster: TelemetryBr
   }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
 
-  return wss;
+  return { wss, broadcastNotifications: (notifications: Notification[]) => broadcast(clients, { type: 'notifications', data: notifications }) };
 }
 
 function send(client: WsClient, message: PushMessage): void {

@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { config } from '../config';
 import { seedDefaultSettings } from './settings';
 import { countUsers, createUser } from './users';
+import { createPasswordHash } from './crypto';
 import { getDb } from '../db/database';
 
 /**
@@ -20,10 +21,23 @@ export function bootstrapSecurity(): void {
 }
 
 function ensureAdminUser(): void {
+  const fromEnv = process.env.ADMIN_INITIAL_PASSWORD;
+  const isMock = config.mockMode;
+
+  if (isMock && countUsers() > 0) {
+    const db = getDb();
+    const row = db.prepare('SELECT id, password_salt, password_hash FROM users WHERE username = ?').get('admin') as { id: string; password_salt: string; password_hash: string } | undefined;
+    if (row) {
+      const { hash, salt } = createPasswordHash('homelab-demo');
+      db.prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?').run(hash, salt, row.id);
+    }
+    console.log('[homelab] Demo credentials: admin / homelab-demo');
+    return;
+  }
+
   if (countUsers() > 0) return;
 
-  const fromEnv = process.env.ADMIN_INITIAL_PASSWORD;
-  const password = fromEnv && fromEnv.length >= 10 ? fromEnv : randomBytes(18).toString('base64url');
+  const password = isMock ? 'homelab-demo' : (fromEnv && fromEnv.length >= 10 ? fromEnv : randomBytes(18).toString('base64url'));
 
   const admin = createUser({
     username: 'admin',
@@ -33,8 +47,9 @@ function ensureAdminUser(): void {
     mustChangePassword: false,
   });
 
-  if (!fromEnv) {
-    // Secure default: a random password surfaced ONCE at first boot.
+  if (isMock) {
+    console.log('[homelab] Demo credentials: admin / homelab-demo');
+  } else if (!fromEnv) {
     const file = path.join(config.dataDir, '.admin-initial-password');
     fs.mkdirSync(config.dataDir, { recursive: true });
     fs.writeFileSync(file, `${admin.username} / ${password}\n`, { mode: 0o600 });

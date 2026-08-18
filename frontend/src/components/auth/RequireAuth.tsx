@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
+import { LoginModal } from '@/components/auth/LoginModal';
 import type { Permission } from '@/types/auth';
 
 export function LoadingScreen() {
@@ -22,7 +22,6 @@ export function RequireAuth({
   permission?: Permission;
   children: React.ReactNode;
 }) {
-  const location = useLocation();
   const status = useAuthStore((s) => s.status);
   const bootstrap = useAuthStore((s) => s.bootstrap);
   const has = useAuthStore((s) => s.has);
@@ -34,7 +33,13 @@ export function RequireAuth({
   if (status === 'loading') return <LoadingScreen />;
 
   if (status === 'anonymous') {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+    return (
+      <div className="relative">
+        <div className="pointer-events-none select-none blur-sm">{children}</div>
+        <div className="fixed inset-0 z-40 bg-base/60 backdrop-blur-sm" />
+        <LoginModal />
+      </div>
+    );
   }
 
   if (permission && !has(permission)) {

@@ -76,6 +76,11 @@ export const endpoints = {
     list: () => api.get<QuickAction[]>('/quick-actions'),
   },
 
+  docker: {
+    containers: () => api.get<{ containers: Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }> }>('/docker/containers'),
+    hosts: () => api.get<{ profiles: Array<{ hostName: string; hostIp: string; containers: Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }> }> }>('/docker/hosts'),
+  },
+
   auth: {
     me: () => api.get<MeResponse>('/auth/me'),
     login: (body: {

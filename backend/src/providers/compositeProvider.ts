@@ -1,4 +1,4 @@
-import type { MetricsProvider, TelemetryBroadcaster, ProviderDiagnostics, HistoryRange } from './types';
+import type { MetricsProvider, TelemetryBroadcaster, ProviderDiagnostics, HistoryRange, DockerContainerInfo, DockerHostProfile } from './types';
 import type { DockerMetricsProvider } from './dockerMetricsProvider';
 import type {
   BootStats,
@@ -76,7 +76,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     if (containers.length === 0) return stats;
     const running = containers.filter((c) => c.running).length;
     return stats.map((s) => {
-      if (s.id === 'containers') return { ...s, value: s.value + running };
+      if (s.id === 'containers') return { ...s, value2: running, label2: 'CTs' };
       return s;
     });
   }
@@ -148,6 +148,36 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       return `${this.primary.getSourceName?.() ?? 'proxmox'} + ${docker.getSourceName()}`;
     }
     return this.primary.getSourceName?.() ?? 'proxmox';
+  }
+
+  getDockerContainers(): DockerContainerInfo[] {
+    const containers = this.docker?.getContainers() ?? [];
+    return containers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      running: c.running,
+      image: c.image,
+      ports: c.ports,
+    }));
+  }
+
+  getDockerHostProfiles(): DockerHostProfile[] {
+    const runtime = this.docker?.getHostRuntime();
+    const containers = this.docker?.getContainers() ?? [];
+    if (containers.length === 0) return [];
+    const hostName = runtime?.spec.name ?? 'docker';
+    const hostIp = runtime?.spec.ip ?? '';
+    return [{
+      hostName,
+      hostIp,
+      containers: containers.map((c) => ({
+        id: c.id,
+        name: c.name,
+        running: c.running,
+        image: c.image,
+        ports: c.ports,
+      })),
+    }];
   }
 
   getLastPollError(): string | null {

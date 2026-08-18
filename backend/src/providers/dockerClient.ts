@@ -15,6 +15,8 @@ export interface DockerContainer {
   /** Live network throughput since the previous poll (Mb/s), when known. */
   netUpMbps?: number;
   netDownMbps?: number;
+  /** Port mappings, e.g. "0.0.0.0:8080->80/tcp" */
+  ports?: string[];
 }
 
 export interface DockerHostInfo {
@@ -96,11 +98,27 @@ export class DockerClient {
       const id = typeof c.Id === 'string' ? c.Id.slice(0, 12) : 'unknown';
       const names = Array.isArray(c.Names) ? (c.Names as string[]) : [];
       const name = names.map((n) => n.replace(/^\//, '')).join(',') || id;
+
+      const rawPorts = Array.isArray(c.Ports) ? (c.Ports as Array<Record<string, unknown>>) : [];
+      const ports: string[] = [];
+      for (const p of rawPorts) {
+        const ip = typeof p.IP === 'string' ? p.IP : '';
+        const privatePort = typeof p.PrivatePort === 'number' ? p.PrivatePort : 0;
+        const publicPort = typeof p.PublicPort === 'number' ? p.PublicPort : 0;
+        const proto = typeof p.Type === 'string' ? p.Type : 'tcp';
+        if (publicPort > 0) {
+          ports.push(`${ip ? ip + ':' : ''}${publicPort}->${privatePort}/${proto}`);
+        } else if (privatePort > 0) {
+          ports.push(`${privatePort}/${proto}`);
+        }
+      }
+
       return {
         id,
         name,
         running: c.State === 'running',
         image: typeof c.Image === 'string' ? c.Image : '',
+        ports: ports.length > 0 ? ports : undefined,
       };
     });
   }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ShieldCheck, X } from 'lucide-react';
+import { ShieldCheck, X, ArrowDown, ArrowUp } from 'lucide-react';
 import { useTelemetry } from '@/hooks/useTelemetry';
 import { useQuickStats, useStatsHistory } from '@/hooks/useQueries';
 import { globalHealthFromServers } from '@/store/telemetry';
@@ -176,6 +176,13 @@ function MiniStat({
   );
 }
 
+function formatUptimeFromSec(totalSec: number): { days: number; hrs: number; mins: number } {
+  const days = Math.floor(totalSec / 86400);
+  const hrs = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  return { days, hrs, mins };
+}
+
 export function QuickStats() {
   const { stats } = useQuickStats();
   const { points } = useStatsHistory('15m');
@@ -184,7 +191,8 @@ export function QuickStats() {
     const keyByStatId: Record<string, (p: StatsHistoryPoint) => number> = {
       cpu: (p) => p.cpu,
       ram: (p) => p.mem,
-      network: (p) => p.network,
+      download: (p) => p.network,
+      upload: (p) => p.network,
       containers: (p) => p.containers,
     };
     return (id: string) => keyByStatId[id];
@@ -195,6 +203,124 @@ export function QuickStats() {
       {stats.map((stat, i) => {
         const pick = sparklineOf(stat.id);
         const series = pick ? points.map(pick).slice(-24) : [];
+
+        // Uptime: show Days | Hrs | Mins
+        if (stat.id === 'uptime') {
+          const { days, hrs, mins } = formatUptimeFromSec(stat.value);
+          return (
+            <motion.div
+              key={stat.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 * i, ease: [0.16, 1, 0.3, 1] }}
+              className="card card-hover flex items-center justify-between gap-3 p-4"
+            >
+              <div className="min-w-0 overflow-hidden">
+                <div className="flex items-center gap-1.5 tabular">
+                  <span className="font-display text-base font-bold text-text-primary sm:text-lg">{days}<span className="ml-0.5 text-[10px] font-normal text-text-muted">D</span></span>
+                  <span className="text-text-muted">|</span>
+                  <span className="font-display text-base font-bold text-text-primary sm:text-lg">{hrs}<span className="ml-0.5 text-[10px] font-normal text-text-muted">H</span></span>
+                  <span className="text-text-muted">|</span>
+                  <span className="font-display text-base font-bold text-text-primary sm:text-lg">{mins}<span className="ml-0.5 text-[10px] font-normal text-text-muted">M</span></span>
+                </div>
+                <div className="text-[11px] uppercase tracking-widest text-text-muted">{stat.label}</div>
+              </div>
+              {series.length >= 2 ? (
+                <Sparkline series={series} className="shrink-0" />
+              ) : null}
+            </motion.div>
+          );
+        }
+
+        // Download card: show arrow down icon
+        if (stat.id === 'download') {
+          return (
+            <motion.div
+              key={stat.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 * i, ease: [0.16, 1, 0.3, 1] }}
+              className="card card-hover flex items-center justify-between gap-3 p-4"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <ArrowDown className="h-4 w-4 text-success" />
+                  <div className="font-display text-xl font-bold tabular text-text-primary sm:text-2xl">
+                    <AnimatedNumber value={stat.value} decimals={stat.value < 10 ? 1 : 0} />
+                    <span className="ml-1 text-xs font-normal text-text-muted">{stat.unit}</span>
+                  </div>
+                </div>
+                <div className="text-[11px] uppercase tracking-widest text-text-muted">{stat.label}</div>
+              </div>
+              {series.length >= 2 ? (
+                <Sparkline series={series} className="shrink-0" />
+              ) : null}
+            </motion.div>
+          );
+        }
+
+        // Upload card: show arrow up icon
+        if (stat.id === 'upload') {
+          return (
+            <motion.div
+              key={stat.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 * i, ease: [0.16, 1, 0.3, 1] }}
+              className="card card-hover flex items-center justify-between gap-3 p-4"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <ArrowUp className="h-4 w-4 text-info" />
+                  <div className="font-display text-xl font-bold tabular text-text-primary sm:text-2xl">
+                    <AnimatedNumber value={stat.value} decimals={stat.value < 10 ? 1 : 0} />
+                    <span className="ml-1 text-xs font-normal text-text-muted">{stat.unit}</span>
+                  </div>
+                </div>
+                <div className="text-[11px] uppercase tracking-widest text-text-muted">{stat.label}</div>
+              </div>
+              {series.length >= 2 ? (
+                <Sparkline series={series} className="shrink-0" />
+              ) : null}
+            </motion.div>
+          );
+        }
+
+        // VMs & CTs split card
+        if (stat.id === 'containers') {
+          return (
+            <motion.div
+              key={stat.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 * i, ease: [0.16, 1, 0.3, 1] }}
+              className="card card-hover flex items-center justify-between gap-3 p-4"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <div className="text-center">
+                    <div className="font-display text-xl font-bold tabular text-text-primary sm:text-2xl">
+                      <AnimatedNumber value={stat.value} />
+                    </div>
+                    <div className="text-[10px] uppercase tracking-widest text-text-muted">VMs</div>
+                  </div>
+                  <div className="h-8 w-px bg-surface-border" />
+                  <div className="text-center">
+                    <div className="font-display text-xl font-bold tabular text-text-primary sm:text-2xl">
+                      <AnimatedNumber value={stat.value2 ?? 0} />
+                    </div>
+                    <div className="text-[10px] uppercase tracking-widest text-text-muted">CTs</div>
+                  </div>
+                </div>
+              </div>
+              {series.length >= 2 ? (
+                <Sparkline series={series} className="shrink-0" />
+              ) : null}
+            </motion.div>
+          );
+        }
+
+        // Default card
         return (
           <motion.div
             key={stat.id}

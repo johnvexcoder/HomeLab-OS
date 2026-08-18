@@ -16,6 +16,7 @@ import { startBackupScheduler } from './services/backupScheduler';
 import { notifyDispatcher } from './services/notifyDispatch';
 import { startSslChecker } from './services/sslChecker';
 import { startUptimeKumaMonitor } from './services/uptimeKumaMonitor';
+import { startNetworkBandwidth } from './services/networkBandwidth';
 
 async function bootstrap(): Promise<void> {
   getDb();
@@ -23,6 +24,22 @@ async function bootstrap(): Promise<void> {
 
   let metrics: MetricsProvider;
   let broadcaster: TelemetryBroadcaster;
+
+  // Notifications provider — created early so Docker state-change callbacks
+  // can ingest + dispatch directly without going through the broadcaster pipeline.
+  const notifications = new MockNotificationsProvider();
+
+  /** Push a notification to the database, Telegram/Email, and WebSocket clients. */
+  const dispatchNotification = (n: Notification): void => {
+    notifications.ingest(n);
+    notifyDispatcher.dispatchNotifications([n]);
+    wsBroadcastNotifications([n]);
+  };
+
+  // Will be wired once attachWebSocket() returns; safe to call before that
+  // because the array starts empty — calls are buffered.
+  const pendingWsNotifications: Notification[][] = [];
+  let wsBroadcastNotifications = (items: Notification[]) => { pendingWsNotifications.push(items); };
 
   if (config.mockMode) {
     // Pre-seed historical data so charts are populated from first boot.
@@ -62,14 +79,7 @@ async function bootstrap(): Promise<void> {
           serverId: `docker-${name}`,
         };
 
-        // Emit through broadcaster so it appears in Dashboard alerts +
-        // is dispatched to Telegram/Email via the main onNotifications handler
-        broadcaster.onNotifications?.((items) => {
-          // This notification was already handled, just ensure it's included
-          if (!items.some((i) => i.id === n.id)) {
-            items.push(n);
-          }
-        });
+        dispatchNotification(n);
       };
       await docker.start();
       console.log(`[homelab] docker provider active (${config.docker.host})`);
@@ -79,9 +89,9 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  const notifications = new MockNotificationsProvider();
-
-  // Ingest live notifications into the provider + dispatch to external channels.
+  // Ingest live notifications from the broadcaster (Proxmox) + dispatch to
+  // external channels. Docker notifications bypass this — they go through
+  // dispatchNotification() directly.
   broadcaster.onNotifications((items) => {
     items.forEach((n) => notifications.ingest(n));
     notifyDispatcher.dispatchNotifications(items);
@@ -95,12 +105,18 @@ async function bootstrap(): Promise<void> {
   const app = createApp({ metrics, notifications });
   const server = http.createServer(app);
 
-  attachWebSocket(server, broadcaster);
+  const { broadcastNotifications } = attachWebSocket(server, broadcaster);
+  wsBroadcastNotifications = broadcastNotifications;
+
+  // Flush any Docker notifications that arrived before the WS handle was ready.
+  for (const batch of pendingWsNotifications) {
+    broadcastNotifications(batch);
+  }
+
   startBackupScheduler();
   startSslChecker();
   startUptimeKumaMonitor();
-  startSslChecker();
-  startUptimeKumaMonitor();
+  startNetworkBandwidth();
 
   server.listen(config.port, config.host, () => {
     console.log(`[homelab] backend listening on http://${config.host}:${config.port}`);

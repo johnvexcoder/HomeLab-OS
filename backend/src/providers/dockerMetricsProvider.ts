@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import type { ProviderDiagnostics } from './types';
 import {
   DockerClient,
@@ -6,7 +7,7 @@ import {
   type DockerContainerStats,
   type DockerHostInfo,
 } from './dockerClient';
-import { getBoolSetting, setSetting } from '../security/settings';
+import { getBoolSetting, getSetting, setSetting } from '../security/settings';
 import { config } from '../config';
 import type { MetricSnapshot, Reachability, ServerRuntime, ServerStatus, Notification } from '../types';
 
@@ -17,6 +18,19 @@ const round = (v: number, d = 1): number => {
   return Math.round(v * f) / f;
 };
 const toFinite = (v: number, fallback = 0): number => (Number.isFinite(v) ? v : fallback);
+
+function getHostIp(): string {
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    if (name === 'lo' || name.startsWith('docker') || name.startsWith('br-') || name.startsWith('veth')) continue;
+    const addrs = ifaces[name];
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family === 'IPv4' && !addr.internal) return addr.address;
+    }
+  }
+  return '';
+}
 
 /**
  * Polls the Docker Engine API (over the mounted unix socket by default) and
@@ -81,7 +95,17 @@ export class DockerMetricsProvider {
   }
 
   async start(): Promise<void> {
-    this.startedAt = Date.now();
+    // Restore persisted start time so uptime survives backend restarts.
+    // Reset if the stored value is invalid or more than 30 days old (the
+    // Docker daemon almost certainly restarted in that window).
+    const stored = parseInt(getSetting('docker.startedAt') || '', 10);
+    const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+    if (stored > 0 && Date.now() - stored < MAX_AGE_MS) {
+      this.startedAt = stored;
+    } else {
+      this.startedAt = Date.now();
+      setSetting('docker.startedAt', String(this.startedAt));
+    }
     await this.poll();
     this.interval = setInterval(() => {
       void this.poll();
@@ -254,7 +278,7 @@ export class DockerMetricsProvider {
       role: 'docker',
       capabilities: ['containerization'],
       clusterId: null,
-      ip: '',
+      ip: getHostIp(),
       location: 'Docker',
       cpuModel: `Docker ${info.dockerVersion} (${info.architecture})`,
       cpuCores: info.ncpu,
