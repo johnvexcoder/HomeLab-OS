@@ -32,6 +32,7 @@ const ROLE_TO_TYPE: Record<ServerSpec['role'], NetworkNode['type']> = {
   gateway: 'router',
   switch: 'switch',
   network: 'router',
+  server: 'container',
 };
 
 /** Server id hosting the gateway/switch spine roles. */

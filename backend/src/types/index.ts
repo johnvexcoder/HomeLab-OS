@@ -1,6 +1,6 @@
 export type ServerStatus = 'online' | 'degraded' | 'offline';
 export type Reachability = 'accessible' | 'degraded' | 'unreachable';
-export type ServerRole = 'hypervisor' | 'docker' | 'storage' | 'network' | 'gateway' | 'switch';
+export type ServerRole = 'hypervisor' | 'docker' | 'storage' | 'network' | 'gateway' | 'switch' | 'server';
 
 /**
  * Fleet capability model — what a node can do. The UI surfaces these as chips

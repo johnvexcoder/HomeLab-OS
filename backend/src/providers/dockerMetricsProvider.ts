@@ -157,8 +157,15 @@ export class DockerMetricsProvider {
     const started = Date.now();
     try {
       await this.client.ping();
-      this.containers = await this.client.listContainers();
-      this.detectContainerStateChanges();
+      const newContainers = await this.client.listContainers();
+      this.containers = newContainers;
+      try {
+        this.detectContainerStateChanges();
+      } catch {
+        // Notification insert can fail on UNIQUE constraint — don't let it
+        // kill the entire poll cycle or we enter a permanent crash loop
+        // (prevContainerStates never updates → every container looks "new").
+      }
       const [info, disk] = await Promise.all([this.client.getInfo(), this.client.getDiskUsage()]);
       this.hostInfo = info;
       this.diskUsedGb = round(toFinite(disk.used) / 1e9, 1);

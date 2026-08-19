@@ -300,7 +300,7 @@ export function insertNotification(notification: NotificationRow): void {
   const database = getDb();
   database
     .prepare(
-      `INSERT INTO notifications (id, title, message, severity, timestamp, read, server_id)
+      `INSERT OR IGNORE INTO notifications (id, title, message, severity, timestamp, read, server_id)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(

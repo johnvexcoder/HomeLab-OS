@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { createApp } from './app';
 import { Simulator, seedHistory } from './services/simulator';
 import { MockMetricsProvider } from './providers/mockMetricsProvider';
@@ -70,7 +71,7 @@ async function bootstrap(): Promise<void> {
           : `Docker container "${name}" is back online.\nImage: ${image}`;
 
         const n: Notification = {
-          id: `ntf-docker-${event}-${Date.now()}`,
+          id: `ntf-docker-${event}-${name}-${crypto.randomUUID()}`,
           title,
           message,
           severity,
