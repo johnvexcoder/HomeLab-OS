@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Fingerprint, Shield, ShieldCheck, Timer } from 'lucide-react';
+import { Fingerprint, Mail, Shield, ShieldCheck, Timer } from 'lucide-react';
 import { endpoints } from '@/api/endpoints';
 import { Section, Row, SaveBar, useSave, humanError } from './shared';
 import { Toggle, Input, Field } from '@/components/ui/forms';
@@ -15,6 +15,16 @@ interface SecurityForm {
   lockoutMinutes: string;
   loginRateLimitPerMinute: string;
   passwordPolicyMinLength: string;
+}
+
+interface SmtpForm {
+  host: string;
+  port: string;
+  user: string;
+  password: string;
+  from: string;
+  to: string;
+  secure: boolean;
 }
 
 export function SecuritySettings() {
@@ -42,6 +52,16 @@ export function SecuritySettings() {
     passwordPolicyMinLength: '10',
   });
 
+  const [smtp, setSmtp] = useState<SmtpForm>({
+    host: '',
+    port: '587',
+    user: '',
+    password: '',
+    from: '',
+    to: '',
+    secure: false,
+  });
+
   useEffect(() => {
     if (!settings) return;
     setForm({
@@ -51,6 +71,15 @@ export function SecuritySettings() {
       lockoutMinutes: settings['security.lockoutMinutes'] ?? '15',
       loginRateLimitPerMinute: settings['security.loginRateLimitPerMinute'] ?? '10',
       passwordPolicyMinLength: settings['security.passwordPolicyMinLength'] ?? '10',
+    });
+    setSmtp({
+      host: settings['security.smtpHost'] ?? '',
+      port: settings['security.smtpPort'] ?? '587',
+      user: settings['security.smtpUser'] ?? '',
+      password: '',
+      from: settings['security.smtpFrom'] ?? '',
+      to: settings['security.smtpTo'] ?? '',
+      secure: settings['security.smtpSecure'] === 'true',
     });
   }, [settings]);
 
@@ -74,6 +103,21 @@ export function SecuritySettings() {
         'security.loginRateLimitPerMinute': num('loginRateLimitPerMinute'),
         'security.passwordPolicyMinLength': num('passwordPolicyMinLength'),
       });
+    });
+  }
+
+  async function saveSmtp() {
+    await save.run(async () => {
+      const payload: Record<string, string | number | boolean> = {
+        'security.smtpHost': smtp.host,
+        'security.smtpPort': Number(smtp.port) || 587,
+        'security.smtpUser': smtp.user,
+        'security.smtpFrom': smtp.from,
+        'security.smtpTo': smtp.to,
+        'security.smtpSecure': smtp.secure,
+      };
+      if (smtp.password) payload['security.smtpPassword'] = smtp.password;
+      await endpoints.admin.settings.update(payload);
     });
   }
 
@@ -181,6 +225,49 @@ export function SecuritySettings() {
           />
         </Section>
       </div>
+
+      <Section
+        title="SMTP Email"
+        subtitle="Outbound email for alerts, recovery codes and notifications"
+        icon={<Mail className="h-4 w-4" />}
+        action={
+          <div className="flex items-center gap-2">
+            <SaveBar busy={save.busy} saved={save.saved} error={save.error} />
+            <Button variant="outline" size="sm" onClick={() => void saveSmtp()} disabled={save.busy}>
+              Save SMTP
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="SMTP Host" hint="e.g. smtp.gmail.com">
+            <Input value={smtp.host} onChange={(e) => setSmtp((f) => ({ ...f, host: e.target.value }))} placeholder="smtp.gmail.com" />
+          </Field>
+          <Field label="SMTP Port" hint="587 for STARTTLS, 465 for TLS">
+            <Input type="number" value={smtp.port} onChange={(e) => setSmtp((f) => ({ ...f, port: e.target.value }))} placeholder="587" />
+          </Field>
+          <Field label="From Address" hint="Sender email address">
+            <Input type="email" value={smtp.from} onChange={(e) => setSmtp((f) => ({ ...f, from: e.target.value }))} placeholder="alerts@yourdomain.com" />
+          </Field>
+          <Field label="Recipient Address" hint="Where alert emails are sent">
+            <Input type="email" value={smtp.to} onChange={(e) => setSmtp((f) => ({ ...f, to: e.target.value }))} placeholder="admin@yourdomain.com" />
+          </Field>
+          <Field label="Username" hint="SMTP auth username (leave blank if none)">
+            <Input value={smtp.user} onChange={(e) => setSmtp((f) => ({ ...f, user: e.target.value }))} placeholder="SMTP username" autoComplete="off" />
+          </Field>
+          <Field label="Password" hint={settings?.['security.smtpPassword'] ? 'Set (hidden) — leave blank to keep' : 'SMTP auth password'}>
+            <Input type="password" value={smtp.password} onChange={(e) => setSmtp((f) => ({ ...f, password: e.target.value }))} placeholder="••••••••" autoComplete="off" />
+          </Field>
+        </div>
+        <div className="mt-3">
+          <Toggle
+            label="Use implicit TLS (port 465)"
+            description="Enable for port 465. Disable for port 587 (STARTTLS)."
+            checked={smtp.secure}
+            onChange={(next) => setSmtp((f) => ({ ...f, secure: next }))}
+          />
+        </div>
+      </Section>
 
       <div className="flex items-center justify-end gap-3">
         <SaveBar busy={save.busy} saved={save.saved} error={save.error} />

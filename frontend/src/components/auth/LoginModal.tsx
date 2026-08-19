@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Activity, KeyRound, Loader2, Lock, Mail, ShieldCheck, User } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth';
 import { endpoints } from '@/api/endpoints';
 import { Button } from '@/components/ui/Button';
@@ -28,6 +29,8 @@ const METHOD_LABELS: Record<TwoFactorMethod, string> = {
 
 export function LoginModal() {
   const login = useAuthStore((s) => s.login);
+  const { data: health } = useQuery({ queryKey: ['health'], queryFn: endpoints.health, staleTime: 30_000 });
+  const mockMode = health?.mockMode ?? false;
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -256,7 +259,11 @@ export function LoginModal() {
         </div>
 
         <div className="mt-4 flex items-center justify-center">
-          <span className="text-[11px] text-text-muted">Demo: admin / homelab-demo</span>
+          {mockMode ? (
+            <span className="text-[11px] text-text-muted">Demo: admin / homelab-demo</span>
+          ) : (
+            <span className="text-[11px] text-text-muted">Forgot your password? Contact your administrator.</span>
+          )}
         </div>
       </motion.div>
     </div>

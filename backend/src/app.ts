@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createRouter, type ApiContext } from './routes';
 import { createAuthRouter } from './auth/routes';
 import { createAdminRouter } from './admin/routes';
+import { createAgentRouter } from './routes/agent';
 import { securityHeaders } from './security/headers';
 import { mutationGuard } from './security/middleware';
 import { config } from './config';
@@ -45,6 +46,7 @@ export function createApp(ctx: ApiContext): Express {
 
   app.use('/api/auth', createAuthRouter());
   app.use('/api/admin', createAdminRouter());
+  app.use('/api/agent', createAgentRouter());
   app.use('/api', createRouter(ctx));
 
   // SPA-ish friendly 404 for unknown API routes.

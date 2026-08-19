@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Zap,
   Palette,
+  Server,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { APP_VERSION } from '@/lib/version';
@@ -29,6 +30,7 @@ import { BackupsManager } from '@/components/config/BackupsManager';
 import { AuditLog } from '@/components/config/AuditLog';
 import { AccountPanel } from '@/components/config/AccountPanel';
 import { ThemePanel } from '@/components/config/ThemePanel';
+import { AgentManager } from '@/components/config/AgentManager';
 
 type TabId =
   | 'access'
@@ -37,6 +39,7 @@ type TabId =
   | 'quick-actions'
   | 'users'
   | 'integrations'
+  | 'agents'
   | 'backups'
   | 'audit'
   | 'theme'
@@ -51,6 +54,7 @@ const TABS: Array<{ id: TabId; label: string; icon: React.ComponentType<{ classN
   { id: 'quick-actions', label: 'Actions', icon: Zap, permission: 'settings.view' },
   { id: 'users', label: 'Users', icon: Users, permission: 'users.view' },
   { id: 'integrations', label: 'Integrations', icon: Cable, permission: 'integrations.view' },
+  { id: 'agents', label: 'Agents', icon: Server, permission: 'settings.view' },
   { id: 'backups', label: 'Backups', icon: Archive, permission: 'backups.view' },
   { id: 'audit', label: 'Audit', icon: ScrollText, permission: 'audit.view' },
 ];
@@ -77,6 +81,7 @@ export default function SettingsPage() {
       case 'quick-actions': return <QuickActionsManager />;
       case 'users':     return <UsersManager />;
       case 'integrations': return <IntegrationsManager />;
+      case 'agents':      return <AgentManager />;
       case 'backups':   return <BackupsManager />;
       case 'audit':     return <AuditLog />;
       case 'theme':     return <ThemePanel />;

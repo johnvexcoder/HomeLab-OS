@@ -366,10 +366,12 @@ export async function sendAlertEmail(subject: string, body: string): Promise<boo
   const { smtpConfigured } = await import('../security/smtp');
   const { sendEmail } = await import('../security/smtp');
   const { getSmtpConfig } = await import('../security/smtp');
+  const { getSetting } = await import('../security/settings');
   if (!smtpConfigured()) return false;
   const cfg = getSmtpConfig();
+  const to = getSetting('security.smtpTo').trim() || cfg.from;
   try {
-    await sendEmail({ host: cfg.host, port: cfg.port, user: cfg.user, password: cfg.password, from: cfg.from, to: cfg.from, subject, text: body });
+    await sendEmail({ host: cfg.host, port: cfg.port, user: cfg.user, password: cfg.password, from: cfg.from, to, subject, text: body });
     return true;
   } catch {
     return false;

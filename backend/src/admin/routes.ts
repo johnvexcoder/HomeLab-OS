@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import crypto from 'node:crypto';
 import {
   requireAuth,
   requirePermission,
@@ -32,7 +33,7 @@ import {
   type IntegrationKind,
 } from '../services/integrations';
 import { revokeAllSessions } from '../security/session';
-import { verifyPassword } from '../security/crypto';
+import { verifyPassword, sha256, randomBytes } from '../security/crypto';
 import { assertSensitiveAllowed } from '../security/rateLimit';
 import { passwordStrength } from '../security/passwordPolicy';
 import { notifyDispatcher } from '../services/notifyDispatch';
@@ -60,6 +61,7 @@ const WRITABLE_SETTINGS = new Set([
   'security.smtpUser',
   'security.smtpPassword',
   'security.smtpFrom',
+  'security.smtpTo',
   'access.guest.enabled',
   'access.guest.scopes',
   'backup.enabled',
@@ -551,6 +553,79 @@ export function createAdminRouter(): Router {
     }
     audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'quick_actions.updated', result: 'success', details: `count=${result.actions.length}` });
     res.json({ ok: true, actions: result.actions });
+  });
+
+  // --- Agents ---
+  router.get('/agents', requireAuth, requirePermission('settings.view'), (_req: Request, res: Response) => {
+    const db = getDb();
+    const rows = db.prepare('SELECT * FROM agents ORDER BY created_at DESC').all();
+    res.json({ agents: rows });
+  });
+
+  router.post('/agents', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+    const user = req.auth!.user;
+    const body = req.body as Record<string, unknown>;
+    const hostId = String(body.hostId ?? '').trim();
+    const hostName = String(body.hostName ?? '').trim();
+
+    if (!hostId || !hostName) {
+      res.status(400).json({ error: 'hostId and hostName are required' });
+      return;
+    }
+
+    const db = getDb();
+    const existing = db.prepare('SELECT id FROM agents WHERE host_id = ?').get(hostId);
+    if (existing) {
+      res.status(409).json({ error: 'agent with this hostId already exists' });
+      return;
+    }
+
+    const plain = `hl_${randomBytes(32)}`;
+    const prefix = plain.slice(0, 12);
+    const hash = sha256(plain);
+    const now = Date.now();
+    const id = crypto.randomUUID();
+
+    db.prepare(`
+      INSERT INTO agents (id, host_id, host_name, api_key_prefix, api_key_hash, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(id, hostId, hostName, prefix, hash, now, now);
+
+    audit({ ts: now, userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'agent.created', target: hostId, result: 'success', details: JSON.stringify({ hostName }) });
+    res.json({ agentId: id, hostId, hostName, apiKey: plain });
+  });
+
+  router.delete('/agents/:id', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+    const user = req.auth!.user;
+    const db = getDb();
+    const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+
+    db.prepare('DELETE FROM agents WHERE id = ?').run(req.params.id);
+    audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'agent.deleted', target: String(agent.host_id), result: 'success' });
+    res.json({ ok: true });
+  });
+
+  router.post('/agents/:id/rotate-key', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+    const user = req.auth!.user;
+    const db = getDb();
+    const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+
+    const plain = `hl_${randomBytes(32)}`;
+    const prefix = plain.slice(0, 12);
+    const hash = sha256(plain);
+    db.prepare('UPDATE agents SET api_key_prefix = ?, api_key_hash = ?, updated_at = ? WHERE id = ?')
+      .run(prefix, hash, Date.now(), req.params.id);
+
+    audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'agent.key_rotated', target: String(agent.host_id), result: 'success' });
+    res.json({ apiKey: plain });
   });
 
   return router;

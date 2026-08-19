@@ -55,9 +55,9 @@ export const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
   { id: 'proxmox', label: 'Open Proxmox', kind: 'open UI', keywords: 'proxmox pve hypervisor', href: 'https://pve.homelab.local:8006', icon: 'server', enabled: true },
   { id: 'docker', label: 'Open Docker', kind: 'open UI', keywords: 'docker portainer containers', href: 'https://portainer.homelab.local', icon: 'container', enabled: true },
   { id: 'uptime', label: 'Open Uptime Kuma', kind: 'open UI', keywords: 'uptime kuma status monitoring', href: 'https://uptime.homelab.local', icon: 'activity', enabled: true },
-  { id: 'restart-docker', label: 'Restart Docker', kind: 'command', keywords: 'restart docker daemon', icon: 'refresh', enabled: true },
-  { id: 'ssh', label: 'SSH', kind: 'command', keywords: 'ssh terminal shell session', icon: 'terminal', enabled: true },
-  { id: 'wake', label: 'Wake Server', kind: 'command', keywords: 'wake on lan wol wake server', icon: 'power', enabled: true },
+  { id: 'restart-docker', label: 'Restart Docker', kind: 'command', keywords: 'restart docker daemon', icon: 'refresh', enabled: false },
+  { id: 'ssh', label: 'SSH', kind: 'command', keywords: 'ssh terminal shell session', icon: 'terminal', enabled: false },
+  { id: 'wake', label: 'Wake Server', kind: 'command', keywords: 'wake on lan wol wake server', icon: 'power', enabled: false },
 ];
 
 const DEFAULTS: SettingsMap = {
@@ -80,6 +80,7 @@ const DEFAULTS: SettingsMap = {
   'security.smtpUser': '',
   'security.smtpPassword': '',
   'security.smtpFrom': '',
+  'security.smtpTo': '',
   'access.guest.enabled': 'false',
   'access.guest.scopes': JSON.stringify(['serverStatus', 'serviceStatus', 'containers', 'cpu', 'ram', 'storage', 'temp', 'uptime']),
   'backup.enabled': 'true',

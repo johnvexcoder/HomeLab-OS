@@ -128,15 +128,21 @@ A dark, premium NOC aesthetic:
 │                             │  REST  │                                        │
 │  pages · components         │◀──────▶│  routes/  (servers · stats · history   │
 │  store/  (zustand)          │        │           · network · notifications ·  │
-│  api/    (client · ws)      │        │           · search · health · admin)   │
-│  lib/sensors (registry)     │  WS    │  ws/  ── broadcast every 2 s ──┐       │
-│  charts  (ECharts)          │◀──────▶│  providers/  (abstraction)      │       │
-└────────────────────────────┘        │  telemetry/engine (simulation) ──┘       │
-                                       │  telemetry/notification-generator       │
-                                       │  db/ (SQLite · history + notifications) │
-                                       │  security/  (auth · 2FA · SMTP · locks) │
-                                       │  services/  (networkBandwidth reader)   │
-                                       └────────────────────────────────────────┘
+│  api/    (client · ws)      │        │           · search · health · admin ·  │
+│  lib/sensors (registry)     │  WS    │           · agent)                    │
+│  charts  (ECharts)          │◀──────▶│  ws/  ── broadcast every 2 s ──┐       │
+└────────────────────────────┘        │  providers/  (abstraction)      │       │
+                                      │    └─ ProxmoxMetricsProvider    │       │
+                                      │    └─ MockMetricsProvider       │       │
+┌────────────────────────────┐        │  telemetry/engine (simulation) ──┘       │
+│   HomeLab Agent (optional)  │  REST  │  telemetry/notification-generator       │
+│                             │───────▶│  db/ (SQLite · history + notifications) │
+│  6 plugins: Linux, Docker,  │  auth  │  security/  (auth · 2FA · SMTP · locks) │
+│  Proxmox, Sensors, SMART,   │        │  services/  (networkBandwidth reader)   │
+│  Network                    │        └────────────────────────────────────────┘
+│  per-plugin poll intervals  │
+│  capability-based reporting │
+└────────────────────────────┘
 ```
 
 ### Live data flow
@@ -147,10 +153,10 @@ A dark, premium NOC aesthetic:
 4. Historical charts read `GET /api/servers/:id/history?range=15m|1h|6h|24h` (SQLite, bucketed).
 5. Network bandwidth is read from `/proc/net/dev` every 3 seconds and pushed via QuickStats.
 
-### How servers are discovered — no agent required
+### How servers are discovered — agent optional
 
-HomeLab OS is **pull-based**: the backend asks infrastructure APIs directly. There is **no agent to install**
-on your hosts. Discovery is entirely a backend concern:
+HomeLab OS is **pull-based**: the backend asks infrastructure APIs directly. The core dashboard
+works with **no agent installed** on your hosts. Discovery is entirely a backend concern:
 
 - `MetricsProvider` (`backend/src/providers/types.ts`) is the single contract for data:
   servers, history, global health, stats and network topology.
@@ -160,6 +166,10 @@ on your hosts. Discovery is entirely a backend concern:
   `MOCK_MODE=false` and provide a Proxmox API token (see `SETUP.md`). The backend then discovers every node,
   VM and container automatically and feeds the dashboard with real CPU/RAM/disk/network/temperature data —
   including optional `lm-sensors` telemetry when the host exposes it. Nothing is installed on Proxmox itself.
+- **[HomeLab Agent](https://github.com/johnvexcoder/HomeLab-Agent)** (optional) adds node-local telemetry
+  that the Proxmox API does not expose: CPU temperature, fan speeds, SMART disk health, Docker containers,
+  kernel information, local services, UPS status, and more. The backend merges agent data with Proxmox API
+  data into a single unified model. The agent is a separate repository.
 - Other backends (Docker Engine API, Node Exporter, Uptime Kuma…) can implement the same `MetricsProvider`
   contract; the REST + WebSocket pipeline, fleet grid, charts, network map and alerts all stay identical.
 
@@ -292,6 +302,43 @@ Follow `SETUP.md` to enable the **built-in Proxmox VE provider**: set `MOCK_MODE
 in the Proxmox web UI, and drop the host + token into `.env`. The backend then discovers all nodes, VMs and
 containers automatically — there is no agent component to deploy on your hosts. Everything else (fleet grid,
 charts, network map, sensors, alerts) lights up with real data with no frontend changes.
+
+### 7. HomeLab Agent (optional enrichment)
+
+For **node-local telemetry** that the Proxmox API does not expose — CPU temperature, fan speeds, SMART disk
+health, kernel information, local services, UPS status, and Docker container monitoring — install the
+**HomeLab Agent** on each host.
+
+> **Agent repository:** [github.com/johnvexcoder/HomeLab-Agent](https://github.com/johnvexcoder/HomeLab-Agent)
+
+The agent and the Proxmox API are **not competitors**. They are two independent data providers. The backend
+merges data from both into a single unified model. The frontend never knows whether information came from
+the Proxmox API or the agent.
+
+| Proxmox API (authoritative) | HomeLab Agent (enrichment) |
+|---|---|
+| VM / LXC inventory & runtime metrics | CPU temperature, fan speeds, voltages |
+| Cluster information | SMART disk health & remaining life |
+| Storage configuration | Docker containers & compose projects |
+| Snapshots, HA, replication | Kernel information & package updates |
+| Backup jobs & history | Local system services & processes |
+| Task history | ZFS / Ceph health (local node) |
+| VM CPU / Memory / Disk / Network | Network interface stats & throughput |
+| | UPS battery status |
+| | Hardware inventory (DMI / SMBIOS) |
+
+**Quick install on each host:**
+
+```bash
+# 1. Create agent entry in dashboard: Settings → Agents → New Agent
+# 2. Save the API key shown on screen
+# 3. Install on each host:
+curl -fsSL https://raw.githubusercontent.com/johnvexcoder/HomeLab-Agent/main/install.sh | \
+  sudo bash -s -- --dashboard-url http://DASHBOARD_IP:4000/api --api-key hl_YOUR_KEY
+```
+
+See the [HomeLab Agent README](https://github.com/johnvexcoder/HomeLab-Agent) for full setup instructions,
+architecture details, and configuration options.
 
 ---
 
@@ -486,6 +533,7 @@ Append to `QUICK_ACTIONS` in `backend/src/routes/index.ts` and it flows into `�
 ## Roadmap
 
 - Additional provider backends (Docker Engine, Node Exporter, Prometheus, Uptime Kuma)
+- HomeLab Agent: Podman support, GPU monitoring, local log aggregation
 - Actual Telegram message delivery and email notification delivery (integration stubs are in place)
 - Alert routing rules and escalation
 - Additional hardware sensor kinds
@@ -502,8 +550,12 @@ MIT — do whatever you want with it.
 
 <p align="center">
   <sub>v1.0.17 · HomeLab OS</sub>
-  <br />
+  <br /><br />
   <sub>
     Author: <a href="https://github.com/johnvexcoder">John Vex Coder</a> :octocat:
   </sub>
+  &nbsp;&nbsp;
+  <a href="https://ko-fi.com/johnvexcoder" target="_blank">
+    <img src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Support me on Ko-fi" height="28">
+  </a>
 </p>

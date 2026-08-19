@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { StatusDot } from '@/components/ui/Status';
 import { useDockerHosts } from '@/hooks/useQueries';
@@ -23,7 +24,8 @@ export function DockerProfileCards() {
         const stopped = profile.containers.length - running;
 
         return (
-          <Card key={profile.hostName} hover className="flex h-full flex-col p-4 sm:p-5">
+          <Link key={profile.hostName} to={`/servers/docker-${profile.hostName}`} className="block">
+          <Card hover className="flex h-full flex-col p-4 sm:p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated text-2xl">
@@ -84,6 +86,7 @@ export function DockerProfileCards() {
               </span>
             </div>
           </Card>
+          </Link>
         );
       })}
     </>

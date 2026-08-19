@@ -17,31 +17,41 @@ import {
   Server as ServerIcon,
 } from 'lucide-react';
 import { useTelemetry } from '@/hooks/useTelemetry';
+import { useTelemetryStore } from '@/store/telemetry';
 import { useClusters } from '@/hooks/useQueries';
-import type { HistoryRange, MetricKey } from '@/types';
+import type { HistoryRange, MetricKey, ServerRuntime } from '@/types';
 import { MetricChart } from '@/components/charts/MetricChart';
 import { HardwareTelemetry } from '@/components/hardware/HardwareTelemetry';
+import { Sparkline } from '@/components/ui/Sparkline';
 import { Badge } from '@/components/ui/Badge';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
-import { ProgressBar, ProgressRing } from '@/components/ui/Progress';
+import { ProgressRing } from '@/components/ui/Progress';
 import { Skeleton, StatusDot } from '@/components/ui/Status';
 import { ROLE_META, REACH_META, CAPABILITY_META } from '@/lib/constants';
-import { formatUptime, formatBytes, formatMbps, pct, cn } from '@/lib/utils';
+import { formatUptime, formatBytes, pct, cn } from '@/lib/utils';
 
-const METRIC_GRAPHS: Array<{ key: MetricKey; label: string; icon: typeof Cpu; color: string }> = [
+const CHART_METRICS: Array<{ key: MetricKey; label: string; icon: typeof Cpu; color: string }> = [
   { key: 'cpu', label: 'CPU', icon: Cpu, color: 'var(--accent)' },
   { key: 'ram', label: 'Memory', icon: MemoryStick, color: '#60A5FA' },
   { key: 'disk', label: 'Storage', icon: HardDrive, color: '#F59E0B' },
   { key: 'temp', label: 'Temperature', icon: Thermometer, color: '#F97316' },
-  { key: 'netDown', label: 'Network', icon: NetworkIcon, color: '#34D399' },
+];
+
+const RANGES: { value: HistoryRange; label: string }[] = [
+  { value: '15m', label: '15m' },
+  { value: '1h', label: '1H' },
+  { value: '6h', label: '6H' },
+  { value: '24h', label: '24H' },
 ];
 
 export default function ServerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { servers, loading } = useTelemetry();
   const [range, setRange] = useState<HistoryRange>('1h');
+  const [activeMetric, setActiveMetric] = useState<MetricKey>('cpu');
   const { clusters } = useClusters();
-  const server = servers.find((s) => s.spec.id === id);
+  const server = servers.find((s: ServerRuntime) => s.spec.id === id);
+  const sparklines = useTelemetryStore((s) => (id ? s.sparklines[id] : undefined));
 
   if (loading && !server) {
     return (
@@ -70,6 +80,7 @@ export default function ServerDetailPage() {
   const ramPct = pct(server.ramUsedGb, s.ramTotalGb);
   const diskPct = pct(server.diskUsedGb, s.diskTotalGb);
   const cluster = s.clusterId ? clusters.find((c) => c.id === s.clusterId) : undefined;
+  const activeDef = CHART_METRICS.find((m) => m.key === activeMetric) ?? CHART_METRICS[0];
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,14 +92,13 @@ export default function ServerDetailPage() {
         <ArrowLeft className="h-4 w-4" /> All servers
       </Link>
 
-      {/* Header card — locked 2-col format on desktop */}
+      {/* Header card */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
         className="card grid grid-cols-1 gap-6 p-6 md:grid-cols-[1fr_auto]"
       >
-        {/* Left: info */}
         <div className="flex items-start gap-4">
           <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated text-3xl">
             {s.logo}
@@ -137,7 +147,6 @@ export default function ServerDetailPage() {
           </div>
         </div>
 
-        {/* Right: health ring + stats grid */}
         <div className="flex items-center gap-6">
           <div className="text-center">
             <div className="text-[10px] uppercase tracking-widest text-text-muted">Health</div>
@@ -154,38 +163,66 @@ export default function ServerDetailPage() {
         </div>
       </motion.div>
 
-      {/* Live metric cards */}
+      {/* Live metric cards with sparklines */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <LiveMetric label="CPU" icon={Cpu} value={server.cpu} unit="%" color="var(--accent)" />
-        <LiveMetric label="Memory" icon={MemoryStick} value={ramPct} unit="%" color="#60A5FA" sub={`${formatBytes(server.ramUsedGb)} / ${formatBytes(s.ramTotalGb)}`} />
-        <LiveMetric label="Storage" icon={HardDrive} value={diskPct} unit="%" color="#F59E0B" sub={`${formatBytes(server.diskUsedGb)} / ${formatBytes(s.diskTotalGb)}`} />
-        <LiveMetric label="Temperature" icon={Thermometer} value={server.tempC} unit="°C" color="#F97316" />
+        <LiveMetric label="CPU" icon={Cpu} value={server.cpu} unit="%" color="var(--accent)" spark={sparklines?.cpu} />
+        <LiveMetric label="Memory" icon={MemoryStick} value={ramPct} unit="%" color="#60A5FA" sub={`${formatBytes(server.ramUsedGb)} / ${formatBytes(s.ramTotalGb)}`} spark={sparklines?.ram} />
+        <LiveMetric label="Storage" icon={HardDrive} value={diskPct} unit="%" color="#F59E0B" sub={`${formatBytes(server.diskUsedGb)} / ${formatBytes(s.diskTotalGb)}`} spark={sparklines?.disk} />
+        <LiveMetric label="Temperature" icon={Thermometer} value={server.tempC} unit="°C" color="#F97316" spark={sparklines?.temp} />
       </div>
 
-      {/* Per-metric line graphs */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {METRIC_GRAPHS.map((m) => {
-          const Icon = m.icon;
-          return (
-            <motion.div
-              key={m.key}
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-              className="card p-4"
-            >
-              <MetricChart server={server} metric={m.key} range={range} onRangeChange={setRange} height={180} />
-            </motion.div>
-          );
-        })}
-      </div>
+      {/* Single tabbed chart card */}
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        className="card p-4 sm:p-5"
+      >
+        {/* Metric selector buttons */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {CHART_METRICS.map((m) => {
+            const Icon = m.icon;
+            return (
+              <button
+                key={m.key}
+                onClick={() => setActiveMetric(m.key)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer',
+                  activeMetric === m.key
+                    ? 'bg-accent/15 text-accent'
+                    : 'text-text-muted hover:text-text-primary hover:bg-overlay/5',
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {m.label}
+              </button>
+            );
+          })}
 
-      {/* Resource breakdown */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <ResourceCard label="CPU Utilization" value={server.cpu} unit="%" color="var(--accent)" detail={`${s.cpuCores} logical cores · ${formatUptime(server.uptimeSeconds)} uptime`} />
-        <ResourceCard label="Memory Usage" value={ramPct} unit="%" color="#60A5FA" detail={`${formatBytes(server.ramUsedGb)} used of ${formatBytes(s.ramTotalGb)}`} />
-        <ResourceCard label="Storage Usage" value={diskPct} unit="%" color="#F59E0B" detail={`${formatBytes(server.diskUsedGb)} used of ${formatBytes(s.diskTotalGb)}`} />
-      </div>
+          <div className="h-5 w-px bg-surface-border mx-1" />
+
+          {/* Range selector */}
+          <div className="flex items-center gap-1 rounded-lg bg-overlay/5 p-0.5">
+            {RANGES.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => setRange(r.value)}
+                className={cn(
+                  'flex min-h-9 items-center rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer',
+                  range === r.value
+                    ? 'bg-accent/15 text-accent'
+                    : 'text-text-muted hover:text-text-primary',
+                )}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart */}
+        <MetricChart server={server} metric={activeMetric} range={range} onRangeChange={setRange} height={260} />
+      </motion.div>
 
       {/* Network throughput */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -243,6 +280,7 @@ function LiveMetric({
   unit,
   color,
   sub,
+  spark,
 }: {
   label: string;
   icon: typeof Cpu;
@@ -250,53 +288,32 @@ function LiveMetric({
   unit: string;
   color: string;
   sub?: string;
+  spark?: number[];
 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="card card-hover p-4"
+      className="card card-hover flex items-center justify-between gap-3 p-4"
     >
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-text-muted">
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-text-muted">
           <Icon className="h-3.5 w-3.5" style={{ color }} /> {label}
-        </span>
+        </div>
+        <div className="mt-1.5 font-display text-2xl font-bold tabular" style={{ color }}>
+          <AnimatedNumber value={value} decimals={value < 10 ? 1 : 0} />
+          <span className="ml-1 text-xs font-normal text-text-muted">{unit}</span>
+        </div>
+        {sub && <div className="mt-1 text-[11px] text-text-muted">{sub}</div>}
+      </div>
+      {spark && spark.length >= 2 ? (
+        <div className="shrink-0" style={{ width: 80, height: 36 }}>
+          <Sparkline data={spark} width={80} height={36} color={color} id={`detail-${label}`} />
+        </div>
+      ) : (
         <StatusDot status="online" pulse />
-      </div>
-      <div className="mt-2 font-display text-2xl font-bold tabular" style={{ color }}>
-        <AnimatedNumber value={value} decimals={value < 10 ? 1 : 0} />
-        <span className="ml-1 text-xs font-normal text-text-muted">{unit}</span>
-      </div>
-      {sub && <div className="mt-1 text-[11px] text-text-muted">{sub}</div>}
+      )}
     </motion.div>
-  );
-}
-
-function ResourceCard({
-  label,
-  value,
-  unit,
-  color,
-  detail,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  color: string;
-  detail: string;
-}) {
-  return (
-    <div className="card p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-sm font-semibold text-text-primary">{label}</span>
-        <span className="font-display text-lg font-bold tabular" style={{ color }}>
-          {Math.round(value)}
-          <span className="ml-0.5 text-xs font-normal text-text-muted">{unit}</span>
-        </span>
-      </div>
-      <ProgressBar value={value} color={color} />
-      <div className="mt-2 text-[11px] text-text-muted">{detail}</div>
-    </div>
   );
 }

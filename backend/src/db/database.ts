@@ -188,6 +188,34 @@ function migrate(database: Database.Database): void {
       status TEXT NOT NULL,
       note TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      host_id TEXT NOT NULL UNIQUE,
+      host_name TEXT NOT NULL,
+      ip TEXT NOT NULL DEFAULT '',
+      api_key_prefix TEXT NOT NULL,
+      api_key_hash TEXT NOT NULL,
+      os TEXT NOT NULL DEFAULT '',
+      cpu_cores INTEGER NOT NULL DEFAULT 0,
+      ram_total_gb REAL NOT NULL DEFAULT 0,
+      host_type TEXT NOT NULL DEFAULT 'unknown',
+      cpu_usage REAL NOT NULL DEFAULT 0,
+      ram_used_gb REAL NOT NULL DEFAULT 0,
+      disk_used_gb REAL NOT NULL DEFAULT 0,
+      disk_total_gb REAL NOT NULL DEFAULT 0,
+      net_down_mbps REAL NOT NULL DEFAULT 0,
+      net_up_mbps REAL NOT NULL DEFAULT 0,
+      uptime_seconds INTEGER NOT NULL DEFAULT 0,
+      temp_c REAL,
+      load_1 REAL NOT NULL DEFAULT 0,
+      containers_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'pending',
+      last_report_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agents_host_id ON agents(host_id);
   `);
 
   // Incremental column migrations (safe on pre-existing databases).
@@ -198,6 +226,35 @@ function migrate(database: Database.Database): void {
   if (!hasColumn('email_otp_enabled')) {
     database.exec('ALTER TABLE users ADD COLUMN email_otp_enabled INTEGER NOT NULL DEFAULT 0');
   }
+
+  // Agent table incremental migrations (v2 plugin support).
+  const agentColumns = database.prepare('PRAGMA table_info(agents)').all() as Array<{ name: string }>;
+  const hasAgentCol = (name: string) => agentColumns.some((c) => c.name === name);
+  if (!hasAgentCol('plugins_json')) database.exec("ALTER TABLE agents ADD COLUMN plugins_json TEXT NOT NULL DEFAULT '[]'");
+  if (!hasAgentCol('capabilities_json')) database.exec("ALTER TABLE agents ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '[]'");
+  if (!hasAgentCol('agent_version')) database.exec("ALTER TABLE agents ADD COLUMN agent_version TEXT NOT NULL DEFAULT '1.0.0'");
+  if (!hasAgentCol('process_count')) database.exec("ALTER TABLE agents ADD COLUMN process_count INTEGER NOT NULL DEFAULT 0");
+  if (!hasAgentCol('container_count')) database.exec("ALTER TABLE agents ADD COLUMN container_count INTEGER NOT NULL DEFAULT 0");
+  if (!hasAgentCol('running_count')) database.exec("ALTER TABLE agents ADD COLUMN running_count INTEGER NOT NULL DEFAULT 0");
+  if (!hasAgentCol('unhealthy_count')) database.exec("ALTER TABLE agents ADD COLUMN unhealthy_count INTEGER NOT NULL DEFAULT 0");
+
+  // Agent events table.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS agent_events (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'info',
+      plugin TEXT NOT NULL,
+      resource TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL DEFAULT '',
+      previous_state TEXT NOT NULL DEFAULT '',
+      current_state TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_events_agent_id ON agent_events(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_events_timestamp ON agent_events(timestamp);
+  `);
 }
 
 /** Persist a batch of snapshots in one transaction. */
