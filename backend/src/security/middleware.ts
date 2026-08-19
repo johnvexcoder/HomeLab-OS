@@ -141,7 +141,8 @@ export function mutationGuard(req: Request, res: Response, next: NextFunction): 
     path.startsWith('/api/auth/logout') ||
     path.startsWith('/api/auth/recovery') ||
     path.startsWith('/api/auth/2fa/email/send') ||
-    path.startsWith('/api/auth/2fa/question');
+    path.startsWith('/api/auth/2fa/question') ||
+    path.startsWith('/api/agent/');
 
   // CSRF double-submit (skipped for authenticated API-token style calls).
   if (!csrfExempt && validateCsrf(req.cookies?.[CSRF_COOKIE], req.headers[CSRF_HEADER] as string | undefined) === false) {
