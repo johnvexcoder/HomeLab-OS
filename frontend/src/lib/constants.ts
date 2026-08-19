@@ -62,6 +62,7 @@ export const ROLE_META: Record<string, { label: string; dot: string }> = {
   gateway: { label: 'Gateway', dot: 'bg-crit' },
   switch: { label: 'Switch', dot: 'bg-warn' },
   network: { label: 'Network', dot: 'bg-info' },
+  server: { label: 'Server', dot: 'bg-primary' },
 };
 
 /** Fleet capability model — shown as chips; the system keys off these, not role names. */
