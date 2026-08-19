@@ -173,6 +173,7 @@ export function createAgentRouter(): Router {
         net_down_mbps = ?, net_up_mbps = ?, uptime_seconds = ?,
         temp_c = ?, load_1 = ?, containers_json = ?,
         plugins_json = ?, capabilities_json = ?,
+        vm_id = ?, parent_ip = ?, virt_type = ?,
         status = 'online', last_report_at = ?, updated_at = ?
       WHERE id = ?
     `).run(
