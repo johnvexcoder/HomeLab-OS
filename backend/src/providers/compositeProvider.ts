@@ -1,5 +1,6 @@
 import type { MetricsProvider, TelemetryBroadcaster, ProviderDiagnostics, HistoryRange, DockerContainerInfo, DockerHostProfile } from './types';
 import type { DockerMetricsProvider } from './dockerMetricsProvider';
+import type { ProxmoxMetricsProvider } from './proxmoxMetricsProvider';
 import type {
   BootStats,
   ClusterInfo,
@@ -49,6 +50,15 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     this.docker?.onNotifications?.(listener);
   }
 
+  private getGuestMap(): Map<string, { vmid: string; name: string; running: boolean; nodeId: string }> {
+    // Try to get guest map from Proxmox provider
+    const primary = this.primary as ProxmoxMetricsProvider | undefined;
+    if (primary && typeof primary.getGuestMap === 'function') {
+      return primary.getGuestMap();
+    }
+    return new Map();
+  }
+
   getServers(): ServerRuntime[] {
     const primary = this.primary.getServers();
     const docker = this.docker?.getHostRuntime();
@@ -68,7 +78,8 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     }
 
     // Merge agent-reported servers (skip any that overlap with Proxmox/Docker)
-    const agentServers = getAgentServers(primaryIds);
+    const guestMap = this.getGuestMap();
+    const agentServers = getAgentServers(primaryIds, primary, guestMap);
     for (const s of agentServers) {
       result.push(s);
     }
@@ -80,7 +91,8 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const s = this.primary.getServer(id) ?? this.docker?.getHostRuntime();
     if (s && s.spec.id === id) return s;
     // Check agent servers
-    const agentServers = getAgentServers(new Set<string>());
+    const guestMap = this.getGuestMap();
+    const agentServers = getAgentServers(new Set<string>(), this.primary.getServers(), guestMap);
     return agentServers.find((a) => a.spec.id === id);
   }
 
@@ -131,7 +143,8 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
 
     const localContainers = this.docker?.getContainers() ?? [];
-    const agentProfiles = getAgentDockerHostProfiles();
+    const guestMap = this.getGuestMap();
+    const agentProfiles = getAgentDockerHostProfiles(guestMap);
     const agentContainerCount = agentProfiles.reduce((sum, p) => sum + p.containers.filter((c) => c.running).length, 0);
     const runningContainers = localContainers.filter((c) => c.running).length + agentContainerCount;
 
@@ -152,10 +165,11 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
 
   getNetwork(): { nodes: NetworkNode[]; links: NetworkLink[] } {
     const { nodes, links } = this.primary.getNetwork();
+    const guestMap = this.getGuestMap();
 
-    // Merge agent servers into the network topology
+    // Merge standalone agent servers into the network topology
     const existingIds = new Set(nodes.map((n) => n.id));
-    const agentServers = getAgentServers(existingIds);
+    const agentServers = getAgentServers(existingIds, this.primary.getServers(), guestMap);
     for (const s of agentServers) {
       nodes.push({
         id: s.spec.id,
@@ -256,11 +270,11 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       ports: c.ports,
     }));
 
-    // Merge agent-reported containers
-    const agentProfiles = getAgentDockerHostProfiles();
+    // Merge agent-reported containers (skip those correlated with Proxmox VMs)
+    const guestMap = this.getGuestMap();
+    const agentProfiles = getAgentDockerHostProfiles(guestMap);
     for (const ap of agentProfiles) {
       for (const c of ap.containers) {
-        // Skip duplicates from local Docker provider
         if (result.some((r) => r.name === c.name)) continue;
         result.push({
           id: c.id,
@@ -296,10 +310,10 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       });
     }
 
-    // Merge agent-reported Docker host profiles
-    const agentProfiles = getAgentDockerHostProfiles();
+    // Merge agent-reported Docker host profiles (skip those correlated with Proxmox VMs)
+    const guestMap = this.getGuestMap();
+    const agentProfiles = getAgentDockerHostProfiles(guestMap);
     for (const ap of agentProfiles) {
-      // Skip if already covered by local Docker provider
       if (profiles.some((p) => p.hostName === ap.hostName)) continue;
       profiles.push(ap);
     }

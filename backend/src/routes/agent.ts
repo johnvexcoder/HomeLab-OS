@@ -193,6 +193,9 @@ export function createAgentRouter(): Router {
       flat.containersJson ? String(flat.containersJson) : '[]',
       pluginsJson,
       capabilitiesJson,
+      String(hostInfo?.vmId ?? ''),
+      String(hostInfo?.parentIp ?? ''),
+      String(hostInfo?.virtType ?? ''),
       now,
       now,
       agent.id,
@@ -216,6 +219,7 @@ export function createAgentRouter(): Router {
       UPDATE agents SET
         host_name = ?, ip = ?, os = ?, host_type = ?,
         capabilities_json = ?, agent_version = ?,
+        vm_id = ?, parent_ip = ?, virt_type = ?,
         updated_at = ?
       WHERE id = ?
     `).run(
@@ -225,6 +229,9 @@ export function createAgentRouter(): Router {
       String(body.hostType ?? hostInfo?.hostType ?? 'unknown'),
       capabilities ? JSON.stringify(capabilities) : null,
       String(body.agentVersion ?? '1.0.0'),
+      String(hostInfo?.vmId ?? ''),
+      String(hostInfo?.parentIp ?? ''),
+      String(hostInfo?.virtType ?? ''),
       now,
       agent.id,
     );

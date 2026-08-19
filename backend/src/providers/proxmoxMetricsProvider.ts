@@ -289,6 +289,7 @@ export class ProxmoxMetricsProvider {
         id: `${g.vmid}`,
         name: g.name || `${g.vmid}`,
         running: g.status === 'running',
+        nodeId: spec.id,
       })),
     );
   }
@@ -618,6 +619,17 @@ export class ProxmoxMetricsProvider {
 
   getServer(id: string): ServerRuntime | undefined {
     return this.runtimes.get(id);
+  }
+
+  /** Get all Proxmox guests (VMs/CTs) keyed by VMID for agent correlation. */
+  getGuestMap(): Map<string, { vmid: string; name: string; running: boolean; nodeId: string }> {
+    const result = new Map<string, { vmid: string; name: string; running: boolean; nodeId: string }>();
+    for (const [nodeId, guests] of this.guests) {
+      for (const g of guests) {
+        result.set(g.id, { vmid: g.id, name: g.name, running: g.running, nodeId });
+      }
+    }
+    return result;
   }
 
   getHistory(serverId: string, range: HistoryRange): HistoryPoint[] {

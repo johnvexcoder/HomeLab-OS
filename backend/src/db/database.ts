@@ -237,6 +237,9 @@ function migrate(database: Database.Database): void {
   if (!hasAgentCol('container_count')) database.exec("ALTER TABLE agents ADD COLUMN container_count INTEGER NOT NULL DEFAULT 0");
   if (!hasAgentCol('running_count')) database.exec("ALTER TABLE agents ADD COLUMN running_count INTEGER NOT NULL DEFAULT 0");
   if (!hasAgentCol('unhealthy_count')) database.exec("ALTER TABLE agents ADD COLUMN unhealthy_count INTEGER NOT NULL DEFAULT 0");
+  if (!hasAgentCol('vm_id')) database.exec("ALTER TABLE agents ADD COLUMN vm_id TEXT");
+  if (!hasAgentCol('parent_ip')) database.exec("ALTER TABLE agents ADD COLUMN parent_ip TEXT");
+  if (!hasAgentCol('virt_type')) database.exec("ALTER TABLE agents ADD COLUMN virt_type TEXT");
 
   // Agent events table.
   database.exec(`
