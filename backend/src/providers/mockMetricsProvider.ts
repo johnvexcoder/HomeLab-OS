@@ -146,6 +146,8 @@ export class MockMetricsProvider implements MetricsProvider {
       {
         hostName: 'docker02',
         hostIp: '192.168.1.33',
+        netDownMbps: 45.2,
+        netUpMbps: 12.8,
         containers: [
           { id: 'c06a1b2c3d53', name: 'jellyfin', running: true, image: 'jellyfin/jellyfin:latest', ports: ['8096->8096/tcp'] },
           { id: 'c07a1b2c3d54', name: 'jellyfin-transcode', running: true, image: 'jellyfin/jellyfin:latest', ports: [] },

@@ -170,6 +170,8 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     return [{
       hostName,
       hostIp,
+      netDownMbps: runtime?.netDownMbps ?? 0,
+      netUpMbps: runtime?.netUpMbps ?? 0,
       containers: containers.map((c) => ({
         id: c.id,
         name: c.name,

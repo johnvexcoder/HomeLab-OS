@@ -18,6 +18,7 @@ const GUEST_SCOPES = [
   { id: 'cpu', label: 'CPU usage' },
   { id: 'ram', label: 'RAM usage' },
   { id: 'storage', label: 'Storage usage' },
+  { id: 'temp', label: 'Temperature' },
   { id: 'uptime', label: 'Uptime' },
   { id: 'ipAddresses', label: 'IP addresses' },
   { id: 'logs', label: 'Logs' },

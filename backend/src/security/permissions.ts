@@ -88,6 +88,7 @@ export const GUEST_SCOPES: Record<string, Permission> = {
   cpu: 'dashboard.view',
   ram: 'dashboard.view',
   storage: 'dashboard.view',
+  temp: 'dashboard.view',
   uptime: 'dashboard.view',
   ipAddresses: 'servers.view',
   logs: 'logs.view',

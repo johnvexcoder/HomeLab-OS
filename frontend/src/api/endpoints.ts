@@ -78,7 +78,7 @@ export const endpoints = {
 
   docker: {
     containers: () => api.get<{ containers: Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }> }>('/docker/containers'),
-    hosts: () => api.get<{ profiles: Array<{ hostName: string; hostIp: string; containers: Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }> }> }>('/docker/hosts'),
+    hosts: () => api.get<{ profiles: Array<{ hostName: string; hostIp: string; netDownMbps: number; netUpMbps: number; containers: Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }> }> }>('/docker/hosts'),
   },
 
   auth: {

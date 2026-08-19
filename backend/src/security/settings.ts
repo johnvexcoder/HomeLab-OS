@@ -81,7 +81,7 @@ const DEFAULTS: SettingsMap = {
   'security.smtpPassword': '',
   'security.smtpFrom': '',
   'access.guest.enabled': 'false',
-  'access.guest.scopes': JSON.stringify(['serverStatus', 'serviceStatus', 'containers', 'cpu', 'ram', 'storage', 'uptime']),
+  'access.guest.scopes': JSON.stringify(['serverStatus', 'serviceStatus', 'containers', 'cpu', 'ram', 'storage', 'temp', 'uptime']),
   'backup.enabled': 'true',
   'backup.retentionDaily': '7',
   'backup.retentionWeekly': '4',

@@ -301,14 +301,77 @@ export function IntegrationsManager() {
           ))}
         </div>
 
-        <Field label="Config (JSON)" className="mt-3" hint='e.g. {"url": "https://status.example.com", "chatId": "123"}'>
-          <TextArea
-            rows={4}
-            value={form.config}
-            onChange={(e) => setForm((f) => ({ ...f, config: e.target.value }))}
-            className="font-mono text-xs"
-          />
-        </Field>
+        {modalKind === 'email' ? (
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="SMTP Host">
+              <Input
+                value={String((JSON.parse(form.config || '{}') as Record<string, unknown>).smtpHost ?? '')}
+                onChange={(e) => setForm((f) => {
+                  const cfg = JSON.parse(f.config || '{}') as Record<string, unknown>;
+                  cfg.smtpHost = e.target.value;
+                  return { ...f, config: JSON.stringify(cfg) };
+                })}
+                placeholder="smtp.gmail.com"
+              />
+            </Field>
+            <Field label="SMTP Port">
+              <Input
+                type="number"
+                value={String((JSON.parse(form.config || '{}') as Record<string, unknown>).smtpPort ?? '')}
+                onChange={(e) => setForm((f) => {
+                  const cfg = JSON.parse(f.config || '{}') as Record<string, unknown>;
+                  cfg.smtpPort = Number(e.target.value);
+                  return { ...f, config: JSON.stringify(cfg) };
+                })}
+                placeholder="587"
+              />
+            </Field>
+            <Field label="From Address">
+              <Input
+                type="email"
+                value={String((JSON.parse(form.config || '{}') as Record<string, unknown>).smtpFrom ?? '')}
+                onChange={(e) => setForm((f) => {
+                  const cfg = JSON.parse(f.config || '{}') as Record<string, unknown>;
+                  cfg.smtpFrom = e.target.value;
+                  return { ...f, config: JSON.stringify(cfg) };
+                })}
+                placeholder="alerts@example.com"
+              />
+            </Field>
+            <Field label="Username (optional)">
+              <Input
+                value={String((JSON.parse(form.config || '{}') as Record<string, unknown>).smtpUser ?? '')}
+                onChange={(e) => setForm((f) => {
+                  const cfg = JSON.parse(f.config || '{}') as Record<string, unknown>;
+                  cfg.smtpUser = e.target.value;
+                  return { ...f, config: JSON.stringify(cfg) };
+                })}
+                placeholder="SMTP username"
+                autoComplete="off"
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Toggle
+                label="Use TLS (port 465)"
+                checked={(JSON.parse(form.config || '{}') as Record<string, unknown>).smtpSecure === true}
+                onChange={(next) => setForm((f) => {
+                  const cfg = JSON.parse(f.config || '{}') as Record<string, unknown>;
+                  cfg.smtpSecure = next;
+                  return { ...f, config: JSON.stringify(cfg) };
+                })}
+              />
+            </div>
+          </div>
+        ) : (
+          <Field label="Config (JSON)" className="mt-3" hint='e.g. {"url": "https://status.example.com", "chatId": "123"}'>
+            <TextArea
+              rows={4}
+              value={form.config}
+              onChange={(e) => setForm((f) => ({ ...f, config: e.target.value }))}
+              className="font-mono text-xs"
+            />
+          </Field>
+        )}
 
         {!featureMap[featureFor(modalKind)] && (
           <div className="mt-3 rounded-xl border border-warn/25 bg-warn/10 px-4 py-2.5 text-xs text-warn">

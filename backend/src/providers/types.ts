@@ -67,6 +67,8 @@ export interface DockerContainerInfo {
 export interface DockerHostProfile {
   hostName: string;
   hostIp: string;
+  netDownMbps: number;
+  netUpMbps: number;
   containers: DockerContainerInfo[];
 }
 
