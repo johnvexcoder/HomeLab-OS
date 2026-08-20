@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, Network, RefreshCw, WifiOff, X, Radio, ChevronRight, ChevronDown, Cpu, Thermometer, HardDrive, Activity, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
+import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import type { NetworkNode, NetworkLink } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { formatMbps } from '@/lib/utils';
@@ -82,6 +83,10 @@ export function NetworkMap() {
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
+  // Node dragging state — stores user-positioned node overrides
+  const [userPositions, setUserPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+
   const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.25, 3)), []);
   const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.25, 0.2)), []);
   const handleZoomReset = useCallback(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, []);
@@ -101,6 +106,27 @@ export function NetworkMap() {
   }, []);
 
   const onPointerUp = useCallback(() => { isPanning.current = false; }, []);
+
+  const handleNodePointerDown = useCallback((e: React.PointerEvent, nodeId: string, origX: number, origY: number) => {
+    e.stopPropagation();
+    dragRef.current = { id: nodeId, startX: e.clientX, startY: e.clientY, origX, origY };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleNodePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const dx = (e.clientX - dragRef.current.startX) / zoom;
+    const dy = (e.clientY - dragRef.current.startY) / zoom;
+    const newX = dragRef.current.origX + dx;
+    const newY = dragRef.current.origY + dy;
+    setUserPositions((prev) => {
+      const next = new Map(prev);
+      next.set(dragRef.current!.id, { x: newX, y: newY });
+      return next;
+    });
+  }, [zoom]);
+
+  const handleNodePointerUp = useCallback(() => { dragRef.current = null; }, []);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -180,6 +206,17 @@ export function NetworkMap() {
     groups: [],
   };
 
+  // Merge auto-layout positions with user-dragged overrides
+  const finalPositions = useMemo(() => {
+    if (userPositions.size === 0) return layoutNodes;
+    const result = new Map(layoutNodes);
+    for (const [id, pos] of userPositions) {
+      const base = result.get(id);
+      if (base) result.set(id, { ...base, x: pos.x, y: pos.y });
+    }
+    return result;
+  }, [layoutNodes, userPositions]);
+
   const external = useMemo<ExternalState>(() => {
     const wan = links.find((l) => l.source === 'internet' || l.target === 'internet');
     if (!wan) return 'reachable';
@@ -202,8 +239,8 @@ export function NetworkMap() {
       : totalTx.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
   const linkMid = (link: NetworkLink) => {
-    const a = layoutNodes.get(link.source);
-    const b = layoutNodes.get(link.target);
+    const a = finalPositions.get(link.source);
+    const b = finalPositions.get(link.target);
     if (!a || !b) return null;
     return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
   };
@@ -336,8 +373,8 @@ export function NetworkMap() {
             <div
               className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
               style={{
-                left: hoveredNode ? (layoutNodes.get(hoveredNode.id)?.x ?? 0) : tooltip!.mx,
-                top: (hoveredNode ? (layoutNodes.get(hoveredNode.id)?.y ?? 0) + 8 : tooltip!.my) ?? 0,
+                left: hoveredNode ? (finalPositions.get(hoveredNode.id)?.x ?? 0) : tooltip!.mx,
+                top: (hoveredNode ? (finalPositions.get(hoveredNode.id)?.y ?? 0) + 8 : tooltip!.my) ?? 0,
               }}
             >
               <div className="w-[min(220px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
@@ -377,7 +414,7 @@ export function NetworkMap() {
           {layout &&
             metrics &&
             visibleNodes.map((originalNode, i) => {
-              const p = layoutNodes.get(originalNode.id);
+              const p = finalPositions.get(originalNode.id);
               if (!p) return null;
               const nodeStatus = (originalNode.status || 'online') as keyof typeof NODE_STATUS_RING;
               const isInteractive = hoveredNode?.id === originalNode.id || selectedNode?.id === originalNode.id;
@@ -385,12 +422,17 @@ export function NetworkMap() {
               const box = isInternet ? Math.round(metrics.nodeSize * 1.125) : Math.round(metrics.nodeSize * 0.75);
               const hasCollapsedChildren = collapsedGroups.has(originalNode.id);
               const childCount = originalNode.childCount ?? nodes.filter((n) => n.parentId === originalNode.id).length;
+              const IconComponent = INFRA_ICON_COMPONENTS[originalNode.type];
 
               return (
                 <div
                   key={originalNode.id}
                   className="absolute"
                   style={{ left: p.x, top: p.y, transform: 'translate(-50%, -50%)' }}
+                  onPointerDown={(e) => handleNodePointerDown(e, originalNode.id, p.x, p.y)}
+                  onPointerMove={handleNodePointerMove}
+                  onPointerUp={handleNodePointerUp}
+                  onPointerCancel={handleNodePointerUp}
                 >
                   <motion.button
                     type="button"
@@ -446,7 +488,7 @@ export function NetworkMap() {
                               boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}44`,
                             }}
                           >
-                            <span>{NETWORK_NODE_ICONS_FRONTEND[originalNode.type] ?? '📦'}</span>
+                            <span>{IconComponent ? <IconComponent size={metrics.iconSize} /> : NETWORK_NODE_ICONS_FRONTEND[originalNode.type] ?? '📦'}</span>
                             <span
                               className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B]"
                               style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
@@ -600,10 +642,11 @@ const NODE_TYPE_LABEL: Record<string, string> = {
 function NodeTooltip({ node, nodeById }: { node: NetworkNode; nodeById: Map<string, NetworkNode> }) {
   const statusColor = NODE_STATUS_RING[(node.status || 'online') as keyof typeof NODE_STATUS_RING];
   const role = NODE_TYPE_LABEL[node.type] ?? node.type;
+  const IconComponent = INFRA_ICON_COMPONENTS[node.type];
   return (
     <>
       <div className="flex items-center gap-2">
-        <span className="text-sm">{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>
+        <span className="text-sm">{IconComponent ? <IconComponent size={16} /> : NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>
         <div className="min-w-0">
           <span className="block truncate text-[11px] font-semibold text-text-primary">{node.label}</span>
           <span className="block text-[10px] text-text-muted">{role}</span>
@@ -675,7 +718,7 @@ function NodeDetail({ node, nodeById, nodes, links, collapsedGroups, toggleColla
       <dl className="space-y-1.5 text-[11px]">
         <DetailRow label="Name">
           <span className="flex items-center gap-1.5">
-            <span>{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>
+            {(() => { const IC = INFRA_ICON_COMPONENTS[node.type]; return IC ? <IC size={14} /> : <span>{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>; })()}
             <span className="font-medium text-text-primary">{node.label}</span>
           </span>
         </DetailRow>
@@ -714,16 +757,19 @@ function NodeDetail({ node, nodeById, nodes, links, collapsedGroups, toggleColla
                 exit={{ height: 0, opacity: 0 }}
                 className="mt-1 space-y-0.5 overflow-hidden text-[10px] text-text-muted"
               >
-                {children.map((c) => (
-                  <li key={c.id} className="flex items-center gap-1.5">
-                    <span>{NETWORK_NODE_ICONS_FRONTEND[c.type] ?? '📦'}</span>
-                    <span className="truncate">{c.label}</span>
-                    <span
-                      className="ml-auto h-1.5 w-1.5 rounded-full"
-                      style={{ backgroundColor: NODE_STATUS_RING[(c.status || 'online') as keyof typeof NODE_STATUS_RING] }}
-                    />
-                  </li>
-                ))}
+                {children.map((c) => {
+                  const ChildIcon = INFRA_ICON_COMPONENTS[c.type];
+                  return (
+                    <li key={c.id} className="flex items-center gap-1.5">
+                      {ChildIcon ? <ChildIcon size={12} /> : <span>{NETWORK_NODE_ICONS_FRONTEND[c.type] ?? '📦'}</span>}
+                      <span className="truncate">{c.label}</span>
+                      <span
+                        className="ml-auto h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: NODE_STATUS_RING[(c.status || 'online') as keyof typeof NODE_STATUS_RING] }}
+                      />
+                    </li>
+                  );
+                })}
               </motion.ul>
             )}
           </AnimatePresence>
@@ -792,7 +838,7 @@ function LinkLayer({
 
   return (
     <g className={cn(active && 'link-active')}>
-      <path d={inCurve} fill="none" stroke="transparent" strokeWidth="20" pointerEvents="stroke" className="cursor-pointer" onMouseEnter={onHover} onMouseLeave={onLeave} onClick={onSelect} />
+      <path d={inCurve} fill="none" stroke="transparent" strokeWidth="20" pointerEvents="stroke" className="cursor-pointer" onMouseEnter={onHover} onMouseLeave={onLeave} onClick={onSelect} onPointerDown={(e) => e.stopPropagation()} />
       <path d={inCurve} fill="none" stroke={inColor} strokeOpacity={glowOpacity} strokeWidth={glowWidth} strokeLinecap="round" className="net-glow" style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${inColor})` }} />
       {!isOffLink && (
         <path d={outCurve} fill="none" stroke={outColor} strokeOpacity={glowOpacity} strokeWidth={glowWidth} strokeLinecap="round" className="net-glow" style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${outColor})` }} />

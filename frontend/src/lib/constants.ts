@@ -66,8 +66,10 @@ export const ROLE_META: Record<string, { label: string; dot: string }> = {
 };
 
 /**
- * Secondary role tags with color coding.
- * Determined by server capabilities and container count.
+ * Secondary role tags — two states only for VMs:
+ *   - containers > 0 → "CONTAINERS"
+ *   - containers = 0 → "VIRTUAL MACHINE"
+ * Hypervisors show their cluster name. Other roles show a contextual label.
  */
 export function getSecondaryRole(
   server: { spec: { role: string; profile: { containers: number; vms: number }; clusterId?: string | null } },
@@ -76,26 +78,26 @@ export function getSecondaryRole(
   const { role, profile, clusterId } = server.spec;
   const cluster = clusterId ? clusters?.find((c) => c.id === clusterId) : undefined;
 
-  // Hypervisors
+  // Hypervisors → show cluster name
   if (role === 'hypervisor') {
     return cluster
       ? { label: compactClusterLabel(cluster.name), tone: 'bg-crit/15 text-crit border-crit/20' }
       : { label: 'Proxmox Cluster', tone: 'bg-crit/15 text-crit border-crit/20' };
   }
 
-  // VMs with containers running → Container Host
+  // VMs with containers running → "CONTAINERS"
   if (profile.containers > 0) {
-    return { label: 'Docker Engine', tone: 'bg-amber-500/15 text-amber-400 border-amber-500/20' };
+    return { label: 'CONTAINERS', tone: 'bg-amber-500/15 text-amber-400 border-amber-500/20' };
   }
 
-  // VMs without containers → Guest OS
+  // VMs without containers → "VIRTUAL MACHINE"
   if (role === 'server') {
-    return { label: 'Guest OS', tone: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' };
+    return { label: 'VIRTUAL MACHINE', tone: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' };
   }
 
   // Docker hosts
   if (role === 'docker') {
-    return { label: 'Docker Host', tone: 'bg-blue-500/15 text-blue-400 border-blue-500/20' };
+    return { label: 'DOCKER HOST', tone: 'bg-blue-500/15 text-blue-400 border-blue-500/20' };
   }
 
   // Storage
@@ -105,7 +107,7 @@ export function getSecondaryRole(
 
   // Gateway/Firewall
   if (role === 'gateway') {
-    return { label: 'Gateway', tone: 'bg-teal-500/15 text-teal-400 border-teal-500/20' };
+    return { label: 'GATEWAY', tone: 'bg-teal-500/15 text-teal-400 border-teal-500/20' };
   }
 
   return null;

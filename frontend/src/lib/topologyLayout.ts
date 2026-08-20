@@ -78,9 +78,9 @@ function estTextWidth(text: string, fontSize: number): number {
 }
 
 /** Fixed spacing constants — these determine the layout density */
-const COLUMN_GAP = 180;       // horizontal gap between hierarchy levels
-const ROW_GAP = 90;           // vertical gap between siblings
-const SUBTREE_GAP = 120;      // gap between different parent subtrees
+const COLUMN_GAP = 220;       // horizontal gap between hierarchy levels
+const ROW_GAP = 120;          // vertical gap between siblings
+const SUBTREE_GAP = 140;      // gap between different parent subtrees
 const PADDING = 60;           // outer padding
 const NODE_SIZE = 48;         // fixed node box size
 const LABEL_BLOCK = 28;       // space below node for label + IP

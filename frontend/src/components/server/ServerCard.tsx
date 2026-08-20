@@ -98,7 +98,7 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
         <MiniMetric label="Uptime" value={formatUptime(server.uptimeSeconds)} />
         <MiniMetric label="Processes" value={<AnimatedNumber value={server.processes} />} />
         <MiniMetric
-          label={s.profile.containers > 0 ? 'Containers' : 'Virtual Machines'}
+          label={s.profile.containers > 0 ? 'Containers' : 'VMs'}
           value={<AnimatedNumber value={s.profile.containers > 0 ? s.profile.containers : s.profile.vms} />}
         />
       </div>
