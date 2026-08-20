@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Thermometer, ArrowDown, ArrowUp, Layers, Server } from 'lucide-react';
 import type { ServerRuntime } from '@/types';
-import { ROLE_META, REACH_META, CAPABILITY_META, statusTextClass, statusDotClass, compactClusterLabel } from '@/lib/constants';
+import { ROLE_META, REACH_META, CAPABILITY_META, statusTextClass, statusDotClass, compactClusterLabel, getSecondaryRole } from '@/lib/constants';
 import { formatUptime, formatBytes, formatMbps, pct, cn } from '@/lib/utils';
 import { useTelemetryStore } from '@/store/telemetry';
 import { useClusters } from '@/hooks/useQueries';
@@ -17,6 +17,7 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
   const s = server.spec;
   const role = ROLE_META[s.role];
   const reach = REACH_META[server.reachability];
+  const secondaryRole = getSecondaryRole(server as any, clusters);
   const cluster = s.clusterId ? clusters.find((c) => c.id === s.clusterId) : undefined;
   const clusterLabel = cluster ? compactClusterLabel(cluster.name) : undefined;
 
@@ -44,11 +45,10 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
             <h3 className="truncate font-display text-base font-bold text-text-primary">{s.name}</h3>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <Badge tone="neutral" size="sm">{role.label}</Badge>
-              {cluster && (
-                <Badge tone="info" size="sm" className="max-w-full">
-                  <Server className="h-2.5 w-2.5 shrink-0" />
-                  <span className="truncate">{clusterLabel}</span>
-                </Badge>
+              {secondaryRole && (
+                <span className={`inline-flex items-center gap-1.5 rounded-full border font-medium tracking-wide px-2 py-0.5 text-[10px] ${secondaryRole.tone}`}>
+                  {secondaryRole.label}
+                </span>
               )}
             </div>
           </div>

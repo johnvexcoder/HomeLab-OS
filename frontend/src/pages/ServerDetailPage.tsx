@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/Badge';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { ProgressRing } from '@/components/ui/Progress';
 import { Skeleton, StatusDot } from '@/components/ui/Status';
-import { ROLE_META, REACH_META, CAPABILITY_META } from '@/lib/constants';
+import { ROLE_META, REACH_META, CAPABILITY_META, getSecondaryRole } from '@/lib/constants';
 import { formatUptime, formatBytes, pct, cn } from '@/lib/utils';
 
 const CHART_METRICS: Array<{ key: MetricKey; label: string; icon: typeof Cpu; color: string }> = [
@@ -80,6 +80,7 @@ export default function ServerDetailPage() {
   const ramPct = pct(server.ramUsedGb, s.ramTotalGb);
   const diskPct = pct(server.diskUsedGb, s.diskTotalGb);
   const cluster = s.clusterId ? clusters.find((c) => c.id === s.clusterId) : undefined;
+  const secondaryRole = getSecondaryRole(server as any, clusters);
   const activeDef = CHART_METRICS.find((m) => m.key === activeMetric) ?? CHART_METRICS[0];
 
   return (
@@ -113,13 +114,10 @@ export default function ServerDetailPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="fluid-h1 font-display font-bold tracking-tight text-text-primary">{s.name}</h1>
               <Badge tone="neutral">{role.label}</Badge>
-              {cluster ? (
-                <Badge tone="info">
-                  <ServerIcon className="h-3 w-3" />
-                  {cluster.name}
-                </Badge>
-              ) : (
-                <Badge tone="neutral">Standalone</Badge>
+              {secondaryRole && (
+                <span className={`inline-flex items-center gap-1.5 rounded-full border font-medium tracking-wide px-2.5 py-0.5 text-[11px] ${secondaryRole.tone}`}>
+                  {secondaryRole.label}
+                </span>
               )}
               <Badge tone={server.status === 'online' ? 'success' : server.status === 'degraded' ? 'warn' : 'crit'} dot>
                 {server.status.toUpperCase()}

@@ -65,6 +65,52 @@ export const ROLE_META: Record<string, { label: string; dot: string }> = {
   server: { label: 'Server', dot: 'bg-primary' },
 };
 
+/**
+ * Secondary role tags with color coding.
+ * Determined by server capabilities and container count.
+ */
+export function getSecondaryRole(
+  server: { spec: { role: string; profile: { containers: number; vms: number }; clusterId?: string | null } },
+  clusters?: Array<{ id: string; name: string }>,
+): { label: string; tone: string } | null {
+  const { role, profile, clusterId } = server.spec;
+  const cluster = clusterId ? clusters?.find((c) => c.id === clusterId) : undefined;
+
+  // Hypervisors
+  if (role === 'hypervisor') {
+    return cluster
+      ? { label: compactClusterLabel(cluster.name), tone: 'bg-crit/15 text-crit border-crit/20' }
+      : { label: 'Proxmox Cluster', tone: 'bg-crit/15 text-crit border-crit/20' };
+  }
+
+  // VMs with containers running → Container Host
+  if (profile.containers > 0) {
+    return { label: 'Docker Engine', tone: 'bg-amber-500/15 text-amber-400 border-amber-500/20' };
+  }
+
+  // VMs without containers → Guest OS
+  if (role === 'server') {
+    return { label: 'Guest OS', tone: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' };
+  }
+
+  // Docker hosts
+  if (role === 'docker') {
+    return { label: 'Docker Host', tone: 'bg-blue-500/15 text-blue-400 border-blue-500/20' };
+  }
+
+  // Storage
+  if (role === 'storage') {
+    return { label: 'NAS', tone: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20' };
+  }
+
+  // Gateway/Firewall
+  if (role === 'gateway') {
+    return { label: 'Gateway', tone: 'bg-teal-500/15 text-teal-400 border-teal-500/20' };
+  }
+
+  return null;
+}
+
 /** Fleet capability model — shown as chips; the system keys off these, not role names. */
 export const CAPABILITY_META: Record<string, { label: string }> = {
   virtualization: { label: 'Virtualization' },
