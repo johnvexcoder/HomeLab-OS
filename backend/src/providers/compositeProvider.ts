@@ -88,12 +88,8 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
   }
 
   getServer(id: string): ServerRuntime | undefined {
-    const s = this.primary.getServer(id) ?? this.docker?.getHostRuntime();
-    if (s && s.spec.id === id) return s;
-    // Check agent servers
-    const guestMap = this.getGuestMap();
-    const agentServers = getAgentServers(new Set<string>(), this.primary.getServers(), guestMap);
-    return agentServers.find((a) => a.spec.id === id);
+    // Use getServers() which applies agent enrichment to Proxmox servers
+    return this.getServers().find((s) => s.spec.id === id);
   }
 
   getHistory(serverId: string, range: HistoryRange) {
