@@ -4,6 +4,8 @@ import { getDb } from '../db/database';
 import { sha256, randomBytes } from '../security/crypto';
 import { requireAuth, requirePermission } from '../security/middleware';
 import { audit } from '../security/audit';
+import { dispatchNotification } from '../services/notificationBus';
+import type { Notification } from '../types';
 
 function generateApiKey(): { plain: string; prefix: string; hash: string } {
   const plain = `hl_${randomBytes(32)}`;
@@ -75,6 +77,8 @@ function extractFlatMetrics(body: Record<string, unknown>): Record<string, unkno
           metrics.netUpMbps = (net.upMbps as number) ?? 0;
         }
         if (procs) metrics.processCount = (procs.total as number) ?? 0;
+        // Extract uptime from the Linux plugin (os.uptime() in seconds)
+        if (d.uptime != null) metrics.uptimeSeconds = (d.uptime as number) ?? 0;
         break;
       }
       case 'sensors': {
@@ -162,7 +166,7 @@ export function createAgentRouter(): Router {
     const diskTotalGb = Number(flat.diskTotalGb ?? 0);
     const netDownMbps = Number(flat.netDownMbps ?? 0);
     const netUpMbps = Number(flat.netUpMbps ?? 0);
-    const uptimeSeconds = Number(flat.uptimeSeconds ?? 0);
+    const uptimeSeconds = Number(flat.uptimeSeconds ?? hostInfo?.uptimeSeconds ?? 0);
     const tempC = flat.tempC != null ? Number(flat.tempC) : null;
     const load1 = Number(flat.load1 ?? 0);
 
@@ -219,6 +223,71 @@ export function createAgentRouter(): Router {
       now,
       agent.id,
     );
+
+    // ── Container state change detection ──
+    // Compare previous containers_json with new data to detect stopped/started containers
+    const prevContainersJson = String(agent.containers_json ?? '[]');
+    const newContainersJson = String(flat.containersJson ?? '[]');
+    if (prevContainersJson !== '[]' && newContainersJson !== '[]' && prevContainersJson !== newContainersJson) {
+      try {
+        const prevContainers = JSON.parse(prevContainersJson) as Array<{ name: string; running: boolean; image: string }>;
+        const newContainers = JSON.parse(newContainersJson) as Array<{ name: string; running: boolean; image: string }>;
+        const prevMap = new Map(prevContainers.map((c) => [c.name, c]));
+        const newMap = new Map(newContainers.map((c) => [c.name, c]));
+
+        // Detect stopped containers (was running, now stopped)
+        for (const [name, prev] of prevMap) {
+          const cur = newMap.get(name);
+          if (cur && prev.running && !cur.running) {
+            const n: Notification = {
+              id: `ntf-agent-stopped-${name}-${crypto.randomUUID()}`,
+              title: 'Container Stopped',
+              message: `Container "${name}" on agent ${agent.host_name} has stopped.\nImage: ${cur.image}`,
+              severity: 'critical',
+              timestamp: now,
+              read: false,
+              serverId: `agent-${agent.host_id}`,
+            };
+            dispatchNotification(n);
+          }
+        }
+
+        // Detect started containers (was stopped, now running)
+        for (const [name, prev] of prevMap) {
+          const cur = newMap.get(name);
+          if (cur && !prev.running && cur.running) {
+            const n: Notification = {
+              id: `ntf-agent-started-${name}-${crypto.randomUUID()}`,
+              title: 'Container Started',
+              message: `Container "${name}" on agent ${agent.host_name} is back online.\nImage: ${cur.image}`,
+              severity: 'success',
+              timestamp: now,
+              read: false,
+              serverId: `agent-${agent.host_id}`,
+            };
+            dispatchNotification(n);
+          }
+        }
+
+        // Detect new containers (not in previous, running now)
+        for (const [name, cur] of newMap) {
+          if (!prevMap.has(name) && cur.running) {
+            const n: Notification = {
+              id: `ntf-agent-added-${name}-${crypto.randomUUID()}`,
+              title: 'Container Added',
+              message: `New container "${name}" detected on agent ${agent.host_name}.\nImage: ${cur.image}`,
+              severity: 'info',
+              timestamp: now,
+              read: false,
+              serverId: `agent-${agent.host_id}`,
+            };
+            dispatchNotification(n);
+          }
+        }
+      } catch {
+        // JSON parse error — ignore, don't crash the report handler
+      }
+    }
 
     res.json({ ok: true });
   });

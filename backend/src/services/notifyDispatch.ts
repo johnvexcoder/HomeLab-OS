@@ -1,5 +1,6 @@
 import type { Notification, MetricSnapshot, ServerStatus } from '../types';
 import { dispatchToChannels } from './integrations';
+import { dispatchNotification } from './notificationBus';
 
 /**
  * Central notification dispatcher. Routes notifications to external channels
@@ -43,8 +44,19 @@ class NotifyDispatcher {
 
       if (!prev || prev === curr) continue;
 
+      // Create a database notification record so it appears in the frontend panel
       const serverName = snap.serverId.replace(/-/g, ' ');
       if (curr === 'offline' && prev !== 'offline') {
+        const n: Notification = {
+          id: `ntf-server-offline-${snap.serverId}-${Date.now()}`,
+          title: 'Server Offline',
+          message: `${serverName} has gone OFFLINE.\nPrevious status: ${prev}`,
+          severity: 'critical',
+          timestamp: Date.now(),
+          read: false,
+          serverId: snap.serverId,
+        };
+        dispatchNotification(n);
         this.enqueue(() =>
           dispatchToChannels(
             `Server Offline`,
@@ -53,6 +65,16 @@ class NotifyDispatcher {
           ).catch(() => {}),
         );
       } else if (curr === 'online' && prev === 'offline') {
+        const n: Notification = {
+          id: `ntf-server-online-${snap.serverId}-${Date.now()}`,
+          title: 'Server Online',
+          message: `${serverName} is back ONLINE.`,
+          severity: 'success',
+          timestamp: Date.now(),
+          read: false,
+          serverId: snap.serverId,
+        };
+        dispatchNotification(n);
         this.enqueue(() =>
           dispatchToChannels(
             `Server Online`,
@@ -61,6 +83,16 @@ class NotifyDispatcher {
           ).catch(() => {}),
         );
       } else if (curr === 'degraded' && prev === 'online') {
+        const n: Notification = {
+          id: `ntf-server-degraded-${snap.serverId}-${Date.now()}`,
+          title: 'Server Degraded',
+          message: `${serverName} status changed to DEGRADED.`,
+          severity: 'warning',
+          timestamp: Date.now(),
+          read: false,
+          serverId: snap.serverId,
+        };
+        dispatchNotification(n);
         this.enqueue(() =>
           dispatchToChannels(
             `Server Degraded`,

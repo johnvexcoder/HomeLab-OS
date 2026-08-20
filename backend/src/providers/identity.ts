@@ -296,9 +296,8 @@ function enrichServerWithAgent(
     server.tempC = round(parentNode.tempC, 1);
     // Tag the temperature source for the UI to display "Inherited from PVE0"
     (server.spec as any)._tempSource = parentNode.spec.hostname;
-  } else {
-    server.tempC = 0;
   }
+  // else: keep the existing server.tempC (from Proxmox) — do NOT overwrite with 0
 
   // ── Profile ──
   server.spec.profile.baseCpu = server.cpu;
@@ -362,7 +361,7 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string): ServerRuntim
       hostname: agent.host_name,
       name: agent.host_name,
       logo: hostLogo(agent.host_type),
-      os: agent.os || agent.host_type,
+      os: agent.os || 'Unknown OS',
       description: `HomeLab Agent on ${agent.host_name}`,
       role: containers.length > 0 ? 'docker' : 'server',
       capabilities: ['monitoring'],
@@ -463,7 +462,8 @@ export function reconcileServers(
 
     if (match.kind === 'host') {
       // Agent runs ON a Proxmox node — enrich the node itself
-      enrichServerWithAgent(match.parentServer!, agent);
+      // Pass the node itself as parentNode so temperature inheritance works
+      enrichServerWithAgent(match.parentServer!, agent, match.parentServer);
       continue;
     }
 

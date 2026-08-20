@@ -15,6 +15,7 @@ import { getDb, insertMetrics, queryMetrics, countMetrics } from './db/database'
 import { bootstrapSecurity } from './security/boot';
 import { startBackupScheduler } from './services/backupScheduler';
 import { notifyDispatcher } from './services/notifyDispatch';
+import { registerNotificationBus } from './services/notificationBus';
 import { startSslChecker } from './services/sslChecker';
 import { startUptimeKumaMonitor } from './services/uptimeKumaMonitor';
 import { startNetworkBandwidth } from './services/networkBandwidth';
@@ -113,6 +114,13 @@ async function bootstrap(): Promise<void> {
   for (const batch of pendingWsNotifications) {
     broadcastNotifications(batch);
   }
+
+  // Wire the shared notification bus so agent routes can dispatch notifications
+  registerNotificationBus(
+    (n) => notifications.ingest(n),
+    (items) => notifyDispatcher.dispatchNotifications(items),
+    (items) => broadcastNotifications(items),
+  );
 
   startBackupScheduler();
   startSslChecker();
