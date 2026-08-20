@@ -665,7 +665,8 @@ export class ProxmoxMetricsProvider {
   }
 
   private nodeTempC(sensors: PveSensor[]): number {
-    const temps = sensors.filter((s) => s.type === 'temperature');
+    const temperatureTypes = ['temperature', 'temp', 'thermal'];
+    const temps = sensors.filter((s) => temperatureTypes.includes(s.type));
     if (temps.length === 0) return 0;
     return Math.max(...temps.map((s) => s.value));
   }
