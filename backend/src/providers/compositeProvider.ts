@@ -156,11 +156,11 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const ownIp = this.getOwnIp();
     if (!ownIp) return;
 
-    // Find a server with our IP that has default/low metrics (not agent-enriched)
+    // Find a server with our IP and apply self-monitor fallback for tempC
     for (const s of servers) {
       if (s.spec.ip !== ownIp) continue;
-      // If agent already enriched it (CPU > 0 and non-zero temp/disk), skip
-      if (s.cpu > 0 && s.diskUsedGb > 0) continue;
+      // Only skip self-enrichment if agent already provided a real temp (not 0)
+      if (s.cpu > 0 && s.diskUsedGb > 0 && s.tempC != null && s.tempC !== 0) continue;
 
       const m = collectSelfMetrics();
       s.cpu = m.cpuUsage;
