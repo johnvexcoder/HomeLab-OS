@@ -473,7 +473,8 @@ export function reconcileServers(
 
       if (guestServer) {
         claimedVmids.add(match.guest.vmid);
-        claimedGuestIds.add(guestServerId);
+        // NOTE: Do NOT add to claimedGuestIds — this guest IS the enriched server.
+        // claimedGuestIds is only for removing UNMATCHED stale Proxmox guest cards.
 
         if (agentIsStale) {
           // Proxmox says running, but agent is offline

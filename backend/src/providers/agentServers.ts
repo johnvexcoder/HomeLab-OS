@@ -73,12 +73,14 @@ export function getAgentDockerHostProfiles(
 
     // Skip agents that match a Proxmox guest (they're already enriched there)
     if (row.vm_id) {
+      let isProxmoxGuest = false;
       for (const [, guest] of proxmoxGuests) {
         if (guest.vmid === row.vm_id) {
-          // This agent is inside a Proxmox VM — don't create a separate Docker host profile
+          isProxmoxGuest = true;
           break;
         }
       }
+      if (isProxmoxGuest) continue;
     }
 
     const containers = safeJson<Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }>>(
