@@ -1,9 +1,12 @@
 /**
  * Hierarchical Layout Engine for Network Topology
  *
- * Generates positions for network nodes using a layered/hierarchical graph layout.
- * Nodes are organized by their depth in the parent-child hierarchy, with automatic
- * spacing to prevent overlaps and use available canvas space intelligently.
+ * Generates compact positions for network nodes using a layered layout.
+ * The topology flows Internet -> Hypervisor -> VMs/CTs -> Docker containers.
+ *
+ * Uses a leaf-weighted interval split so every subtree gets vertical space
+ * proportional to the number of leaves it holds, with a minimum gap to
+ * prevent overlaps.
  */
 
 export interface LayoutNode {
@@ -20,19 +23,12 @@ export interface LayoutResult {
 
 /**
  * Calculate positions for nodes in a tidy left-to-right hierarchical layout.
- * The topology flows Internet → Gateway → Host → Services, exactly like an
- * enterprise network diagram:
  *
- * - x comes from depth: each level occupies its own column (left → right)
- * - y uses a leaf-weighted interval split so every subtree gets a vertical
- *   span proportional to the number of leaves it holds
- * - every node hands its own span to its children, split by leaf count
- * - y is the center of a node's span
+ * - x = depth column (each level gets its own column, left -> right)
+ * - y = center of the subtree's vertical span (leaf-weighted splitting)
  *
- * This guarantees children never leave their parent's column (no cross-parent
- * collisions), keeps nodes of one subtree visually grouped, and automatically
- * rearranges everything whenever nodes are added or removed — no hardcoded
- * coordinates anywhere.
+ * The layout is compact: nodes fill the available space proportionally
+ * with a small guaranteed gap between siblings.
  */
 export function calculateHierarchicalLayout(
   nodes: LayoutNode[],
@@ -42,6 +38,8 @@ export function calculateHierarchicalLayout(
   if (nodes.length === 0) return new Map();
 
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+  // Build children map
   const childrenMap = new Map<string, string[]>();
   for (const node of nodes) {
     if (node.parentId && nodeMap.has(node.parentId)) {
@@ -51,18 +49,16 @@ export function calculateHierarchicalLayout(
     }
   }
 
+  // Calculate depth for each node
   const depths = new Map<string, number>();
   const visiting = new Set<string>();
   const getDepth = (nodeId: string): number => {
     if (depths.has(nodeId)) return depths.get(nodeId)!;
-    if (visiting.has(nodeId)) {
-      depths.set(nodeId, 0);
-      return 0;
-    }
+    if (visiting.has(nodeId)) { depths.set(nodeId, 0); return 0; }
     visiting.add(nodeId);
-    const node = nodeMap.get(nodeId)!;
-    const depth =
-      node.parentId && nodeMap.has(node.parentId) ? getDepth(node.parentId) + 1 : 0;
+    const node = nodeMap.get(nodeId);
+    if (!node) { depths.set(nodeId, 0); return 0; }
+    const depth = node.parentId && nodeMap.has(node.parentId) ? getDepth(node.parentId) + 1 : 0;
     visiting.delete(nodeId);
     depths.set(nodeId, depth);
     return depth;
@@ -72,6 +68,7 @@ export function calculateHierarchicalLayout(
   let maxDepth = 0;
   for (const d of depths.values()) if (d > maxDepth) maxDepth = d;
 
+  // Count leaves per node
   const leafCount = new Map<string, number>();
   const countLeaves = (nodeId: string): number => {
     const kids = childrenMap.get(nodeId) ?? [];
@@ -85,10 +82,16 @@ export function calculateHierarchicalLayout(
 
   const positions = new Map<string, LayoutResult>();
 
-  const xOf = (depth: number) => ((depth + 1) / (maxDepth + 2)) * canvasWidth;
+  // x position: each depth level gets its own column
+  const padding = 8;
+  const usableWidth = canvasWidth - 2 * padding;
+  const xOf = (depth: number) => {
+    if (maxDepth === 0) return canvasWidth / 2;
+    return padding + ((depth) / maxDepth) * usableWidth;
+  };
 
-  /** Children are split leaf-weighted, with a guaranteed vertical min-gap between them. */
-  const minGap = 10;
+  // Minimum vertical gap between siblings (in canvas units)
+  const minGap = 4;
 
   const assign = (nodeId: string, top: number, bottom: number, depth: number) => {
     positions.set(nodeId, {
@@ -99,6 +102,7 @@ export function calculateHierarchicalLayout(
 
     const kids = childrenMap.get(nodeId) ?? [];
     if (kids.length === 0) return;
+
     let total = 0;
     for (const kid of kids) total += leafCount.get(kid) ?? 1;
     if (total <= 0) return;
@@ -116,14 +120,18 @@ export function calculateHierarchicalLayout(
     }
   };
 
+  // Find root nodes (no parent, or parent not in graph)
   const roots = nodes.filter((n) => !(n.parentId && nodeMap.has(n.parentId)));
   let totalLeaves = 0;
   for (const root of roots) totalLeaves += leafCount.get(root.id) ?? 1;
   if (totalLeaves <= 0) totalLeaves = roots.length || 1;
 
-  let cursorY = 0;
+  const paddingY = 5;
+  const usableHeight = canvasHeight - 2 * paddingY;
+  let cursorY = paddingY;
+
   for (const root of roots) {
-    const span = (canvasHeight * (leafCount.get(root.id) ?? 1)) / totalLeaves;
+    const span = (usableHeight * (leafCount.get(root.id) ?? 1)) / totalLeaves;
     assign(root.id, cursorY, cursorY + span, depths.get(root.id) ?? 0);
     cursorY += span;
   }
@@ -133,7 +141,6 @@ export function calculateHierarchicalLayout(
 
 /**
  * Apply calculated positions to nodes.
- * Converts layout positions to node x/y coordinates.
  */
 export function applyLayout<T extends LayoutNode & { x: number; y: number }>(
   nodes: T[],
@@ -142,11 +149,7 @@ export function applyLayout<T extends LayoutNode & { x: number; y: number }>(
   return nodes.map((node) => {
     const pos = layout.get(node.id);
     if (pos) {
-      return {
-        ...node,
-        x: pos.x,
-        y: pos.y,
-      };
+      return { ...node, x: pos.x, y: pos.y };
     }
     return node;
   });

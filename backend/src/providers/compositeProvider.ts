@@ -171,6 +171,11 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const existingIds = new Set(nodes.map((n) => n.id));
     const agentServers = getAgentServers(existingIds, this.primary.getServers(), guestMap);
     for (const s of agentServers) {
+      // Agent VMs on Proxmox are children of the Proxmox node; bare-metal agents are top-level
+      const parentNode = s.spec.clusterId && nodes.some((n) => n.id === s.spec.clusterId)
+        ? s.spec.clusterId
+        : 'internet';
+
       nodes.push({
         id: s.spec.id,
         label: s.spec.name,
@@ -178,13 +183,13 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         status: s.status,
         x: 50,
         y: 50,
-        parentId: 'internet',
+        parentId: parentNode,
         ip: s.spec.ip || undefined,
         health: s.health,
       });
       links.push({
-        id: `internet-${s.spec.id}`,
-        source: 'internet',
+        id: `${parentNode}-${s.spec.id}`,
+        source: parentNode,
         target: s.spec.id,
         status: s.status === 'online' ? 'healthy' : s.status === 'degraded' ? 'warning' : 'critical',
         latencyMs: 1,
