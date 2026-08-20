@@ -240,6 +240,10 @@ function migrate(database: Database.Database): void {
   if (!hasAgentCol('vm_id')) database.exec("ALTER TABLE agents ADD COLUMN vm_id TEXT");
   if (!hasAgentCol('parent_ip')) database.exec("ALTER TABLE agents ADD COLUMN parent_ip TEXT");
   if (!hasAgentCol('virt_type')) database.exec("ALTER TABLE agents ADD COLUMN virt_type TEXT");
+  if (!hasAgentCol('machine_id')) database.exec("ALTER TABLE agents ADD COLUMN machine_id TEXT NOT NULL DEFAULT ''");
+  if (!hasAgentCol('mac_address')) database.exec("ALTER TABLE agents ADD COLUMN mac_address TEXT NOT NULL DEFAULT ''");
+  if (!hasAgentCol('host_type_detected')) database.exec("ALTER TABLE agents ADD COLUMN host_type_detected TEXT NOT NULL DEFAULT ''");
+  if (!hasAgentCol('hypervisor')) database.exec("ALTER TABLE agents ADD COLUMN hypervisor TEXT NOT NULL DEFAULT ''");
 
   // Agent events table.
   database.exec(`

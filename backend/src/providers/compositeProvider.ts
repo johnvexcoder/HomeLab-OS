@@ -18,6 +18,7 @@ import { insertMetrics } from '../db/database';
 import { statsHistoryFor } from './history';
 import { calculateHierarchicalLayout, applyLayout } from './hierarchicalLayout';
 import { getAgentServers, getAgentDockerHostProfiles } from './agentServers';
+import { reconcileServers } from './identity';
 import { getNetworkBandwidth } from '../services/networkBandwidth';
 import { collectSelfMetrics, type SelfMonitorData } from './selfMonitor';
 import * as os from 'os';
@@ -106,15 +107,14 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       result.push(docker);
     }
 
-    // Merge agent-reported servers (skip any that overlap with Proxmox/Docker)
+    // Merge agent-reported servers using the identity reconciliation engine
     const guestMap = this.getGuestMap();
     const { runtimes: agentServers, claimedGuestIds } = getAgentServers(primaryIds, primary, guestMap);
     for (const s of agentServers) {
       result.push(s);
     }
 
-    // Remove stale Proxmox guest cards that an agent on the same subnet
-    // has claimed (e.g. debian01 card when docker01 agent exists on same host)
+    // Remove stale Proxmox guest cards that an agent has claimed
     if (claimedGuestIds.size > 0) {
       for (let i = result.length - 1; i >= 0; i--) {
         if (claimedGuestIds.has(result[i].spec.id)) {
@@ -272,8 +272,11 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const guestMap = this.getGuestMap();
     const existingIds = new Set(nodes.map((n) => n.id));
 
-    // Merge standalone agent servers
-    const { runtimes: agentServers, claimedGuestIds } = getAgentServers(existingIds, this.primary.getServers(), guestMap);
+    // Merge standalone agent servers using identity reconciliation
+    const recon = reconcileServers(this.primary.getServers(), guestMap);
+    const agentServers = recon.servers;
+    const claimedGuestIds = recon.claimedGuestIds;
+
     // Remove claimed guest nodes from the network map
     if (claimedGuestIds.size > 0) {
       for (let i = nodes.length - 1; i >= 0; i--) {
@@ -288,6 +291,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       }
     }
     for (const s of agentServers) {
+      if (existingIds.has(s.spec.id)) continue;
       const parentNode = s.spec.clusterId && nodes.some((n) => n.id === s.spec.clusterId)
         ? s.spec.clusterId
         : 'gateway';

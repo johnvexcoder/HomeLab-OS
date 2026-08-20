@@ -174,6 +174,12 @@ export function createAgentRouter(): Router {
         temp_c = ?, load_1 = ?, containers_json = ?,
         plugins_json = ?, capabilities_json = ?,
         vm_id = ?, parent_ip = ?, virt_type = ?,
+        machine_id = CASE WHEN ? != '' THEN ? ELSE machine_id END,
+        mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
+        host_type_detected = CASE WHEN ? != '' THEN ? ELSE host_type_detected END,
+        hypervisor = CASE WHEN ? != '' THEN ? ELSE hypervisor END,
+        container_count = ?, running_count = ?, unhealthy_count = ?,
+        process_count = ?,
         status = 'online', last_report_at = ?, updated_at = ?
       WHERE id = ?
     `).run(
@@ -197,6 +203,18 @@ export function createAgentRouter(): Router {
       String(hostInfo?.vmId ?? ''),
       String(hostInfo?.parentIp ?? ''),
       String(hostInfo?.virtType ?? ''),
+      String(hostInfo?.machineId ?? ''),
+      String(hostInfo?.machineId ?? ''),
+      String(hostInfo?.mac ?? ''),
+      String(hostInfo?.mac ?? ''),
+      String(hostInfo?.hostType ?? ''),
+      String(hostInfo?.hostType ?? ''),
+      String(hostInfo?.hypervisor ?? ''),
+      String(hostInfo?.hypervisor ?? ''),
+      Number(flat.containerCount ?? 0),
+      Number(flat.runningCount ?? 0),
+      Number(flat.unhealthyCount ?? 0),
+      Number(flat.processCount ?? 0),
       now,
       now,
       agent.id,
@@ -221,6 +239,7 @@ export function createAgentRouter(): Router {
         host_name = ?, ip = ?, os = ?, host_type = ?,
         capabilities_json = ?, agent_version = ?,
         vm_id = ?, parent_ip = ?, virt_type = ?,
+        machine_id = ?, mac_address = ?, host_type_detected = ?, hypervisor = ?,
         updated_at = ?
       WHERE id = ?
     `).run(
@@ -233,6 +252,10 @@ export function createAgentRouter(): Router {
       String(hostInfo?.vmId ?? ''),
       String(hostInfo?.parentIp ?? ''),
       String(hostInfo?.virtType ?? ''),
+      String(hostInfo?.machineId ?? ''),
+      String(hostInfo?.mac ?? ''),
+      String(hostInfo?.hostType ?? ''),
+      String(hostInfo?.hypervisor ?? ''),
       now,
       agent.id,
     );
