@@ -16,7 +16,7 @@ import type {
   ServerStatus,
 } from '../types';
 import type { HistoryPoint, HistoryRange, StatsHistoryPoint, ProviderDiagnostics } from './types';
-import { insertMetrics, countMetrics } from '../db/database';
+import { countMetrics } from '../db/database';
 import { historyForServer, statsHistoryFor } from './history';
 import { NotificationGenerator } from '../telemetry/notification-generator';
 import { uuid } from '../mock-data/servers';
@@ -133,6 +133,7 @@ export class ProxmoxMetricsProvider {
   private readonly pollIntervalMs = config.proxmox.pollIntervalMs;
 
   private readonly runtimes = new Map<string, ServerRuntime>();
+  private readonly guestRuntimes = new Map<string, ServerRuntime>();
   private readonly guests = new Map<string, Array<{ id: string; name: string; running: boolean }>>();
   private readonly tickListeners: TickListener[] = [];
   private readonly notifListeners: NotificationListener[] = [];
@@ -283,15 +284,19 @@ export class ProxmoxMetricsProvider {
     const spec = this.buildSpec(detail);
     const runtime = this.buildRuntime(detail, spec);
     this.runtimes.set(spec.id, runtime);
-    this.guests.set(
-      spec.id,
-      [...detail.qemu, ...detail.lxc].map((g) => ({
-        id: `${g.vmid}`,
-        name: g.name || `${g.vmid}`,
-        running: g.status === 'running',
-        nodeId: spec.id,
-      })),
-    );
+
+    // Store guests and build guest runtimes
+    const guestEntries: Array<{ id: string; name: string; running: boolean; nodeId: string; vmid: number }> = [];
+    const allGuests = [...detail.qemu, ...detail.lxc];
+    for (const g of allGuests) {
+      const gid = `${g.vmid}`;
+      guestEntries.push({ id: gid, name: g.name || `${g.vmid}`, running: g.status === 'running', nodeId: spec.id, vmid: g.vmid });
+      // Build a ServerRuntime for each guest so they appear on the /servers page
+      const guestSpec = this.buildGuestSpec(g, spec);
+      const guestRuntime = this.buildGuestRuntime(g, guestSpec);
+      this.guestRuntimes.set(guestSpec.id, guestRuntime);
+    }
+    this.guests.set(spec.id, guestEntries);
   }
 
   private detectNodeAlerts(details: PollDetail[]): void {
@@ -519,6 +524,95 @@ export class ProxmoxMetricsProvider {
     };
   }
 
+  private buildGuestSpec(guest: PveGuest, nodeSpec: ServerSpec): ServerSpec {
+    const id = `${nodeSpec.id}-g${guest.vmid}`;
+    const isLxc = (guest as any).type === 'lxc';
+    return {
+      id,
+      serverId: uuid(`pve-guest:${nodeSpec.hostname}:${guest.vmid}`),
+      hostname: guest.name || `${guest.vmid}`,
+      name: guest.name || `VM ${guest.vmid}`,
+      logo: isLxc ? '\u{1F406}' : '\u{1F4BB}',
+      os: 'Linux',
+      description: `${isLxc ? 'LXC' : 'QEMU'} VM on ${nodeSpec.hostname} (VMID ${guest.vmid})`,
+      role: 'server',
+      capabilities: ['monitoring'],
+      clusterId: nodeSpec.clusterId,
+      parentId: nodeSpec.id,
+      ip: nodeSpec.ip,
+      location: `${nodeSpec.hostname} / VMID ${guest.vmid}`,
+      cpuModel: nodeSpec.cpuModel,
+      cpuCores: guest.cpus || 1,
+      ramTotalGb: round(toFinite(guest.maxmem) / 1e9, 1),
+      diskTotalGb: round(toFinite(guest.maxdisk) / 1e9, 1),
+      sensors: [],
+      profile: {
+        baseCpu: clamp(toFinite(guest.cpu) * 100, 0, 100),
+        cpuAmplitude: 0,
+        cpuNoise: 0,
+        baseRamGb: round(toFinite(guest.mem) / 1e9, 1),
+        ramDriftGb: 0,
+        baseTemp: 0,
+        tempVariance: 0,
+        baseNetUpMbps: 0,
+        baseNetDownMbps: 0,
+        netBurstRate: 0,
+        processes: 0,
+        containers: 0,
+        vms: 0,
+        reliability: 1,
+      },
+    };
+  }
+
+  private buildGuestRuntime(guest: PveGuest, spec: ServerSpec): ServerRuntime {
+    const online = guest.status === 'running';
+    const cpuPct = clamp(toFinite(guest.cpu) * 100, 0, 100);
+    const ramPct = toFinite(guest.maxmem) > 0 ? (toFinite(guest.mem) / toFinite(guest.maxmem)) * 100 : 0;
+    const diskPct = toFinite(guest.maxdisk) > 0 ? (toFinite(guest.disk) / toFinite(guest.maxdisk)) * 100 : 0;
+    const status: ServerStatus = !online ? 'offline' : 'online';
+    const health = clamp(100 - (cpuPct > 85 ? 15 : 0) - (ramPct > 90 ? 15 : 0) - (diskPct > 92 ? 10 : 0), 0, 100);
+
+    // Inherit temperature from the parent Proxmox node (VMs don't have physical sensors)
+    const parentNode = spec.parentId ? this.runtimes.get(spec.parentId) : undefined;
+    const tempC = parentNode?.tempC ?? 0;
+
+    const prev = this.guestRuntimes.get(spec.id);
+    const push = (key: keyof ServerRuntime['history'], val: number): number[] => {
+      const arr = prev?.history[key] ? [...prev.history[key]] : [];
+      arr.push(val);
+      if (arr.length > 360) arr.shift();
+      return arr;
+    };
+
+    return {
+      spec,
+      status,
+      reachability: !online ? 'unreachable' : 'accessible',
+      health: round(health, 1),
+      load: 0,
+      uptimeSeconds: guest.uptime ?? 0,
+      cpu: round(cpuPct, 1),
+      ramUsedGb: round(toFinite(guest.mem) / 1e9, 1),
+      diskUsedGb: round(toFinite(guest.disk) / 1e9, 1),
+      tempC: round(tempC, 1),
+      netUpMbps: 0,
+      netDownMbps: 0,
+      processes: 0,
+      lastSeen: Date.now(),
+      sensors: [],
+      history: {
+        cpu: push('cpu', round(cpuPct, 1)),
+        ram: push('ram', round(ramPct, 1)),
+        disk: push('disk', round(diskPct, 1)),
+        temp: push('temp', round(tempC, 1)),
+        netUp: push('netUp', 0),
+        netDown: push('netDown', 0),
+        load: push('load', 0),
+      },
+    };
+  }
+
   private emitTick(): void {
     const now = Date.now();
     const snapshots: MetricSnapshot[] = [...this.runtimes.values()].map((r) => ({
@@ -541,8 +635,6 @@ export class ProxmoxMetricsProvider {
       health: toFinite(r.health),
       sensors: r.sensors,
     }));
-
-    if (snapshots.length > 0) insertMetrics(snapshots);
 
     const notifications = this.generator.generate(snapshots, now);
     this.tickListeners.forEach((l) => l(snapshots));
@@ -614,11 +706,11 @@ export class ProxmoxMetricsProvider {
   /* ---------------------------------------------------------------- */
 
   getServers(): ServerRuntime[] {
-    return [...this.runtimes.values()];
+    return [...this.runtimes.values(), ...this.guestRuntimes.values()];
   }
 
   getServer(id: string): ServerRuntime | undefined {
-    return this.runtimes.get(id);
+    return this.runtimes.get(id) ?? this.guestRuntimes.get(id);
   }
 
   /** Get all Proxmox guests (VMs/CTs) keyed by VMID for agent correlation. */
@@ -701,8 +793,8 @@ export class ProxmoxMetricsProvider {
 
     nodes.push({ id: 'internet', label: 'Internet', type: 'internet', status: 'online', x: 50, y: 50, health: 100 });
 
-    const servers = this.getServers();
-    servers.forEach((s) => {
+    // Only iterate NODE runtimes (not guests) for top-level network nodes
+    for (const [, s] of this.runtimes) {
       nodes.push({
         id: s.spec.id,
         label: s.spec.name,
@@ -725,9 +817,10 @@ export class ProxmoxMetricsProvider {
         packetLoss: 0,
       });
 
+      // Add guests as children of this node using consistent ID format: nodeId-g{vmid}
       const guestList = (this.guests.get(s.spec.id) ?? []).slice(0, 20);
-      guestList.forEach((g, gi) => {
-        const gid = `${s.spec.id}-g${gi}`;
+      for (const g of guestList) {
+        const gid = `${s.spec.id}-g${g.id}`;
         nodes.push({
           id: gid,
           label: g.name,
@@ -749,8 +842,8 @@ export class ProxmoxMetricsProvider {
           jitterMs: 0.05,
           packetLoss: 0,
         });
-      });
-    });
+      }
+    }
 
     return { nodes: applyLayout(nodes, calculateHierarchicalLayout(nodes, 100, 100)), links };
   }

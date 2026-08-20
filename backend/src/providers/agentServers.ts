@@ -118,7 +118,28 @@ function matchAgent(
     }
   }
 
+  // 4. Subnet heuristic: agent is a VM on the same /24 subnet as a Proxmox node
+  if (agentIp && agent.virt_type && ['kvm', 'qemu', 'xen', 'vmware'].includes(agent.virt_type)) {
+    for (const server of proxmoxServers) {
+      if (!server.spec.ip) continue;
+      if (!sameSubnet(agentIp, server.spec.ip)) continue;
+      for (const [, guest] of proxmoxGuests) {
+        if (guest.nodeId !== server.spec.id) continue;
+        if (!guest.running) continue;
+        const parent = findParentNode(guest, proxmoxServers);
+        if (parent) return { kind: 'guest', parentServer: parent, guest };
+      }
+    }
+  }
+
   return { kind: 'none' };
+}
+
+function sameSubnet(a: string, b: string): boolean {
+  const pA = a.split('.');
+  const pB = b.split('.');
+  if (pA.length !== 4 || pB.length !== 4) return false;
+  return pA[0] === pB[0] && pA[1] === pB[1] && pA[2] === pB[2];
 }
 
 function findParentNode(guest: ProxmoxGuest, servers: ServerRuntime[]): ServerRuntime | undefined {
@@ -296,12 +317,22 @@ export function getAgentServers(
     const match = matchAgent(row, proxmoxServers, proxmoxGuests);
 
     if (match.kind === 'host') {
-      // Agent runs ON the Proxmox host → merge into the node server
       enrichServerWithAgent(match.server, row);
       continue;
     }
 
-    // Guest match or no match → create standalone server
+    if (match.kind === 'guest') {
+      // Find the guest server in proxmoxServers and enrich it
+      const guestServerId = `${match.parentServer.spec.id}-g${match.guest.vmid}`;
+      const guestServer = proxmoxServers.find((s) => s.spec.id === guestServerId);
+      if (guestServer) {
+        enrichServerWithAgent(guestServer, row);
+        continue;
+      }
+      // Guest server not found (shouldn't happen now), create standalone
+    }
+
+    // No match or unmatched guest → standalone server
     const id = `agent-${row.host_id}`;
     if (existingIds.has(id)) continue;
 

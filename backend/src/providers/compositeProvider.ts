@@ -35,13 +35,40 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
 
   onTick(listener: (snapshots: MetricSnapshot[]) => void): void {
     this.primary.onTick((snapshots) => {
-      const dockerSnap = this.docker?.getHostSnapshot();
-      if (!dockerSnap) {
-        listener(snapshots);
-        return;
+      // Build a comprehensive snapshot list from ALL servers (Proxmox + Docker + Agent)
+      // This ensures agent-enriched data and agent servers get written to the metrics DB
+      const allServers = this.getServers();
+      const enrichedSnapshots: MetricSnapshot[] = allServers.map((s) => ({
+        serverId: s.spec.id,
+        timestamp: Date.now(),
+        cpu: s.cpu,
+        cpuCores: s.spec.cpuCores || 1,
+        ramUsedGb: s.ramUsedGb,
+        ramTotalGb: s.spec.ramTotalGb || 1,
+        diskUsedGb: s.diskUsedGb,
+        diskTotalGb: s.spec.diskTotalGb || 1,
+        tempC: s.tempC,
+        netUpMbps: s.netUpMbps,
+        netDownMbps: s.netDownMbps,
+        load: s.load,
+        uptimeSeconds: s.uptimeSeconds,
+        processes: s.processes,
+        status: s.status,
+        reachability: s.reachability,
+        health: s.health,
+        sensors: s.sensors,
+      }));
+
+      if (enrichedSnapshots.length > 0) {
+        insertMetrics(enrichedSnapshots);
       }
-      insertMetrics([dockerSnap]);
-      listener([...snapshots, dockerSnap]);
+
+      const dockerSnap = this.docker?.getHostSnapshot();
+      if (dockerSnap) {
+        insertMetrics([dockerSnap]);
+      }
+
+      listener(enrichedSnapshots);
     });
   }
 
