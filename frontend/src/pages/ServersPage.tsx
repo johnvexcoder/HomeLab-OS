@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 const FILTERS: Array<{ id: ServerRole | 'all'; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'hypervisor', label: 'Hypervisors' },
+  { id: 'server', label: 'V Machines' },
   { id: 'docker', label: 'Containers' },
   { id: 'storage', label: 'Storage' },
   { id: 'gateway', label: 'Gateway' },
@@ -25,7 +26,9 @@ export default function ServersPage() {
 
   const online = servers.filter((s) => s.status === 'online').length;
   const degraded = servers.filter((s) => s.status === 'degraded').length;
-  const visible = filter === 'all' ? servers : servers.filter((s) => s.spec.role === filter);
+  const visible = filter === 'all' ? servers
+    : filter === 'docker' ? servers.filter((s) => s.spec.profile.containers > 0)
+    : servers.filter((s) => s.spec.role === filter);
 
   const clusteredIds = new Set(clusters.flatMap((c) => c.serverIds));
   const standalone = servers.filter((s) => !clusteredIds.has(s.spec.id));

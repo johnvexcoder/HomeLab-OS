@@ -120,14 +120,14 @@ function matchAgent(
     }
   }
 
-  // 4. Subnet heuristic: agent is a VM on the same /24 subnet as a Proxmox node
-  //    Match if there is exactly ONE unmatched running guest on that node,
-  //    OR if the number of unmatched agents on this subnet equals unmatched guests
-  //    (batch matching handled by getAgentServers).
-  if (agentIp && agent.virt_type && ['kvm', 'qemu', 'xen', 'vmware'].includes(agent.virt_type)) {
+  // 4. Subnet heuristic: agent is on the same /24 subnet as a Proxmox node
+  //    with unmatched running guests. No virt_type check — if it's on the same
+  //    subnet and steps 1-3 failed, it's almost certainly a VM on that node.
+  if (agentIp) {
     for (const server of proxmoxServers) {
       if (!server.spec.ip) continue;
       if (!sameSubnet(agentIp, server.spec.ip)) continue;
+      if (agentIp === server.spec.ip) continue; // skip if it IS the node IP
       const unmatchedGuests: ProxmoxGuest[] = [];
       for (const [, guest] of proxmoxGuests) {
         if (guest.nodeId !== server.spec.id) continue;
@@ -208,6 +208,11 @@ function enrichServerWithAgent(server: ServerRuntime, agent: AgentRow): void {
   server.spec.profile.baseNetUpMbps = server.netUpMbps;
   server.spec.profile.baseNetDownMbps = server.netDownMbps;
   server.spec.profile.containers = containers.filter((c) => c.running).length;
+
+  // Update role: if agent reports containers, this is a Docker host
+  if (server.spec.profile.containers > 0 && server.spec.role === 'server') {
+    server.spec.role = 'docker';
+  }
 
   // History
   const cpuPct = server.cpu;

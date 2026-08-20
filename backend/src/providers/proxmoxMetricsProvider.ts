@@ -796,19 +796,16 @@ export class ProxmoxMetricsProvider {
     const nodes: NetworkNode[] = [];
     const links: NetworkLink[] = [];
 
-    // Correct hierarchy: internet → gateway → switch → physical hosts → VMs/LXCs
+    // Correct hierarchy: internet → gateway → physical hosts → VMs/LXCs
     nodes.push({ id: 'internet', label: 'Internet', type: 'internet', status: 'online', x: 50, y: 50, health: 100 });
 
     const hasHosts = this.runtimes.size > 0;
     if (hasHosts) {
       nodes.push({ id: 'gateway', label: 'Gateway', type: 'gateway', status: 'online', x: 50, y: 50, health: 100 });
       links.push({ id: 'internet-gateway', source: 'internet', target: 'gateway', status: 'healthy', latencyMs: 12, throughputMbps: 940, jitterMs: 2, packetLoss: 0 });
-
-      nodes.push({ id: 'switch', label: 'Switch', type: 'switch', status: 'online', x: 50, y: 50, health: 100 });
-      links.push({ id: 'gateway-switch', source: 'gateway', target: 'switch', status: 'healthy', latencyMs: 0.3, throughputMbps: 1000, jitterMs: 0.1, packetLoss: 0 });
     }
 
-    // Physical hosts connect to the switch
+    // Physical hosts connect directly to gateway
     for (const [nodeId, s] of this.runtimes) {
       const hostStatus = s.status === 'online' ? 'healthy' : s.status === 'degraded' ? 'warning' : 'critical';
       nodes.push({
@@ -817,7 +814,7 @@ export class ProxmoxMetricsProvider {
         type: 'hypervisor',
         status: s.status,
         x: 50, y: 50,
-        parentId: 'switch',
+        parentId: 'gateway',
         ip: s.spec.ip || undefined,
         health: s.health,
         childCount: (this.guests.get(nodeId) ?? []).length,
@@ -825,8 +822,8 @@ export class ProxmoxMetricsProvider {
         cpuPercent: s.cpu,
       });
       links.push({
-        id: `switch-${s.spec.id}`,
-        source: 'switch',
+        id: `gateway-${s.spec.id}`,
+        source: 'gateway',
         target: s.spec.id,
         status: hostStatus,
         latencyMs: 0.4,

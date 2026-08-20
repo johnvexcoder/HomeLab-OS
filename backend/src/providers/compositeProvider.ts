@@ -19,6 +19,8 @@ import { statsHistoryFor } from './history';
 import { calculateHierarchicalLayout, applyLayout } from './hierarchicalLayout';
 import { getAgentServers, getAgentDockerHostProfiles } from './agentServers';
 import { getNetworkBandwidth } from '../services/networkBandwidth';
+import { collectSelfMetrics, type SelfMonitorData } from './selfMonitor';
+import * as os from 'os';
 
 /**
  * Wraps the primary provider (Proxmox) and merges the Docker layer into it:
@@ -111,7 +113,76 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       result.push(s);
     }
 
+    // Self-monitor: if the backend's own host wasn't enriched by an agent,
+    // enrich it with local /proc metrics so it shows real data
+    this.selfEnrichIfUnenriched(result);
+
     return result;
+  }
+
+  /**
+   * Detect the backend's own IP by looking at non-internal, non-loopback
+   * interfaces on the 192.168.x.x subnet.
+   */
+  private getOwnIp(): string | null {
+    const ifaces = os.networkInterfaces();
+    for (const addrs of Object.values(ifaces)) {
+      if (!addrs) continue;
+      for (const a of addrs) {
+        if (a.internal || a.family !== 'IPv4') continue;
+        if (a.address.startsWith('127.')) continue;
+        if (a.address.startsWith('192.168.')) return a.address;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * If the backend's own IP matches a Proxmox guest that wasn't enriched
+   * by an agent, apply self-monitor data (CPU, RAM, disk, temp, network).
+   * This ensures the backend's own VM always shows real metrics.
+   */
+  private selfEnrichIfUnenriched(servers: ServerRuntime[]): void {
+    const ownIp = this.getOwnIp();
+    if (!ownIp) return;
+
+    // Find a server with our IP that has default/low metrics (not agent-enriched)
+    for (const s of servers) {
+      if (s.spec.ip !== ownIp) continue;
+      // If agent already enriched it (CPU > 0 and non-zero temp/disk), skip
+      if (s.cpu > 0 && s.diskUsedGb > 0) continue;
+
+      const m = collectSelfMetrics();
+      s.cpu = m.cpuUsage;
+      s.ramUsedGb = m.ramUsedGb;
+      s.spec.ramTotalGb = m.ramTotalGb;
+      s.diskUsedGb = m.diskUsedGb;
+      s.spec.diskTotalGb = m.diskTotalGb;
+      if (m.tempC != null) s.tempC = m.tempC;
+      s.netUpMbps = m.netUpMbps;
+      s.netDownMbps = m.netDownMbps;
+      s.load = m.load1;
+      s.uptimeSeconds = m.uptimeSeconds;
+      s.processes = m.processes;
+      s.spec.cpuCores = m.cpuCores;
+      s.spec.os = m.os;
+      s.status = 'online';
+      s.reachability = 'accessible';
+      s.health = 100;
+
+      const ramPct = m.ramTotalGb > 0 ? (m.ramUsedGb / m.ramTotalGb) * 100 : 0;
+      const diskPct = m.diskTotalGb > 0 ? (m.diskUsedGb / m.diskTotalGb) * 100 : 0;
+      s.health = Math.round(100 - (m.cpuUsage > 85 ? 15 : 0) - (ramPct > 90 ? 15 : 0) - (diskPct > 92 ? 10 : 0));
+      s.status = m.cpuUsage > 90 || ramPct > 95 ? 'degraded' : 'online';
+
+      s.spec.profile.baseCpu = m.cpuUsage;
+      s.spec.profile.baseRamGb = m.ramUsedGb;
+      if (m.tempC != null) s.spec.profile.baseTemp = m.tempC;
+      s.spec.profile.baseNetUpMbps = m.netUpMbps;
+      s.spec.profile.baseNetDownMbps = m.netDownMbps;
+
+      break; // only enrich one server
+    }
   }
 
   getServer(id: string): ServerRuntime | undefined {
@@ -196,7 +267,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     for (const s of agentServers) {
       const parentNode = s.spec.clusterId && nodes.some((n) => n.id === s.spec.clusterId)
         ? s.spec.clusterId
-        : 'switch';
+        : 'gateway';
       const nodeType: NetworkNode['type'] = s.spec.role === 'docker' ? 'docker' : 'container';
       nodes.push({
         id: s.spec.id,
