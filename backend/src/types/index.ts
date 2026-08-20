@@ -159,17 +159,30 @@ export interface Notification {
   acknowledged?: boolean;
 }
 
+export type NetworkNodeType =
+  | 'internet' | 'gateway' | 'switch' | 'bridge'
+  | 'physical' | 'hypervisor'
+  | 'vm' | 'lxc' | 'container'
+  | 'docker' | 'podman' | 'kubernetes'
+  | 'storage' | 'nas' | 'ups' | 'firewall'
+  | 'cloud' | 'laptop' | 'desktop';
+
 export interface NetworkNode {
   id: string;
   label: string;
-  type: 'internet' | 'router' | 'switch' | 'hypervisor' | 'docker' | 'container' | 'storage';
+  type: NetworkNodeType;
   status: ServerStatus;
   ip?: string;
-  /** fixed relative coordinates (0..100) used by the SVG renderer */
   x: number;
   y: number;
   parentId?: string;
   health: number;
+  /** Number of child containers/VMs (for badge display). */
+  childCount?: number;
+  /** Temperature in Celsius if available. */
+  tempC?: number;
+  /** CPU percentage if available. */
+  cpuPercent?: number;
 }
 
 export interface NetworkLink {

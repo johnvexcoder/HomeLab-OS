@@ -75,15 +75,24 @@ export const CAPABILITY_META: Record<string, { label: string }> = {
   monitoring: { label: 'Monitoring' },
 };
 
-export const NETWORK_NODE_ICONS_FRONTEND: Record<
-  'internet' | 'router' | 'switch' | 'hypervisor' | 'docker' | 'container' | 'storage',
-  string
-> = {
+export const NETWORK_NODE_ICONS_FRONTEND: Record<string, string> = {
   internet: '🌐',
-  router: '🛡️',
+  gateway: '🛡️',
   switch: '🔀',
-  hypervisor: '🟩',
-  docker: '🐳',
+  bridge: '🌉',
+  physical: '🖲️',
+  hypervisor: '🖥️',
+  vm: '💾',
+  lxc: '📦',
   container: '📦',
+  docker: '🐳',
+  podman: '🐙',
+  kubernetes: '☸️',
   storage: '🗄️',
+  nas: '💾',
+  ups: '🔋',
+  firewall: '🧱',
+  cloud: '☁️',
+  laptop: '💻',
+  desktop: '🖥️',
 };

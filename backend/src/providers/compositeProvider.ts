@@ -189,26 +189,26 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
   getNetwork(): { nodes: NetworkNode[]; links: NetworkLink[] } {
     const { nodes, links } = this.primary.getNetwork();
     const guestMap = this.getGuestMap();
-
-    // Merge standalone agent servers into the network topology
     const existingIds = new Set(nodes.map((n) => n.id));
+
+    // Merge standalone agent servers
     const agentServers = getAgentServers(existingIds, this.primary.getServers(), guestMap);
     for (const s of agentServers) {
-      // Agent VMs on Proxmox are children of the Proxmox node; bare-metal agents are top-level
       const parentNode = s.spec.clusterId && nodes.some((n) => n.id === s.spec.clusterId)
         ? s.spec.clusterId
-        : 'internet';
-
+        : 'switch';
+      const nodeType: NetworkNode['type'] = s.spec.role === 'docker' ? 'docker' : 'container';
       nodes.push({
         id: s.spec.id,
         label: s.spec.name,
-        type: s.spec.role === 'docker' ? 'docker' : 'container',
+        type: nodeType,
         status: s.status,
-        x: 50,
-        y: 50,
+        x: 50, y: 50,
         parentId: parentNode,
         ip: s.spec.ip || undefined,
         health: s.health,
+        tempC: s.tempC,
+        cpuPercent: s.cpu,
       });
       links.push({
         id: `${parentNode}-${s.spec.id}`,
@@ -222,33 +222,56 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       });
     }
 
-    // Add local Docker containers from the Docker provider
+    // Add local Docker containers: group under a Docker engine node
     const containers = this.docker?.getContainers() ?? [];
     if (containers.length > 0) {
       const match = config.docker.hostGuest.trim().toLowerCase();
-      const guests = nodes.filter((n) => n.type === 'container');
+      const guests = nodes.filter((n) => n.type === 'vm' || n.type === 'lxc' || n.type === 'container');
       const host =
         (match ? guests.find((g) => g.label.toLowerCase().includes(match)) : undefined) ??
         guests[0] ??
         nodes.find((n) => n.type === 'hypervisor');
       if (host) {
+        const engineId = `${host.id}-docker`;
+        if (!existingIds.has(engineId)) {
+          nodes.push({
+            id: engineId,
+            label: 'Docker',
+            type: 'docker',
+            status: containers.some((c) => !c.running) ? 'degraded' : 'online',
+            x: 50, y: 50,
+            parentId: host.id,
+            health: 100,
+            childCount: containers.length,
+          });
+          links.push({
+            id: `${host.id}-${engineId}`,
+            source: host.id,
+            target: engineId,
+            status: 'healthy',
+            latencyMs: 0.1,
+            throughputMbps: 0,
+            jitterMs: 0.05,
+            packetLoss: 0,
+          });
+        }
+
+        const dockerIp = host.ip || undefined;
         containers.slice(0, 40).forEach((c) => {
           const id = `docker-${c.id}`;
-          const dockerIp = host.ip || nodes.find((n) => n.type === 'hypervisor')?.ip || undefined;
           nodes.push({
             id,
             label: c.name,
-            type: 'docker',
+            type: 'container',
             status: c.running ? 'online' : 'offline',
-            x: 50,
-            y: 50,
-            parentId: host.id,
+            x: 50, y: 50,
+            parentId: engineId,
             ip: dockerIp,
             health: c.running ? 100 : 0,
           });
           links.push({
-            id: `docker-${c.id}-link`,
-            source: host.id,
+            id: `${engineId}-${id}`,
+            source: engineId,
             target: id,
             status: c.running ? 'healthy' : 'warning',
             latencyMs: 0.1,
@@ -259,7 +282,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         });
 
         const hostRuntime = this.docker?.getHostRuntime();
-        if (hostRuntime && host) {
+        if (hostRuntime) {
           const hostNet = round(hostRuntime.netUpMbps + hostRuntime.netDownMbps, 2);
           const uplink = links.find(
             (l) => (l.source === host.id || l.target === host.id) && l.id !== 'internet',

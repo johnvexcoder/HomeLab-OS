@@ -132,16 +132,27 @@ export interface Notification {
   serverId?: string;
 }
 
+export type NetworkNodeType =
+  | 'internet' | 'gateway' | 'switch' | 'bridge'
+  | 'physical' | 'hypervisor'
+  | 'vm' | 'lxc' | 'container'
+  | 'docker' | 'podman' | 'kubernetes'
+  | 'storage' | 'nas' | 'ups' | 'firewall'
+  | 'cloud' | 'laptop' | 'desktop';
+
 export interface NetworkNode {
   id: string;
   label: string;
-  type: 'internet' | 'router' | 'switch' | 'hypervisor' | 'docker' | 'container' | 'storage';
+  type: NetworkNodeType;
   status: ServerStatus;
   ip?: string;
   x: number;
   y: number;
   parentId?: string;
   health: number;
+  childCount?: number;
+  tempC?: number;
+  cpuPercent?: number;
 }
 
 export interface NetworkLink {

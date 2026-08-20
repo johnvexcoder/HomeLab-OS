@@ -1,83 +1,58 @@
 /**
- * Adaptive Topology Layout Engine
+ * Hierarchical Topology Layout Engine
  *
- * Computes node positions, node/label sizing, and cable geometry for the
- * Network Map from the REAL rendering canvas (width/height in CSS pixels).
- * The layout is fully data-driven and reflows automatically whenever the
- * canvas, the node set, or the link set changes — nothing is hardcoded.
+ * Computes node positions, group bounding boxes, cable geometry, and
+ * sizing metrics from the real canvas dimensions.
  *
- * Design:
- *  - Hierarchy is derived from the link graph (BFS spanning tree from the
- *    internet/root node) instead of per-provider parentId bookkeeping, so
- *    arbitrary topologies (nested hosts, Kubernetes clusters, VM groups,
- *    switches, storage arrays, …) just work without engine changes.
- *  - Nodes are grouped into depth columns (Internet → Gateway → Switch →
- *    Hosts → Services). Every parent fans its children out into a
- *    dynamically sized grid (columns grow with child count, then adapt to
- *    the available width/height aspect), with the parent vertically centered
- *    on its descendants.
- *  - Node icon/label sizing is a smooth continuous function of node count
- *    and available space: as infrastructure grows, icons, labels, and
- *    spacing tighten proportionally instead of jumping between fixed sizes.
- *  - Cables are cubic Béziers with per-branch fan-out offsets at the parent
- *    so each branch leaves its parent cleanly and sibling cables never cross.
+ * Hierarchy (BFS from Internet):
+ *   Internet → Gateway → Switch → Physical Hosts → VMs/LXCs → Docker Engine → Containers
+ *
+ * Visual grouping: every parent with children gets a translucent bounding
+ * box so the tree feels structured, not just floating icons.
  */
 
 import type { NetworkLink, NetworkNode } from '@/types';
 
-export interface CanvasSize {
-  width: number;
-  height: number;
-}
-
 export interface LayoutMetrics {
-  /** Icon box diameter (canvas units ≈ CSS px). */
   nodeSize: number;
-  /** Emoji icon font size. */
   iconSize: number;
-  /** Node label font size. */
   labelSize: number;
-  /** IP/sub-label font size. */
   ipSize: number;
-  /** Max label width before truncation kicks in. */
   labelMaxWidth: number;
-  /** Twin-cable split distance (upper/lower arcs). */
   split: number;
-  /** Progressive LOD: node labels are drawn. */
   labelVisible: boolean;
-  /** Progressive LOD: IP sub-label is drawn under the label. */
   ipVisible: boolean;
 }
 
 export interface LayoutedNode {
   id: string;
-  /** Center x in canvas units. */
   x: number;
-  /** Center y in canvas units. */
   y: number;
   depth: number;
-  /** Index within its parent's child fan-out (used for cable fan-out). */
   siblingIndex: number;
-  /** Number of siblings in its parent's fan-out. */
   siblings: number;
-  /** True when the label is truncated to fit its cell. */
   truncated: boolean;
 }
 
+export interface GroupBounds {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth: number;
+}
+
 export interface CableLayout {
-  /** Upper (inbound) twin arc, source → target. */
   dIn: string;
-  /** Lower (outbound) twin arc, source → target. */
   dOut: string;
   x1: number;
   y1: number;
   x2: number;
   y2: number;
-  /** Horizontal control-pull distance. */
   hx: number;
-  /** Control points of the upper arc (source → target). */
   cIn: [number, number, number, number];
-  /** Control points of the lower arc (source → target). */
   cOut: [number, number, number, number];
 }
 
@@ -87,10 +62,11 @@ export interface TopologyLayout {
   metrics: LayoutMetrics;
   nodes: Map<string, LayoutedNode>;
   cables: Map<string, CableLayout>;
+  groups: GroupBounds[];
 }
 
 const MIN_NODE = 14;
-/** Max node size scales with canvas width so nodes are bigger on desktop. */
+
 function maxNodeFor(width: number): number {
   return clamp(Math.round(46 * (width / 680)), 46, 80);
 }
@@ -103,22 +79,18 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-/** Text-width estimate in canvas units (heuristic, no canvas dependency). */
 function estTextWidth(text: string, fontSize: number): number {
   return text.length * fontSize * 0.55;
 }
 
-/** Label font size for a given node size (smooth scale, with a readability floor). */
 function labelSizeFor(nodeSize: number): number {
   return clamp(nodeSize * 0.24, 8, 12);
 }
 
-/** IP/sub-label font size for a given node size. */
 function ipSizeFor(nodeSize: number): number {
   return clamp(nodeSize * 0.19, 7, 9.5);
 }
 
-/** Progressive level-of-detail: below these sizes the label / IP sub-label are dropped. */
 export function labelVisible(nodeSize: number): boolean {
   return nodeSize >= 6;
 }
@@ -127,32 +99,20 @@ export function ipVisible(nodeSize: number): boolean {
   return nodeSize >= 12;
 }
 
-/** Vertical footprint of the text block under a node (LOD-aware). */
 function labelBlock(nodeSize: number): number {
   if (!labelVisible(nodeSize)) return 6;
   if (!ipVisible(nodeSize)) return labelSizeFor(nodeSize) + 6;
   return labelSizeFor(nodeSize) + ipSizeFor(nodeSize) + 8;
 }
 
-/**
- * Vertical span (row height) reserved for a single node. Covers the node box
- * plus its label block, so stacked nodes never overlap.
- */
 export function rowSpanOf(nodeSize: number): number {
   return nodeSize + labelBlock(nodeSize);
 }
 
-/** Horizontal half-extent of a node box (label-aware). */
 function nodeHalfBox(nodeSize: number): number {
   return labelVisible(nodeSize) ? nodeSize * 0.85 + 2 : nodeSize * 0.5 + 2;
 }
 
-/**
- * Desired number of grid columns for a child count, following a smooth
- * growth curve (≤6 → 1, ≤16 → 2, ≤36 → 3, ≤64 → 4, then (2k)² thresholds).
- * Column count is never hardcoded — it derives from the child count and is
- * later clamped by the available canvas width.
- */
 export function desiredColumns(count: number): number {
   if (count <= 0) return 1;
   if (count <= 2) return 1;
@@ -185,28 +145,21 @@ export function computeTopologyLayout(
     },
     nodes: new Map(),
     cables: new Map(),
+    groups: [],
   });
 
   if (nodes.length === 0 || width <= 0 || height <= 0) return empty();
 
-  // ---- 1. Hierarchy from the link graph (BFS spanning tree) ----
+  // ---- 1. Build adjacency and BFS hierarchy from Internet root ----
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const adj = new Map<string, string[]>();
   for (const link of links) {
     if (!nodeById.has(link.source) || !nodeById.has(link.target)) continue;
     if (link.source === link.target) continue;
-    let s = adj.get(link.source);
-    if (!s) {
-      s = [];
-      adj.set(link.source, s);
-    }
-    s.push(link.target);
-    let t = adj.get(link.target);
-    if (!t) {
-      t = [];
-      adj.set(link.target, t);
-    }
-    t.push(link.source);
+    if (!adj.has(link.source)) adj.set(link.source, []);
+    if (!adj.has(link.target)) adj.set(link.target, []);
+    adj.get(link.source)!.push(link.target);
+    adj.get(link.target)!.push(link.source);
   }
 
   const parent = new Map<string, string>();
@@ -227,12 +180,8 @@ export function computeTopologyLayout(
         seen.add(nb);
         parent.set(nb, cur);
         depth.set(nb, (depth.get(cur) ?? 0) + 1);
-        let sibs = children.get(cur);
-        if (!sibs) {
-          sibs = [];
-          children.set(cur, sibs);
-        }
-        sibs.push(nb);
+        if (!children.has(cur)) children.set(cur, []);
+        children.get(cur)!.push(nb);
         queue.push(nb);
       }
     }
@@ -250,9 +199,7 @@ export function computeTopologyLayout(
     }
   }
 
-  const maxDepth = Math.max(0, ...depth.values());
-
-  // ---- 2. Adaptive sizing loop (converges on node size that fits) ----
+  // ---- 2. Adaptive sizing ----
   const PAD_X = Math.min(28, width * 0.05);
   const PAD_Y = Math.min(24, height * 0.06);
   const usableW = Math.max(1, width - PAD_X * 2);
@@ -268,10 +215,8 @@ export function computeTopologyLayout(
 
   const famCols = new Map<string, number>();
   const spanCache = new Map<string, number>();
-
-  // Vertical span of a subtree: family rows × tallest child cell. Drives the
-  // greedy column growth below (and the final vertical split).
   const cellH = Math.max(nodeSize * 2, rowSpanOf(nodeSize));
+
   const spanOf = (id: string): number => {
     const cached = spanCache.get(id);
     if (cached !== undefined) return cached;
@@ -292,19 +237,8 @@ export function computeTopologyLayout(
     return t;
   };
 
-  /**
-   * Full layout for the current node size: family column counts, greedy
-   * vertical reduction, bottom-up subtree extents + per-family column
-   * spacing, and a top-down pass that fans each family out centered on its
-   * parent. Returns center-x per node (roots at x = 0) and the bounding
-   * box so the caller can check horizontal fit.
-   */
-  const layoutOnce = (): {
-    cellW: number;
-    minX: number;
-    maxX: number;
-    px: Map<string, number>;
-  } => {
+  // ---- 3. Layout pass ----
+  const layoutOnce = (): { cellW: number; minX: number; maxX: number; px: Map<string, number> } => {
     const cellW = nodeSize * 1.8;
     const maxByW = Math.max(1, Math.floor(usableW / cellW));
 
@@ -314,15 +248,9 @@ export function computeTopologyLayout(
     }
     spanCache.clear();
 
-    // Bottom-up: subtree half-width from a node's center, and the column
-    // spacing its family needs so adjacent sibling subtrees never overlap.
-    // Children fan out to the RIGHT of their parent (spine-style), so a
-    // parent node never collides with its own fan-out.
     const extentCache = new Map<string, number>();
     const spacingMap = new Map<string, number>();
-    const halfBox = nodeHalfBox(nodeSize); // label-aware node half-width
-    // Gap between a parent's center and its children's first column. Large
-    // enough that the parent box and the first child box never overlap.
+    const halfBox = nodeHalfBox(nodeSize);
     const gap = Math.max(nodeSize * 1.2, halfBox * 2 + 2);
 
     const subtreeExtent = (id: string): number => {
@@ -337,7 +265,7 @@ export function computeTopologyLayout(
       const cols = famCols.get(id) ?? 1;
       let sp = cellW;
       for (let i = 0; i < kids.length; i++) {
-        if ((i + 1) % cols === 0) continue; // row end: no horizontal neighbor
+        if ((i + 1) % cols === 0) continue;
         const need = extentCache.get(kids[i])! + halfBox + nodeSize * 0.2;
         if (need > sp) sp = need;
       }
@@ -377,24 +305,14 @@ export function computeTopologyLayout(
         if (v - halfBox < minX) minX = v - halfBox;
         if (v + halfBox > maxX) maxX = v + halfBox;
       }
-      if (!Number.isFinite(minX)) {
-        minX = 0;
-        maxX = 0;
-      }
+      if (!Number.isFinite(minX)) { minX = 0; maxX = 0; }
     };
     computeXY();
 
-    // Greedy column growth: whenever the vertical demand exceeds the canvas,
-    // widen the family whose extra columns free the most height, spreading
-    // dense topologies horizontally instead of shrinking nodes toward zero.
-    // Each step jumps straight to the column count that sheds one row (some
-    // adjacent column counts don't change the row count, e.g. 64/9) and is
-    // capped by the family's horizontal budget. Deepest families are widened
-    // first (a deep column costs the least added width), which keeps dense
-    // trees balanced instead of flattening them into one huge row.
+    // Greedy column growth
     let guard = 0;
     while (totalV() > usableH && guard++ < 150) {
-      if (Math.max(1, maxX - minX) >= usableW) break; // horizontal budget used up
+      if (Math.max(1, maxX - minX) >= usableW) break;
       let bestPid: string | null = null;
       let bestNewCols = 0;
       let bestScore = -1;
@@ -439,7 +357,7 @@ export function computeTopologyLayout(
     break;
   }
 
-  // ---- 3. Final node positions (parent-centered fan-out + vertical split) ----
+  // ---- 4. Final positions ----
   const { minX, maxX, px } = layoutOnce();
   const extentW = Math.max(1, maxX - minX);
   const shiftX = PAD_X - minX + Math.max(0, (usableW - extentW) / 2);
@@ -491,7 +409,54 @@ export function computeTopologyLayout(
     yCursor += sp;
   });
 
-  // ---- 5. Metrics (smooth font scaling + truncation) ----
+  // ---- 5. Compute group bounding boxes for parents with children ----
+  const groups: GroupBounds[] = [];
+  const PADDING = 12;
+  const HEADER = 16;
+
+  // Build groups bottom-up: children first so parent groups encompass all descendants
+  const groupEntries: Array<{ id: string; depth: number; childIds: Set<string> }> = [];
+  for (const [pid, kids] of children) {
+    if (kids.length === 0) continue;
+    const allDesc = new Set<string>();
+    const collect = (nid: string) => {
+      allDesc.add(nid);
+      for (const k of children.get(nid) ?? []) collect(k);
+    };
+    for (const k of kids) collect(k);
+    groupEntries.push({ id: pid, depth: depth.get(pid) ?? 0, childIds: allDesc });
+  }
+  // Sort deepest first so inner groups are computed before outer groups
+  groupEntries.sort((a, b) => b.depth - a.depth);
+
+  for (const entry of groupEntries) {
+    const nodesInGroup = [...entry.childIds].map((id) => positions.get(id)).filter(Boolean) as LayoutedNode[];
+    if (nodesInGroup.length === 0) continue;
+
+    let gMinX = Infinity, gMaxX = -Infinity, gMinY = Infinity, gMaxY = -Infinity;
+    for (const n of nodesInGroup) {
+      gMinX = Math.min(gMinX, n.x - nodeHalfBox(nodeSize));
+      gMaxX = Math.max(gMaxX, n.x + nodeHalfBox(nodeSize));
+      gMinY = Math.min(gMinY, n.y - rowSpanOf(nodeSize) / 2);
+      gMaxY = Math.max(gMaxY, n.y + rowSpanOf(nodeSize) / 2);
+    }
+
+    const parentNode = nodeById.get(entry.id);
+    groups.push({
+      id: entry.id,
+      label: parentNode?.label ?? entry.id,
+      x: round1(gMinX - PADDING),
+      y: round1(gMinY - PADDING - HEADER),
+      width: round1(gMaxX - gMinX + PADDING * 2),
+      height: round1(gMaxY - gMinY + PADDING * 2 + HEADER),
+      depth: entry.depth,
+    });
+  }
+
+  // Sort groups shallowest first (outer groups drawn first = behind inner groups)
+  groups.sort((a, b) => a.depth - b.depth);
+
+  // ---- 6. Metrics ----
   const metrics: LayoutMetrics = {
     nodeSize: round1(nodeSize),
     iconSize: round1(clamp(nodeSize * 0.52, 10, 26)),
@@ -509,7 +474,7 @@ export function computeTopologyLayout(
     }
   }
 
-  // ---- 6. Cables (cubic Bézier, per-branch fan-out, twin arcs) ----
+  // ---- 7. Cables (cubic Bézier with per-branch fan-out, twin arcs) ----
   const cables = new Map<string, CableLayout>();
   for (const link of links) {
     const a = positions.get(link.source);
@@ -551,11 +516,5 @@ export function computeTopologyLayout(
     });
   }
 
-  return {
-    width,
-    height,
-    metrics,
-    nodes: positions,
-    cables,
-  };
+  return { width, height, metrics, nodes: positions, cables, groups };
 }

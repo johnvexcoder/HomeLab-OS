@@ -2,14 +2,26 @@ import type { NetworkLink, NetworkNode, ServerRuntime, ServerSpec } from '../typ
 import { SERVER_SPECS } from './servers';
 import { calculateHierarchicalLayout, type LayoutNode } from '../providers/hierarchicalLayout';
 
-export const NETWORK_NODE_ICONS: Record<NetworkNode['type'], string> = {
+export const NETWORK_NODE_ICONS: Record<string, string> = {
   internet: '🌐',
-  router: '🛡️',
+  gateway: '🛡️',
   switch: '🔀',
-  hypervisor: '🟩',
-  docker: '🐳',
+  bridge: '🌉',
+  physical: '🖲️',
+  hypervisor: '🖥️',
+  vm: '💾',
+  lxc: '📦',
   container: '📦',
+  docker: '🐳',
+  podman: '🐙',
+  kubernetes: '☸️',
   storage: '🗄️',
+  nas: '💾',
+  ups: '🔋',
+  firewall: '🧱',
+  cloud: '☁️',
+  laptop: '💻',
+  desktop: '🖥️',
 };
 
 /**
@@ -20,8 +32,8 @@ export const NETWORK_NODE_ICONS: Record<NetworkNode['type'], string> = {
  */
 const SPINE: Array<{ id: string; label: string; type: NetworkNode['type'] }> = [
   { id: 'internet', label: 'Internet', type: 'internet' },
-  { id: 'router', label: 'Gateway', type: 'router' },
-  { id: 'switch', label: 'Switch01', type: 'switch' },
+  { id: 'gateway', label: 'Gateway', type: 'gateway' },
+  { id: 'switch', label: 'Switch', type: 'switch' },
 ];
 
 /** Maps a fleet role onto the network-node type (gateway/switch reuse the spine). */
@@ -29,21 +41,21 @@ const ROLE_TO_TYPE: Record<ServerSpec['role'], NetworkNode['type']> = {
   hypervisor: 'hypervisor',
   docker: 'docker',
   storage: 'storage',
-  gateway: 'router',
+  gateway: 'gateway',
   switch: 'switch',
-  network: 'router',
+  network: 'gateway',
   server: 'container',
 };
 
 /** Server id hosting the gateway/switch spine roles. */
 export const NODE_TO_SERVER: Record<string, string> = {
-  router: 'gateway',
+  gateway: 'gateway',
   switch: 'switch01',
 };
 
 const LINK_BASE: Record<string, { latencyMs: number; throughputMbps: number; jitterMs: number; packetLoss: number }> = {
-  'internet-router': { latencyMs: 12, throughputMbps: 940, jitterMs: 2, packetLoss: 0 },
-  'router-switch': { latencyMs: 0.3, throughputMbps: 1000, jitterMs: 0.1, packetLoss: 0 },
+  'internet-gateway': { latencyMs: 12, throughputMbps: 940, jitterMs: 2, packetLoss: 0 },
+  'gateway-switch': { latencyMs: 0.3, throughputMbps: 1000, jitterMs: 0.1, packetLoss: 0 },
   uplink: { latencyMs: 0.4, throughputMbps: 940, jitterMs: 0.2, packetLoss: 0 },
   virtual: { latencyMs: 0.1, throughputMbps: 2500, jitterMs: 0.05, packetLoss: 0 },
   peer: { latencyMs: 0.6, throughputMbps: 10000, jitterMs: 0.2, packetLoss: 0 },
@@ -139,8 +151,8 @@ export function buildTopology(
   }
 
   // Spine links.
-  links.push({ ...mkLink('internet-router', 'internet', 'router', 'internet-router') });
-  links.push({ ...mkLink('router-switch', 'router', 'switch', 'router-switch') });
+  links.push({ ...mkLink('internet-gateway', 'internet', 'gateway', 'internet-router') });
+  links.push({ ...mkLink('gateway-switch', 'gateway', 'switch', 'router-switch') });
 
   // Apply hierarchical layout algorithm to calculate positions
   const layoutNodes: LayoutNode[] = nodesBeforeLayout.map((n) => ({

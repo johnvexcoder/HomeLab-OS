@@ -3,29 +3,29 @@ import type { NetworkLink, NetworkNode } from '@/types';
 /**
  * Multi-hop traffic engine for the Network Map.
  *
- * Generates animated packets that travel through the REAL topology path — a
- * container's traffic rides every edge up to the Internet (outbound) and back
- * (inbound), never a fake direct container→internet shortcut. Events are
- * deterministic per node so packets stay organic but do not restart whenever
- * telemetry refetches.
+ * Generates continuous packet streams along real topology paths.
+ * Packets travel node → … → Internet (outbound) and Internet → … → node
+ * (inbound) simultaneously. Packet density and speed scale with traffic volume.
+ *
+ * Bidirectional: outbound packets are cyan, inbound packets are green.
+ * Both directions animate independently with organic timing.
  */
 
 export interface TrafficEvent {
   id: string;
-  /** Node ids in traversal order. Outbound: source → … → internet. Inbound: internet → … → source. */
+  /** Node ids in traversal order. */
   path: string[];
   direction: 'outbound' | 'inbound';
-  /** SMIL begin offset (seconds). Negative = already in flight, desynced. */
+  /** SMIL begin offset (seconds). Negative = already in flight. */
   begin: number;
   /** Duration of one full traversal (ms). */
   dur: number;
   /** Number of packets rendered for this flow. */
   count: number;
-  /** 0..1 organic speed-profile seed (per-packet easing/acceleration variance). */
+  /** 0..1 organic speed-profile seed. */
   pace: number;
 }
 
-/** Stable FNV-1a hash so per-node randomization is reproducible across refetches. */
 function hash(str: string): number {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -35,10 +35,8 @@ function hash(str: string): number {
   return h >>> 0;
 }
 
-/** Deterministic pseudo-random in [0, 1) for a seed. */
 function seeded(seed: string, salt = 0): number {
-  const n = hash(`${seed}::${salt}`);
-  return (n % 1000) / 1000;
+  return (hash(`${seed}::${salt}`) % 1000) / 1000;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -56,7 +54,6 @@ function adjacency(links: NetworkLink[]): Map<string, Set<string>> {
   return adj;
 }
 
-/** BFS shortest path between two nodes over the actual link graph. */
 export function resolvePath(
   from: string,
   to: string,
@@ -89,8 +86,7 @@ export function resolvePath(
   return null;
 }
 
-/** Nodes that actually generate outward traffic (everything except the spine). */
-const SPINE_TYPES: ReadonlySet<string> = new Set(['internet', 'router', 'switch']);
+const SPINE_TYPES: ReadonlySet<string> = new Set(['internet', 'gateway', 'switch', 'bridge']);
 
 function linkThroughput(links: NetworkLink[], a: string, b: string): number {
   const link = links.find(
@@ -112,18 +108,13 @@ function pathHasOfflineLink(path: string[], links: NetworkLink[]): boolean {
 }
 
 /**
- * Build all traffic events from the current topology.
- * Deterministic offsets keep the animation stable between telemetry refetches.
+ * Generate all traffic events for the current topology.
  *
- * Two layers, mirroring how real traffic behaves:
- *
- * 1. Per-source multi-hop flows — every packet rides the real path from its
- *    leaf up through each intermediate node to the Internet and back, so no
- *    packet ever teleports onto a child link (parent → child propagation) and
- *    packets branch naturally off each parent into every child independently.
- * 2. Ambient per-link traffic — every cable continuously generates its own
- *    packets in both directions with independent speed/spacing/timing, so the
- *    map stays alive even between leaf flows.
+ * Two layers:
+ * 1. Per-source multi-hop flows — every leaf node generates outbound+inbound
+ *    traffic along its real path to the Internet.
+ * 2. Ambient per-link traffic — every cable generates its own bidirectional
+ *    packets independent of the multi-hop flows.
  */
 export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): TrafficEvent[] {
   const adj = adjacency(links);
@@ -140,13 +131,12 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
       const throughput = linkThroughput(links, node.id, path[1]) || 1;
       const intensity = clamp(throughput / 1000, 0.15, 1);
 
-      // Faster + denser traffic for busier links; ~120–220ms per edge.
-      const hopMs = 160 + seeded(node.id, 1) * 80;
+      const hopMs = 140 + seeded(node.id, 1) * 80;
       const dur = Math.round(path.length * hopMs);
-      const cycleMs = Math.round(clamp(2200 - intensity * 1400, 600, 2200));
-      const count = Math.max(1, Math.round(intensity * 4));
+      const cycleMs = Math.round(clamp(2000 - intensity * 1200, 500, 2000));
+      const count = Math.max(2, Math.round(intensity * 5));
 
-      const outbound: TrafficEvent = {
+      events.push({
         id: `${node.id}::out`,
         path,
         direction: 'outbound',
@@ -154,8 +144,8 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
         dur,
         count,
         pace: seeded(node.id, 6),
-      };
-      const inbound: TrafficEvent = {
+      });
+      events.push({
         id: `${node.id}::in`,
         path: [...path].reverse(),
         direction: 'inbound',
@@ -163,12 +153,11 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
         dur,
         count,
         pace: seeded(node.id, 7),
-      };
-      events.push(outbound, inbound);
+      });
     }
   }
 
-  // Ambient per-link traffic: every cable stays alive, both directions.
+  // Ambient per-link traffic
   for (const link of links) {
     if (link.status === 'critical') continue;
     const a = nodes.find((n) => n.id === link.source);
@@ -176,8 +165,8 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
     if (!a || !b) continue;
 
     const intensity = clamp(link.throughputMbps / 1000, 0.1, 1);
-    const hopMs = Math.round(clamp(380 - intensity * 220, 160, 380));
-    const cycleMs = Math.round(clamp(2600 - intensity * 1600, 700, 2600));
+    const hopMs = Math.round(clamp(320 - intensity * 180, 140, 320));
+    const cycleMs = Math.round(clamp(2400 - intensity * 1400, 600, 2400));
     const count = Math.max(1, Math.round(intensity * 3));
 
     events.push(
@@ -205,7 +194,6 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
   return events;
 }
 
-/** Stable signature of the topology — used to avoid regenerating events on refetch. */
 export function topologySignature(nodes: NetworkNode[], links: NetworkLink[]): string {
   const n = nodes
     .map((nd) => `${nd.id}:${nd.status}:${Math.round(nd.x * 10)}:${Math.round(nd.y * 10)}`)

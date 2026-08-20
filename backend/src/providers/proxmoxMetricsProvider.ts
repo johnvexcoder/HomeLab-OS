@@ -134,7 +134,7 @@ export class ProxmoxMetricsProvider {
 
   private readonly runtimes = new Map<string, ServerRuntime>();
   private readonly guestRuntimes = new Map<string, ServerRuntime>();
-  private readonly guests = new Map<string, Array<{ id: string; name: string; running: boolean }>>();
+  private readonly guests = new Map<string, Array<{ id: string; name: string; running: boolean; vmType: 'vm' | 'lxc'; nodeId: string; vmid: number }>>();
   private readonly tickListeners: TickListener[] = [];
   private readonly notifListeners: NotificationListener[] = [];
   private readonly generator = new NotificationGenerator({ ambient: false });
@@ -286,12 +286,17 @@ export class ProxmoxMetricsProvider {
     this.runtimes.set(spec.id, runtime);
 
     // Store guests and build guest runtimes
-    const guestEntries: Array<{ id: string; name: string; running: boolean; nodeId: string; vmid: number }> = [];
-    const allGuests = [...detail.qemu, ...detail.lxc];
-    for (const g of allGuests) {
+    const guestEntries: Array<{ id: string; name: string; running: boolean; vmType: 'vm' | 'lxc'; nodeId: string; vmid: number }> = [];
+    for (const g of detail.qemu) {
       const gid = `${g.vmid}`;
-      guestEntries.push({ id: gid, name: g.name || `${g.vmid}`, running: g.status === 'running', nodeId: spec.id, vmid: g.vmid });
-      // Build a ServerRuntime for each guest so they appear on the /servers page
+      guestEntries.push({ id: gid, name: g.name || `${g.vmid}`, running: g.status === 'running', vmType: 'vm', nodeId: spec.id, vmid: g.vmid });
+      const guestSpec = this.buildGuestSpec(g, spec);
+      const guestRuntime = this.buildGuestRuntime(g, guestSpec);
+      this.guestRuntimes.set(guestSpec.id, guestRuntime);
+    }
+    for (const g of detail.lxc) {
+      const gid = `${g.vmid}`;
+      guestEntries.push({ id: gid, name: g.name || `${g.vmid}`, running: g.status === 'running', vmType: 'lxc', nodeId: spec.id, vmid: g.vmid });
       const guestSpec = this.buildGuestSpec(g, spec);
       const guestRuntime = this.buildGuestRuntime(g, guestSpec);
       this.guestRuntimes.set(guestSpec.id, guestRuntime);
@@ -791,46 +796,61 @@ export class ProxmoxMetricsProvider {
     const nodes: NetworkNode[] = [];
     const links: NetworkLink[] = [];
 
+    // Correct hierarchy: internet → gateway → switch → physical hosts → VMs/LXCs
     nodes.push({ id: 'internet', label: 'Internet', type: 'internet', status: 'online', x: 50, y: 50, health: 100 });
 
-    // Only iterate NODE runtimes (not guests) for top-level network nodes
-    for (const [, s] of this.runtimes) {
+    const hasHosts = this.runtimes.size > 0;
+    if (hasHosts) {
+      nodes.push({ id: 'gateway', label: 'Gateway', type: 'gateway', status: 'online', x: 50, y: 50, health: 100 });
+      links.push({ id: 'internet-gateway', source: 'internet', target: 'gateway', status: 'healthy', latencyMs: 12, throughputMbps: 940, jitterMs: 2, packetLoss: 0 });
+
+      nodes.push({ id: 'switch', label: 'Switch', type: 'switch', status: 'online', x: 50, y: 50, health: 100 });
+      links.push({ id: 'gateway-switch', source: 'gateway', target: 'switch', status: 'healthy', latencyMs: 0.3, throughputMbps: 1000, jitterMs: 0.1, packetLoss: 0 });
+    }
+
+    // Physical hosts connect to the switch
+    for (const [nodeId, s] of this.runtimes) {
+      const hostStatus = s.status === 'online' ? 'healthy' : s.status === 'degraded' ? 'warning' : 'critical';
       nodes.push({
         id: s.spec.id,
         label: s.spec.name,
         type: 'hypervisor',
         status: s.status,
-        x: 50,
-        y: 50,
-        parentId: 'internet',
+        x: 50, y: 50,
+        parentId: 'switch',
         ip: s.spec.ip || undefined,
         health: s.health,
+        childCount: (this.guests.get(nodeId) ?? []).length,
+        tempC: s.tempC,
+        cpuPercent: s.cpu,
       });
       links.push({
-        id: `internet-${s.spec.id}`,
-        source: 'internet',
+        id: `switch-${s.spec.id}`,
+        source: 'switch',
         target: s.spec.id,
-        status: s.status === 'online' ? 'healthy' : s.status === 'degraded' ? 'warning' : 'critical',
-        latencyMs: 1,
+        status: hostStatus,
+        latencyMs: 0.4,
         throughputMbps: round(s.netUpMbps + s.netDownMbps, 1),
-        jitterMs: 0.1,
+        jitterMs: 0.2,
         packetLoss: 0,
       });
 
-      // Add guests as children of this node using consistent ID format: nodeId-g{vmid}
-      const guestList = (this.guests.get(s.spec.id) ?? []).slice(0, 20);
+      // Guests: differentiate VM vs LXC
+      const guestList = (this.guests.get(nodeId) ?? []).slice(0, 25);
       for (const g of guestList) {
-        const gid = `${s.spec.id}-g${g.id}`;
+        const gid = `${s.spec.id}-g${g.vmid}`;
+        const guestType: NetworkNode['type'] = g.vmType === 'vm' ? 'vm' : 'lxc';
+        const guestSpec = this.guestRuntimes.get(gid);
         nodes.push({
           id: gid,
           label: g.name,
-          type: 'container',
+          type: guestType,
           status: g.running ? 'online' : 'offline',
-          x: 50,
-          y: 50,
+          x: 50, y: 50,
           parentId: s.spec.id,
-          ip: s.spec.ip || undefined,
-          health: g.running ? 100 : 0,
+          health: g.running ? (guestSpec?.health ?? 100) : 0,
+          tempC: guestSpec?.tempC,
+          cpuPercent: guestSpec?.cpu,
         });
         links.push({
           id: `${s.spec.id}-${gid}`,
@@ -838,7 +858,7 @@ export class ProxmoxMetricsProvider {
           target: gid,
           status: g.running ? 'healthy' : 'warning',
           latencyMs: 0.1,
-          throughputMbps: 0,
+          throughputMbps: guestSpec ? round((guestSpec.netUpMbps ?? 0) + (guestSpec.netDownMbps ?? 0), 1) : 0,
           jitterMs: 0.05,
           packetLoss: 0,
         });
