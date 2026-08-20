@@ -108,9 +108,19 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
 
     // Merge agent-reported servers (skip any that overlap with Proxmox/Docker)
     const guestMap = this.getGuestMap();
-    const agentServers = getAgentServers(primaryIds, primary, guestMap);
+    const { runtimes: agentServers, claimedGuestIds } = getAgentServers(primaryIds, primary, guestMap);
     for (const s of agentServers) {
       result.push(s);
+    }
+
+    // Remove stale Proxmox guest cards that an agent on the same subnet
+    // has claimed (e.g. debian01 card when docker01 agent exists on same host)
+    if (claimedGuestIds.size > 0) {
+      for (let i = result.length - 1; i >= 0; i--) {
+        if (claimedGuestIds.has(result[i].spec.id)) {
+          result.splice(i, 1);
+        }
+      }
     }
 
     // Self-monitor: if the backend's own host wasn't enriched by an agent,
@@ -263,7 +273,20 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const existingIds = new Set(nodes.map((n) => n.id));
 
     // Merge standalone agent servers
-    const agentServers = getAgentServers(existingIds, this.primary.getServers(), guestMap);
+    const { runtimes: agentServers, claimedGuestIds } = getAgentServers(existingIds, this.primary.getServers(), guestMap);
+    // Remove claimed guest nodes from the network map
+    if (claimedGuestIds.size > 0) {
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        if (claimedGuestIds.has(nodes[i].id)) {
+          nodes.splice(i, 1);
+        }
+      }
+      for (let i = links.length - 1; i >= 0; i--) {
+        if (claimedGuestIds.has(links[i].source) || claimedGuestIds.has(links[i].target)) {
+          links.splice(i, 1);
+        }
+      }
+    }
     for (const s of agentServers) {
       const parentNode = s.spec.clusterId && nodes.some((n) => n.id === s.spec.clusterId)
         ? s.spec.clusterId

@@ -332,7 +332,7 @@ export function getAgentServers(
   existingIds: Set<string>,
   proxmoxServers: ServerRuntime[],
   proxmoxGuests: Map<string, ProxmoxGuest>,
-): ServerRuntime[] {
+): { runtimes: ServerRuntime[]; claimedGuestIds: Set<string> } {
   const db = getDb();
   const rows = db.prepare(
     `SELECT * FROM agents WHERE last_report_at IS NOT NULL ORDER BY host_name ASC`,
@@ -341,6 +341,7 @@ export function getAgentServers(
   const now = Date.now();
   const runtimes: ServerRuntime[] = [];
   const matchedVmids = new Set<string>();
+  const claimedGuestIds = new Set<string>();
 
   for (const row of rows) {
     const age = now - (row.last_report_at ?? 0);
@@ -363,7 +364,23 @@ export function getAgentServers(
       }
     }
 
-    // No match or unmatched guest → standalone server
+    // No match or unmatched guest → standalone server.
+    // Also claim any unmatched guests on the same subnet so the stale
+    // Proxmox guest cards are removed from the UI.
+    const agentIp = row.ip?.trim();
+    if (agentIp) {
+      for (const server of proxmoxServers) {
+        if (!server.spec.ip) continue;
+        if (!sameSubnet(agentIp, server.spec.ip)) continue;
+        for (const [, guest] of proxmoxGuests) {
+          if (guest.nodeId !== server.spec.id) continue;
+          if (!guest.running) continue;
+          if (matchedVmids?.has(guest.vmid)) continue;
+          claimedGuestIds.add(`${server.spec.id}-g${guest.vmid}`);
+        }
+      }
+    }
+
     const id = `agent-${row.host_id}`;
     if (existingIds.has(id)) continue;
 
@@ -371,7 +388,7 @@ export function getAgentServers(
     runtimes.push(buildAgentRuntime(row, parentNodeId));
   }
 
-  return runtimes;
+  return { runtimes, claimedGuestIds };
 }
 
 /** Build Docker host profiles from agents that report Docker containers. */
