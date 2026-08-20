@@ -97,7 +97,10 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
       <div className="grid grid-cols-3 gap-2 text-center">
         <MiniMetric label="Uptime" value={formatUptime(server.uptimeSeconds)} />
         <MiniMetric label="Processes" value={<AnimatedNumber value={server.processes} />} />
-        <MiniMetric label="Containers" value={<AnimatedNumber value={s.profile.containers} />} />
+        <MiniMetric
+          label={s.profile.containers > 0 ? 'Containers' : 'Virtual Machines'}
+          value={<AnimatedNumber value={s.profile.containers > 0 ? s.profile.containers : s.profile.vms} />}
+        />
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-surface-border pt-2.5">
@@ -119,7 +122,6 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
 
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}

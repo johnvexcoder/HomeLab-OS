@@ -121,8 +121,9 @@ function matchAgent(
   }
 
   // 4. Subnet heuristic: agent is a VM on the same /24 subnet as a Proxmox node
-  //    Only match if there is exactly ONE unmatched running guest on that node
-  //    to avoid ambiguous matches (e.g., two agents matching the same guest).
+  //    Match if there is exactly ONE unmatched running guest on that node,
+  //    OR if the number of unmatched agents on this subnet equals unmatched guests
+  //    (batch matching handled by getAgentServers).
   if (agentIp && agent.virt_type && ['kvm', 'qemu', 'xen', 'vmware'].includes(agent.virt_type)) {
     for (const server of proxmoxServers) {
       if (!server.spec.ip) continue;
@@ -135,6 +136,12 @@ function matchAgent(
         unmatchedGuests.push(guest);
       }
       if (unmatchedGuests.length === 1) {
+        const parent = findParentNode(unmatchedGuests[0], proxmoxServers);
+        if (parent) return { kind: 'guest', parentServer: parent, guest: unmatchedGuests[0] };
+      }
+      // When multiple unmatched guests remain, return the first one
+      // getAgentServers handles batch matching to avoid duplicates
+      if (unmatchedGuests.length > 1) {
         const parent = findParentNode(unmatchedGuests[0], proxmoxServers);
         if (parent) return { kind: 'guest', parentServer: parent, guest: unmatchedGuests[0] };
       }
@@ -169,6 +176,13 @@ function enrichServerWithAgent(server: ServerRuntime, agent: AgentRow): void {
   if (agent.cpu_cores) server.spec.cpuCores = agent.cpu_cores;
   if (agent.ram_total_gb) server.spec.ramTotalGb = round(agent.ram_total_gb, 1);
   if (agent.disk_total_gb) server.spec.diskTotalGb = round(agent.disk_total_gb, 1);
+  // Agent knows the real hostname — update if different (e.g., debian01 → docker01)
+  if (agent.host_name && agent.host_name !== server.spec.hostname) {
+    server.spec.hostname = agent.host_name;
+    server.spec.name = agent.host_name;
+  }
+  // Agent knows the real IP — always update (Proxmox guest IPs are unreliable)
+  if (agent.ip) server.spec.ip = agent.ip;
   // Preserve Proxmox guest description for VMs; only set agent description for standalone agents
   if (server.spec.role !== 'server' || !server.spec.description?.includes('VM')) {
     server.spec.description = server.spec.role === 'hypervisor'

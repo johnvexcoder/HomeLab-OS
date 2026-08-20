@@ -2,13 +2,13 @@
  * Hierarchical Topology Layout Engine
  *
  * Computes node positions, group bounding boxes, cable geometry, and
- * sizing metrics from the real canvas dimensions.
+ * sizing metrics for a left-to-right infrastructure diagram.
  *
  * Hierarchy (BFS from Internet):
- *   Internet → Gateway → Switch → Physical Hosts → VMs/LXCs → Docker Engine → Containers
+ *   Internet → Gateway → Switch → Physical Hosts → VMs/LXCs → Docker → Containers
  *
- * Visual grouping: every parent with children gets a translucent bounding
- * box so the tree feels structured, not just floating icons.
+ * Key design: the layout EXPANDS to fit content rather than compressing
+ * content to fit the viewport. The SVG viewBox adapts to the layout size.
  */
 
 import type { NetworkLink, NetworkNode } from '@/types';
@@ -65,12 +65,6 @@ export interface TopologyLayout {
   groups: GroupBounds[];
 }
 
-const MIN_NODE = 14;
-
-function maxNodeFor(width: number): number {
-  return clamp(Math.round(46 * (width / 680)), 46, 80);
-}
-
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
@@ -83,62 +77,41 @@ function estTextWidth(text: string, fontSize: number): number {
   return text.length * fontSize * 0.55;
 }
 
-function labelSizeFor(nodeSize: number): number {
-  return clamp(nodeSize * 0.24, 8, 12);
-}
+/** Fixed spacing constants — these determine the layout density */
+const COLUMN_GAP = 180;       // horizontal gap between hierarchy levels
+const ROW_GAP = 90;           // vertical gap between siblings
+const SUBTREE_GAP = 120;      // gap between different parent subtrees
+const PADDING = 60;           // outer padding
+const NODE_SIZE = 48;         // fixed node box size
+const LABEL_BLOCK = 28;       // space below node for label + IP
+const GROUP_PAD = 20;         // padding inside group bounding box
+const GROUP_HEADER = 18;      // extra height for group label
 
-function ipSizeFor(nodeSize: number): number {
-  return clamp(nodeSize * 0.19, 7, 9.5);
-}
+function labelSizeFor(): number { return 11; }
+function ipSizeFor(): number { return 9; }
 
-export function labelVisible(nodeSize: number): boolean {
-  return nodeSize >= 6;
-}
+export function labelVisible(_nodeSize: number): boolean { return true; }
+export function ipVisible(_nodeSize: number): boolean { return true; }
 
-export function ipVisible(nodeSize: number): boolean {
-  return nodeSize >= 12;
-}
-
-function labelBlock(nodeSize: number): number {
-  if (!labelVisible(nodeSize)) return 6;
-  if (!ipVisible(nodeSize)) return labelSizeFor(nodeSize) + 6;
-  return labelSizeFor(nodeSize) + ipSizeFor(nodeSize) + 8;
-}
-
-export function rowSpanOf(nodeSize: number): number {
-  return nodeSize + labelBlock(nodeSize);
-}
-
-function nodeHalfBox(nodeSize: number): number {
-  return labelVisible(nodeSize) ? nodeSize * 0.85 + 2 : nodeSize * 0.5 + 2;
-}
-
-export function desiredColumns(count: number): number {
-  if (count <= 0) return 1;
-  if (count <= 2) return 1;
-  if (count <= 5) return 2;
-  if (count <= 8) return 3;
-  for (let k = 4; k <= 12; k++) {
-    if (count <= (2 * k) ** 2) return k;
-  }
-  return 12;
+export function rowSpanOf(_nodeSize: number): number {
+  return NODE_SIZE + LABEL_BLOCK;
 }
 
 export function computeTopologyLayout(
   nodes: NetworkNode[],
   links: NetworkLink[],
-  width: number,
-  height: number,
+  _width: number,
+  _height: number,
 ): TopologyLayout {
   const empty = (): TopologyLayout => ({
-    width,
-    height,
+    width: _width,
+    height: _height,
     metrics: {
-      nodeSize: maxNodeFor(width),
+      nodeSize: NODE_SIZE,
       iconSize: 22,
       labelSize: 11,
       ipSize: 9,
-      labelMaxWidth: 78,
+      labelMaxWidth: 120,
       split: 7,
       labelVisible: true,
       ipVisible: true,
@@ -148,7 +121,7 @@ export function computeTopologyLayout(
     groups: [],
   });
 
-  if (nodes.length === 0 || width <= 0 || height <= 0) return empty();
+  if (nodes.length === 0) return empty();
 
   // ---- 1. Build adjacency and BFS hierarchy from Internet root ----
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -199,222 +172,112 @@ export function computeTopologyLayout(
     }
   }
 
-  // ---- 2. Adaptive sizing ----
-  const PAD_X = Math.min(28, width * 0.05);
-  const PAD_Y = Math.min(24, height * 0.06);
-  const usableW = Math.max(1, width - PAD_X * 2);
-  const usableH = Math.max(1, height - PAD_Y * 2);
-
-  const count = nodes.length;
-  const nodeMax = maxNodeFor(width);
-  let nodeSize = clamp(
-    nodeMax * (1 - 0.16 * Math.log10(Math.max(1, count) / 8)),
-    MIN_NODE,
-    nodeMax,
-  );
-
-  const famCols = new Map<string, number>();
-  const spanCache = new Map<string, number>();
-  const cellH = Math.max(nodeSize * 2, rowSpanOf(nodeSize));
-
-  const spanOf = (id: string): number => {
-    const cached = spanCache.get(id);
-    if (cached !== undefined) return cached;
+  // ---- 2. Compute subtree sizes (leaf-count weighted) ----
+  const leafCount = new Map<string, number>();
+  const countLeaves = (id: string): number => {
     const kids = children.get(id) ?? [];
-    if (kids.length === 0) return cellH;
-    let worst = 0;
-    for (const kid of kids) worst = Math.max(worst, spanOf(kid));
-    const rows = Math.ceil(kids.length / (famCols.get(id) ?? 1));
-    const v = rows * worst;
-    spanCache.set(id, v);
-    return v;
-  };
-
-  const totalV = (): number => {
-    let t = 0;
-    for (const r of roots) t += spanOf(r);
-    t += Math.max(0, roots.length - 1) * nodeSize * 0.9;
-    return t;
-  };
-
-  // ---- 3. Layout pass ----
-  const layoutOnce = (): { cellW: number; minX: number; maxX: number; px: Map<string, number> } => {
-    const cellW = nodeSize * 1.8;
-    const maxByW = Math.max(1, Math.floor(usableW / cellW));
-
-    famCols.clear();
-    for (const [pid, kids] of children) {
-      famCols.set(pid, Math.min(desiredColumns(kids.length), maxByW));
+    if (kids.length === 0) {
+      leafCount.set(id, 1);
+      return 1;
     }
-    spanCache.clear();
-
-    const extentCache = new Map<string, number>();
-    const spacingMap = new Map<string, number>();
-    const halfBox = nodeHalfBox(nodeSize);
-    const gap = Math.max(nodeSize * 1.2, halfBox * 2 + 2);
-
-    const subtreeExtent = (id: string): number => {
-      const cached = extentCache.get(id);
-      if (cached !== undefined) return cached;
-      const kids = children.get(id) ?? [];
-      if (kids.length === 0) {
-        extentCache.set(id, halfBox);
-        return halfBox;
-      }
-      for (const kid of kids) subtreeExtent(kid);
-      const cols = famCols.get(id) ?? 1;
-      let sp = cellW;
-      for (let i = 0; i < kids.length; i++) {
-        if ((i + 1) % cols === 0) continue;
-        const need = extentCache.get(kids[i])! + halfBox + nodeSize * 0.2;
-        if (need > sp) sp = need;
-      }
-      spacingMap.set(id, sp);
-      let childMax = 0;
-      for (const kid of kids) childMax = Math.max(childMax, extentCache.get(kid)!);
-      const e = gap + (cols - 1) * sp + childMax;
-      extentCache.set(id, e);
-      return e;
-    };
-
-    const px = new Map<string, number>();
-    let minX = 0;
-    let maxX = 0;
-    const computeXY = (): void => {
-      extentCache.clear();
-      spacingMap.clear();
-      for (const r of roots) subtreeExtent(r);
-      px.clear();
-      for (const r of roots) px.set(r, 0);
-      for (const r of roots) {
-        const queue = [r];
-        while (queue.length > 0) {
-          const cur = queue.shift()!;
-          const cols = famCols.get(cur) ?? 1;
-          const sp = spacingMap.get(cur) ?? cellW;
-          const kids = children.get(cur) ?? [];
-          kids.forEach((kid, i) => {
-            px.set(kid, px.get(cur)! + gap + (i % cols) * sp);
-            queue.push(kid);
-          });
-        }
-      }
-      minX = Infinity;
-      maxX = -Infinity;
-      for (const v of px.values()) {
-        if (v - halfBox < minX) minX = v - halfBox;
-        if (v + halfBox > maxX) maxX = v + halfBox;
-      }
-      if (!Number.isFinite(minX)) { minX = 0; maxX = 0; }
-    };
-    computeXY();
-
-    // Greedy column growth
-    let guard = 0;
-    while (totalV() > usableH && guard++ < 150) {
-      if (Math.max(1, maxX - minX) >= usableW) break;
-      let bestPid: string | null = null;
-      let bestNewCols = 0;
-      let bestScore = -1;
-      for (const [pid, kids] of children) {
-        const cols = famCols.get(pid) ?? 1;
-        const c = kids.length;
-        const rows = Math.ceil(c / cols);
-        if (rows <= 1) continue;
-        const newCols = Math.ceil(c / (rows - 1));
-        if (newCols <= cols || newCols > maxByW) continue;
-        const sp = spacingMap.get(pid) ?? cellW;
-        const budgetCols = Math.max(cols, Math.floor(usableW / Math.max(1, sp)) + 1);
-        if (newCols > budgetCols) continue;
-        let cellSpan = 0;
-        for (const kid of kids) cellSpan = Math.max(cellSpan, spanOf(kid));
-        const score = (depth.get(pid) ?? 0) * 1000 + cellSpan;
-        if (score > bestScore) {
-          bestScore = score;
-          bestPid = pid;
-          bestNewCols = newCols;
-        }
-      }
-      if (bestPid == null) break;
-      famCols.set(bestPid, bestNewCols);
-      spanCache.clear();
-      computeXY();
-    }
-
-    return { cellW, minX, maxX, px };
+    let total = 0;
+    for (const kid of kids) total += countLeaves(kid);
+    leafCount.set(id, total);
+    return total;
   };
+  for (const id of seen) countLeaves(id);
 
-  for (let iter = 0; iter < 12; iter++) {
-    const { minX, maxX } = layoutOnce();
-    const extentW = Math.max(1, maxX - minX);
-    let scale = 1;
-    if (extentW > usableW) scale = Math.min(scale, usableW / extentW);
-    if (totalV() > usableH) scale = Math.min(scale, usableH / totalV());
-    if (scale < 1) {
-      nodeSize = Math.max(2, nodeSize * scale);
-      continue;
-    }
-    break;
-  }
+  // ---- 3. Compute max depth for column spacing ----
+  let maxDepth = 0;
+  for (const d of depth.values()) if (d > maxDepth) maxDepth = d;
 
-  // ---- 4. Final positions ----
-  const { minX, maxX, px } = layoutOnce();
-  const extentW = Math.max(1, maxX - minX);
-  const shiftX = PAD_X - minX + Math.max(0, (usableW - extentW) / 2);
+  // ---- 4. Assign X positions (column-based) ----
+  const columnX = (d: number): number => PADDING + d * COLUMN_GAP;
 
+  // ---- 5. Assign Y positions (leaf-weighted interval splitting) ----
+  const rowSpan = ROW_GAP;
   const positions = new Map<string, LayoutedNode>();
-  for (const n of nodes) {
-    const par = parent.get(n.id);
-    const isRoot = par === n.id || par === undefined;
-    const sibs = isRoot ? [] : children.get(par!) ?? [];
-    const idx = isRoot ? -1 : Math.max(0, sibs.indexOf(n.id));
-    positions.set(n.id, {
-      id: n.id,
-      x: round1((px.get(n.id) ?? 0) + shiftX),
-      y: 0,
-      depth: depth.get(n.id) ?? 0,
-      siblingIndex: idx,
-      siblings: idx >= 0 ? Math.max(1, sibs.length) : 1,
+
+  const assignY = (id: string, top: number, bottom: number, d: number): void => {
+    const kids = children.get(id) ?? [];
+    const totalLeaves = leafCount.get(id) ?? 1;
+
+    positions.set(id, {
+      id,
+      x: columnX(d),
+      y: round1((top + bottom) / 2),
+      depth: d,
+      siblingIndex: -1,
+      siblings: 1,
       truncated: false,
     });
-  }
 
-  const assignY = (id: string, top: number, bottom: number) => {
-    const p = positions.get(id);
-    if (!p) return;
-    p.y = round1((top + bottom) / 2);
-    const kids = children.get(id) ?? [];
     if (kids.length === 0) return;
-    const cols = famCols.get(id) ?? 1;
-    const rows = Math.ceil(kids.length / cols);
-    const rowH = (bottom - top) / rows;
-    kids.forEach((kid, i) => {
-      const row = Math.floor(i / cols);
-      assignY(kid, top + row * rowH, top + (row + 1) * rowH);
-    });
+
+    // Compute gap between children
+    const totalGap = Math.max(0, kids.length - 1) * (rowSpan * 0.5);
+    const available = Math.max(0, (bottom - top) - totalGap);
+
+    let cursor = top;
+    for (let i = 0; i < kids.length; i++) {
+      if (i > 0) cursor += rowSpan * 0.5;
+      const kidLeaves = leafCount.get(kids[i]) ?? 1;
+      const span = (available * kidLeaves) / totalLeaves;
+      assignY(kids[i], cursor, cursor + span, d + 1);
+      cursor += span;
+    }
   };
 
-  const rootGap = nodeSize * 0.9;
-  const rootSpans = roots.map(spanOf);
-  const sumSpans = rootSpans.reduce((a, b) => a + b, 0);
-  const totalGap = Math.max(0, roots.length - 1) * rootGap;
-  const fillV = Math.min(usableH / Math.max(1, sumSpans + totalGap), 1.3);
-  const groupV = (sumSpans + totalGap) * fillV;
-  const offsetY = Math.max(0, (usableH - groupV) / 2);
-  let yCursor = PAD_Y + offsetY;
-  roots.forEach((r, i) => {
-    if (i > 0) yCursor += rootGap * fillV;
-    const sp = rootSpans[i] * fillV;
-    assignY(r, yCursor, yCursor + sp);
-    yCursor += sp;
-  });
+  // Find root subtrees and assign vertical space
+  const rootTotalLeaves = roots.reduce((a, r) => a + (leafCount.get(r) ?? 1), 0);
+  const totalHeight = Math.max(
+    rootTotalLeaves * rowSpan + Math.max(0, roots.length - 1) * SUBTREE_GAP,
+    rowSpan * 3,
+  );
 
-  // ---- 5. Compute group bounding boxes for parents with children ----
+  let cursorY = PADDING;
+  for (let i = 0; i < roots.length; i++) {
+    if (i > 0) cursorY += SUBTREE_GAP;
+    const rootLeaves = leafCount.get(roots[i]) ?? 1;
+    const span = (totalHeight * rootLeaves) / rootTotalLeaves;
+    assignY(roots[i], cursorY, cursorY + span, depth.get(roots[i]) ?? 0);
+    cursorY += span;
+  }
+
+  // ---- 6. Set sibling indices ----
+  for (const [, kids] of children) {
+    for (let i = 0; i < kids.length; i++) {
+      const p = positions.get(kids[i]);
+      if (p) {
+        p.siblingIndex = i;
+        p.siblings = kids.length;
+      }
+    }
+  }
+
+  // ---- 7. Compute bounding box ----
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const halfNode = NODE_SIZE / 2;
+  for (const p of positions.values()) {
+    minX = Math.min(minX, p.x - halfNode);
+    maxX = Math.max(maxX, p.x + halfNode);
+    minY = Math.min(minY, p.y - rowSpan / 2);
+    maxY = Math.max(maxY, p.y + rowSpan / 2);
+  }
+
+  const layoutW = Math.max(1, maxX - minX + PADDING * 2);
+  const layoutH = Math.max(1, maxY - minY + PADDING * 2);
+  const offsetX = PADDING - minX;
+  const offsetY = PADDING - minY;
+
+  // Shift all positions
+  for (const p of positions.values()) {
+    p.x = round1(p.x + offsetX);
+    p.y = round1(p.y + offsetY);
+  }
+
+  // ---- 8. Group bounding boxes ----
   const groups: GroupBounds[] = [];
-  const PADDING = 12;
-  const HEADER = 16;
-
-  // Build groups bottom-up: children first so parent groups encompass all descendants
   const groupEntries: Array<{ id: string; depth: number; childIds: Set<string> }> = [];
   for (const [pid, kids] of children) {
     if (kids.length === 0) continue;
@@ -426,7 +289,6 @@ export function computeTopologyLayout(
     for (const k of kids) collect(k);
     groupEntries.push({ id: pid, depth: depth.get(pid) ?? 0, childIds: allDesc });
   }
-  // Sort deepest first so inner groups are computed before outer groups
   groupEntries.sort((a, b) => b.depth - a.depth);
 
   for (const entry of groupEntries) {
@@ -435,53 +297,52 @@ export function computeTopologyLayout(
 
     let gMinX = Infinity, gMaxX = -Infinity, gMinY = Infinity, gMaxY = -Infinity;
     for (const n of nodesInGroup) {
-      gMinX = Math.min(gMinX, n.x - nodeHalfBox(nodeSize));
-      gMaxX = Math.max(gMaxX, n.x + nodeHalfBox(nodeSize));
-      gMinY = Math.min(gMinY, n.y - rowSpanOf(nodeSize) / 2);
-      gMaxY = Math.max(gMaxY, n.y + rowSpanOf(nodeSize) / 2);
+      gMinX = Math.min(gMinX, n.x - halfNode);
+      gMaxX = Math.max(gMaxX, n.x + halfNode);
+      gMinY = Math.min(gMinY, n.y - rowSpan / 2);
+      gMaxY = Math.max(gMaxY, n.y + rowSpan / 2);
     }
 
     const parentNode = nodeById.get(entry.id);
     groups.push({
       id: entry.id,
       label: parentNode?.label ?? entry.id,
-      x: round1(gMinX - PADDING),
-      y: round1(gMinY - PADDING - HEADER),
-      width: round1(gMaxX - gMinX + PADDING * 2),
-      height: round1(gMaxY - gMinY + PADDING * 2 + HEADER),
+      x: round1(gMinX - GROUP_PAD),
+      y: round1(gMinY - GROUP_PAD - GROUP_HEADER),
+      width: round1(gMaxX - gMinX + GROUP_PAD * 2),
+      height: round1(gMaxY - gMinY + GROUP_PAD * 2 + GROUP_HEADER),
       depth: entry.depth,
     });
   }
-
-  // Sort groups shallowest first (outer groups drawn first = behind inner groups)
   groups.sort((a, b) => a.depth - b.depth);
 
-  // ---- 6. Metrics ----
+  // ---- 9. Metrics ----
   const metrics: LayoutMetrics = {
-    nodeSize: round1(nodeSize),
-    iconSize: round1(clamp(nodeSize * 0.52, 10, 26)),
-    labelSize: round1(labelSizeFor(nodeSize)),
-    ipSize: round1(ipSizeFor(nodeSize)),
-    labelMaxWidth: round1(nodeSize * 1.7),
-    split: round1(Math.max(3, nodeSize * 0.15)),
-    labelVisible: labelVisible(nodeSize),
-    ipVisible: ipVisible(nodeSize),
+    nodeSize: NODE_SIZE,
+    iconSize: 22,
+    labelSize: labelSizeFor(),
+    ipSize: ipSizeFor(),
+    labelMaxWidth: 120,
+    split: 7,
+    labelVisible: true,
+    ipVisible: true,
   };
+
   for (const p of positions.values()) {
     const node = nodeById.get(p.id);
-    if (!metrics.labelVisible || (node && estTextWidth(node.label, metrics.labelSize) > metrics.labelMaxWidth)) {
+    if (node && estTextWidth(node.label, metrics.labelSize) > metrics.labelMaxWidth) {
       p.truncated = true;
     }
   }
 
-  // ---- 7. Cables (cubic Bézier with per-branch fan-out, twin arcs) ----
+  // ---- 10. Cables (cubic Bezier with per-branch fan-out, twin arcs) ----
   const cables = new Map<string, CableLayout>();
   for (const link of links) {
     const a = positions.get(link.source);
     const b = positions.get(link.target);
     if (!a || !b) continue;
 
-    const hx = Math.min(Math.abs(a.x - b.x) * 0.45, nodeSize * 1.6);
+    const hx = clamp(Math.abs(a.x - b.x) * 0.4, 30, 120);
     const split = metrics.split;
 
     const parentOf = (id: string): string | undefined => {
@@ -495,7 +356,7 @@ export function computeTopologyLayout(
       const idx = kids.indexOf(side.id);
       if (idx < 0) return 0;
       const n = Math.max(1, kids.length);
-      return clamp((idx - (n - 1) / 2) * nodeSize * 0.26, -nodeSize * 0.6, nodeSize * 0.6);
+      return clamp((idx - (n - 1) / 2) * 18, -40, 40);
     };
     const srcFan = fanAt(a);
     const dstFan = fanAt(b);
@@ -516,5 +377,5 @@ export function computeTopologyLayout(
     });
   }
 
-  return { width, height, metrics, nodes: positions, cables, groups };
+  return { width: layoutW, height: layoutH, metrics, nodes: positions, cables, groups };
 }

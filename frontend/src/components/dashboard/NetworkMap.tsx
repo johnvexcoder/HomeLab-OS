@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Globe, Network, RefreshCw, WifiOff, X, Radio, ChevronRight, ChevronDown, Cpu, Thermometer, HardDrive, Activity } from 'lucide-react';
+import { Globe, Network, RefreshCw, WifiOff, X, Radio, ChevronRight, ChevronDown, Cpu, Thermometer, HardDrive, Activity, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
 import type { NetworkNode, NetworkLink } from '@/types';
@@ -12,6 +12,8 @@ import { computeTopologyLayout, type TopologyLayout, type LayoutedNode, type Gro
 
 const IN_COLOR = '#22D3EE';
 const OUT_COLOR = 'var(--accent)';
+
+function clamp(v: number, min: number, max: number): number { return Math.min(max, Math.max(min, v)); }
 
 const LINK_COLOR = {
   healthy: 'var(--accent)',
@@ -75,6 +77,36 @@ export function NetworkMap() {
   const [hoveredNode, setHoveredNode] = useState<NetworkNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.25, 3)), []);
+  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.25, 0.2)), []);
+  const handleZoomReset = useCallback(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, []);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    isPanning.current = true;
+    panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [pan]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanning.current) return;
+    const dx = e.clientX - panStart.current.x;
+    const dy = e.clientY - panStart.current.y;
+    setPan({ x: panStart.current.panX + dx, y: panStart.current.panY + dy });
+  }, []);
+
+  const onPointerUp = useCallback(() => { isPanning.current = false; }, []);
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom((z) => clamp(z * delta, 0.2, 3));
+  }, []);
 
   const toggleCollapse = (id: string) => {
     setCollapsedGroups((prev) => {
@@ -202,8 +234,25 @@ export function NetworkMap() {
         <div className="grid-backdrop absolute inset-0" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
 
-        <div ref={ref} className="relative aspect-[800/600] w-full sm:aspect-[800/400] md:aspect-[800/380]">
-          <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+        <div
+          ref={ref}
+          className="relative w-full overflow-hidden"
+          style={{ height: 480, cursor: isPanning.current ? 'grabbing' : 'grab' }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onWheel={onWheel}
+        >
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="absolute inset-0 h-full w-full"
+            style={{
+              transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+              transformOrigin: 'center center',
+              transition: isPanning.current ? 'none' : 'transform 0.15s ease-out',
+            }}
+          >
             <defs>
               <style>{`
                 @keyframes net-cable-pulse {
@@ -478,6 +527,20 @@ export function NetworkMap() {
               <span className="text-xs text-text-muted">No topology data available</span>
             </div>
           )}
+        </div>
+
+        {/* Zoom controls */}
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-surface-border bg-black/70 p-1 backdrop-blur-sm">
+          <button onClick={handleZoomOut} className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-overlay/10 hover:text-text-primary cursor-pointer" title="Zoom out">
+            <ZoomOut className="h-3.5 w-3.5" />
+          </button>
+          <span className="min-w-[3rem] text-center text-[10px] font-mono text-text-muted">{Math.round(zoom * 100)}%</span>
+          <button onClick={handleZoomIn} className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-overlay/10 hover:text-text-primary cursor-pointer" title="Zoom in">
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={handleZoomReset} className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-overlay/10 hover:text-text-primary cursor-pointer" title="Reset view">
+            <Maximize className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {/* Legend */}
