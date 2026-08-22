@@ -210,25 +210,35 @@ function matchAgentToInfrastructure(
   // ── Signal 5: Subnet heuristic ──
   // Agent is on same /24 subnet as a Proxmox node with unmatched running guests.
   // This is the weakest signal — only use when there's exactly one unmatched guest.
+  // Skip if agent IP equals a Proxmox node IP (parent validation should catch this,
+  // but add safeguard here too to prevent mis-matches).
   if (agentIp && isValidIp(agentIp)) {
-    for (const server of proxmoxServers) {
-      if (!server.spec.ip) continue;
-      if (!sameSubnet(agentIp, server.spec.ip)) continue;
-      if (agentIp === server.spec.ip) continue;
+    // Extra safeguard: don't match if agent IP is a Proxmox node IP
+    const isProxmoxNodeIp = proxmoxServers.some((s) => s.spec.ip === agentIp);
+    if (isProxmoxNodeIp) {
+      // Agent claims Proxmox node IP — parent validation should reject this,
+      // but if it slipped through, subnet heuristic won't worsen the issue.
+      ; // fall through to 'none' match
+    } else {
+      for (const server of proxmoxServers) {
+        if (!server.spec.ip) continue;
+        if (!sameSubnet(agentIp, server.spec.ip)) continue;
+        if (agentIp === server.spec.ip) continue;
 
-      const unmatchedGuests: ProxmoxGuest[] = [];
-      for (const [, guest] of proxmoxGuests) {
-        if (guest.nodeId !== server.spec.id) continue;
-        if (!guest.running) continue;
-        if (claimedVmids.has(guest.vmid)) continue;
-        unmatchedGuests.push(guest);
-      }
+        const unmatchedGuests: ProxmoxGuest[] = [];
+        for (const [, guest] of proxmoxGuests) {
+          if (guest.nodeId !== server.spec.id) continue;
+          if (!guest.running) continue;
+          if (claimedVmids.has(guest.vmid)) continue;
+          unmatchedGuests.push(guest);
+        }
 
-      // Only match subnet heuristic when there's exactly one candidate
-      if (unmatchedGuests.length === 1) {
-        const parent = findParentNode(unmatchedGuests[0].nodeId, proxmoxServers);
-        if (parent) {
-          return { kind: 'guest', parentServer: parent, guest: unmatchedGuests[0], confidence: 'low', signal: 'subnet' };
+        // Only match subnet heuristic when there's exactly one candidate
+        if (unmatchedGuests.length === 1) {
+          const parent = findParentNode(unmatchedGuests[0].nodeId, proxmoxServers);
+          if (parent) {
+            return { kind: 'guest', parentServer: parent, guest: unmatchedGuests[0], confidence: 'low', signal: 'subnet' };
+          }
         }
       }
     }
