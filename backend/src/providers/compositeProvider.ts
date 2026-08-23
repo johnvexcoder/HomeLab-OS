@@ -159,8 +159,10 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     // Find a server with our IP and apply self-monitor fallback for tempC
     for (const s of servers) {
       if (s.spec.ip !== ownIp) continue;
-      // Only skip self-enrichment if agent already provided a real temp (not 0)
-      if (s.cpu > 0 && s.diskUsedGb > 0 && s.tempC != null && s.tempC !== 0) continue;
+      // Skip entirely if agent already provided any real metrics — the agent
+      // is the source of truth for CPU/RAM/disk; temperature is inherited from
+      // the parent Proxmox node via buildAgentRuntime() / enrichServerWithAgent().
+      if (s.cpu > 0 || s.diskUsedGb > 0) continue;
 
       const m = collectSelfMetrics();
       s.cpu = m.cpuUsage;

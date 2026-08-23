@@ -351,13 +351,16 @@ function enrichServerWithAgent(
 /**
  * Build a standalone ServerRuntime for an unmatched agent.
  */
-function buildAgentRuntime(agent: AgentRow, parentNodeId?: string): ServerRuntime {
+function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?: number): ServerRuntime {
   const containers = safeJson<{ id: string; name: string; running: boolean; image: string; ports?: string[] }[]>(agent.containers_json, []);
 
   const cpuPct = clamp(agent.cpu_usage, 0, 100);
   const ramPct = agent.ram_total_gb > 0 ? (agent.ram_used_gb / agent.ram_total_gb) * 100 : 0;
   const diskPct = agent.disk_total_gb > 0 ? (agent.disk_used_gb / agent.disk_total_gb) * 100 : 0;
   const health = clamp(100 - (cpuPct > 85 ? 15 : 0) - (ramPct > 90 ? 15 : 0) - (diskPct > 92 ? 10 : 0), 0, 100);
+
+  const agentTemp = (agent.temp_c != null && agent.temp_c > 0) ? agent.temp_c : 0;
+  const tempC = agentTemp > 0 ? agentTemp : (parentTempC ?? 0);
 
   const prev = new Map<string, number[]>();
   const ph = (key: keyof ServerRuntime['history'], val: number): number[] => {
@@ -393,7 +396,7 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string): ServerRuntim
         cpuNoise: 0,
         baseRamGb: round(agent.ram_used_gb, 1),
         ramDriftGb: 0,
-        baseTemp: agent.temp_c ?? 0,
+        baseTemp: round(tempC, 1),
         tempVariance: 0,
         baseNetUpMbps: round(agent.net_up_mbps, 1),
         baseNetDownMbps: round(agent.net_down_mbps, 1),
@@ -412,7 +415,7 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string): ServerRuntim
     cpu: round(cpuPct),
     ramUsedGb: round(agent.ram_used_gb, 1),
     diskUsedGb: round(agent.disk_used_gb, 1),
-    tempC: agent.temp_c ?? 0,
+    tempC: round(tempC, 1),
     netUpMbps: round(agent.net_up_mbps, 1),
     netDownMbps: round(agent.net_down_mbps, 1),
     processes: agent.process_count ?? 0,
@@ -422,7 +425,7 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string): ServerRuntim
       cpu: ph('cpu', round(cpuPct)),
       ram: ph('ram', round(ramPct)),
       disk: ph('disk', round(diskPct)),
-      temp: ph('temp', agent.temp_c ?? 0),
+      temp: ph('temp', round(tempC, 1)),
       netUp: ph('netUp', round(agent.net_up_mbps)),
       netDown: ph('netDown', round(agent.net_down_mbps)),
       load: ph('load', round(agent.load_1, 2)),
@@ -504,8 +507,23 @@ export function reconcileServers(
     }
 
     // ── No match → standalone agent server ──
-    // Claim any unmatched Proxmox guests on the same subnet to avoid stale cards
+    // Find parent Proxmox node for temperature inheritance (VMs on same subnet)
+    let parentTempC = 0;
+    let parentNodeId: string | undefined;
     const agentIp = agent.ip?.trim();
+    if (agentIp && isValidIp(agentIp)) {
+      for (const server of proxmoxServers) {
+        if (!server.spec.ip) continue;
+        if (server.spec.role !== 'hypervisor') continue;
+        if (sameSubnet(agentIp, server.spec.ip) && agentIp !== server.spec.ip) {
+          parentTempC = server.tempC || 0;
+          parentNodeId = server.spec.id;
+          break;
+        }
+      }
+    }
+
+    // Claim any unmatched Proxmox guests on the same subnet to avoid stale cards
     if (agentIp && isValidIp(agentIp)) {
       for (const server of proxmoxServers) {
         if (!server.spec.ip) continue;
@@ -522,7 +540,7 @@ export function reconcileServers(
     const id = `agent-${agent.host_id}`;
     const existing = proxmoxServers.some((s) => s.spec.id === id) || extraServers.some((s) => s.spec.id === id);
     if (!existing) {
-      extraServers.push(buildAgentRuntime(agent));
+      extraServers.push(buildAgentRuntime(agent, parentNodeId, parentTempC));
     }
   }
 
