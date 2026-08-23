@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Globe, Network, RefreshCw, WifiOff, X, Radio, ChevronRight, ChevronDown, Cpu, Thermometer, HardDrive, Activity, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { Globe, Network, RefreshCw, WifiOff, X, ChevronRight, ChevronDown, Cpu, Thermometer, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
 import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import type { NetworkNode, NetworkLink } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
-import { formatMbps } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { generateTraffic, topologySignature, type TrafficEvent } from '@/lib/trafficEngine';
 import { computeTopologyLayout, type TopologyLayout, type LayoutedNode, type GroupBounds } from '@/lib/topologyLayout';
@@ -35,13 +34,6 @@ const NODE_STATUS_LABEL: Record<string, string> = {
   online: 'Online',
   degraded: 'Degraded',
   offline: 'Offline',
-};
-
-const LINK_STATUS_LABEL: Record<LinkStatus, string> = {
-  healthy: 'Healthy',
-  warning: 'Degraded',
-  critical: 'Offline',
-  unknown: 'Unknown',
 };
 
 type ExternalState = 'reachable' | 'degraded' | 'unreachable';
@@ -73,8 +65,6 @@ export function NetworkMap() {
   const links = topology?.links ?? [];
   const { ref, size } = useElementSize<HTMLDivElement>();
 
-  const [hoveredLink, setHoveredLink] = useState<NetworkLink | null>(null);
-  const [selectedLink, setSelectedLink] = useState<NetworkLink | null>(null);
   const [hoveredNode, setHoveredNode] = useState<NetworkNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -238,17 +228,7 @@ export function NetworkMap() {
       ? totalTx.toLocaleString(undefined, { maximumFractionDigits: 0 })
       : totalTx.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
-  const linkMid = (link: NetworkLink) => {
-    const a = finalPositions.get(link.source);
-    const b = finalPositions.get(link.target);
-    if (!a || !b) return null;
-    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
-  };
-
-  const tooltip = hoveredLink ? linkMid(hoveredLink) : null;
-
-  const selectLink = (link: NetworkLink) => { setSelectedLink(link); setSelectedNode(null); };
-  const selectNode = (node: NetworkNode) => { setSelectedNode(node); setSelectedLink(null); };
+  const selectNode = (node: NetworkNode) => { setSelectedNode(node); };
 
   return (
     <Card className="h-full">
@@ -305,7 +285,6 @@ export function NetworkMap() {
                 .net-base { transition: stroke 600ms ease, stroke-opacity 600ms ease; }
                 .net-glow { pointer-events: none; }
                 .net-cable-pulse { animation: net-cable-pulse 4.5s ease-in-out infinite; }
-                .link-active .net-base { stroke-opacity: 0.9; }
                 .net-signal {
                   stroke-linecap: round;
                   transition: stroke 600ms ease, opacity 600ms ease;
@@ -356,10 +335,6 @@ export function NetworkMap() {
                   link={link}
                   cable={cab}
                   index={i}
-                  active={hoveredLink?.id === link.id || selectedLink?.id === link.id}
-                  onHover={() => setHoveredLink(link)}
-                  onLeave={() => setHoveredLink((h) => (h?.id === link.id ? null : h))}
-                  onSelect={() => selectLink(link)}
                 />
               );
             })}
@@ -369,44 +344,36 @@ export function NetworkMap() {
           </svg>
 
           {/* Hover tooltip */}
-          {((hoveredLink && tooltip) || hoveredNode) && (
+          {hoveredNode && (
             <div
               className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
               style={{
-                left: hoveredNode ? (finalPositions.get(hoveredNode.id)?.x ?? 0) : tooltip!.mx,
-                top: (hoveredNode ? (finalPositions.get(hoveredNode.id)?.y ?? 0) + 8 : tooltip!.my) ?? 0,
+                left: finalPositions.get(hoveredNode.id)?.x ?? 0,
+                top: (finalPositions.get(hoveredNode.id)?.y ?? 0) + 8,
               }}
             >
               <div className="w-[min(220px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
-                {hoveredNode ? (
-                  <NodeTooltip node={hoveredNode} nodeById={nodeById} />
-                ) : (
-                  <LinkTooltip link={hoveredLink!} />
-                )}
+                <NodeTooltip node={hoveredNode} nodeById={nodeById} />
               </div>
             </div>
           )}
 
           {/* Detail panel (click) */}
-          {(selectedNode || selectedLink) && (
+          {selectedNode && (
             <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-72">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-text-primary">
-                  {selectedNode ? 'Device details' : 'Connection details'}
+                  Device details
                 </span>
                 <button
-                  onClick={() => { setSelectedNode(null); setSelectedLink(null); }}
+                  onClick={() => { setSelectedNode(null); }}
                   className="text-text-muted transition-colors hover:text-text-primary cursor-pointer"
                   aria-label="Close details"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              {selectedNode ? (
-                <NodeDetail node={selectedNode} nodeById={nodeById} nodes={nodes} links={links} collapsedGroups={collapsedGroups} toggleCollapse={toggleCollapse} />
-              ) : (
-                <LinkDetail link={selectedLink!} />
-              )}
+              <NodeDetail node={selectedNode} nodeById={nodeById} nodes={nodes} links={links} collapsedGroups={collapsedGroups} toggleCollapse={toggleCollapse} />
             </div>
           )}
 
@@ -676,31 +643,6 @@ function NodeTooltip({ node, nodeById }: { node: NetworkNode; nodeById: Map<stri
   );
 }
 
-function LinkTooltip({ link }: { link: NetworkLink }) {
-  const status = normalizeStatus(link.status);
-  return (
-    <>
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-[11px] font-semibold text-text-primary">
-          {link.source} → {link.target}
-        </span>
-        <span className="flex items-center gap-1.5 text-[10px] font-medium" style={{ color: LINK_COLOR[status] }}>
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: LINK_COLOR[status] }} />
-          {LINK_STATUS_LABEL[status]}
-        </span>
-      </div>
-      <div className="mt-1.5 flex items-center gap-3 text-[11px] text-text-muted">
-        <span className="flex items-center gap-1">
-          <Radio className="h-3 w-3" />
-          {link.latencyMs.toFixed(1)} ms
-        </span>
-        <span>{formatMbps(link.throughputMbps)}</span>
-        {link.packetLoss > 0 && <span className="text-crit">{link.packetLoss.toFixed(1)}% loss</span>}
-      </div>
-    </>
-  );
-}
-
 function NodeDetail({ node, nodeById, nodes, links, collapsedGroups, toggleCollapse }: {
   node: NetworkNode;
   nodeById: Map<string, NetworkNode>;
@@ -779,27 +721,6 @@ function NodeDetail({ node, nodeById, nodes, links, collapsedGroups, toggleColla
   );
 }
 
-function LinkDetail({ link }: { link: NetworkLink }) {
-  const status = normalizeStatus(link.status);
-  return (
-    <dl className="space-y-1.5 text-[11px]">
-      <DetailRow label="Path">
-        <span className="font-mono">{link.source} → {link.target}</span>
-      </DetailRow>
-      <DetailRow label="Status">
-        <span className="flex items-center gap-1.5 font-medium" style={{ color: LINK_COLOR[status] }}>
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: LINK_COLOR[status] }} />
-          {LINK_STATUS_LABEL[status]}
-        </span>
-      </DetailRow>
-      <DetailRow label="Latency">{link.latencyMs.toFixed(1)} ms</DetailRow>
-      <DetailRow label="Jitter">{link.jitterMs.toFixed(1)} ms</DetailRow>
-      <DetailRow label="Packet loss">{link.packetLoss.toFixed(1)}%</DetailRow>
-      <DetailRow label="Throughput">{formatMbps(link.throughputMbps)}</DetailRow>
-    </dl>
-  );
-}
-
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -812,15 +733,11 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 // ─── Link cable rendering ─────────────────────────────────────────
 
 function LinkLayer({
-  link, cable, index, active, onHover, onLeave, onSelect,
+  link, cable, index,
 }: {
   link: NetworkLink;
   cable: { dIn: string; dOut: string };
   index: number;
-  active: boolean;
-  onHover: () => void;
-  onLeave: () => void;
-  onSelect: () => void;
 }) {
   const inCurve = cable.dIn;
   const outCurve = cable.dOut;
@@ -837,8 +754,7 @@ function LinkLayer({
   const glowOpacity = isOffLink ? 0 : 0.05 + intensity * 0.12;
 
   return (
-    <g className={cn(active && 'link-active')}>
-      <path d={inCurve} fill="none" stroke="transparent" strokeWidth="20" pointerEvents="stroke" className="cursor-pointer" onMouseEnter={onHover} onMouseLeave={onLeave} onClick={onSelect} onPointerDown={(e) => e.stopPropagation()} />
+    <g>
       <path d={inCurve} fill="none" stroke={inColor} strokeOpacity={glowOpacity} strokeWidth={glowWidth} strokeLinecap="round" className="net-glow" style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${inColor})` }} />
       {!isOffLink && (
         <path d={outCurve} fill="none" stroke={outColor} strokeOpacity={glowOpacity} strokeWidth={glowWidth} strokeLinecap="round" className="net-glow" style={{ filter: `drop-shadow(0 0 ${2 + intensity * 6}px ${outColor})` }} />
