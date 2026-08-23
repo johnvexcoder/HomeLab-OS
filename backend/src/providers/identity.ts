@@ -134,6 +134,13 @@ function validateParentIdentity(
   for (const node of proxmoxServers) {
     if (!node.spec.ip) continue;
     if (node.spec.ip === agentIp) {
+      // Agent IP matches a Proxmox node IP — this is a parent violation UNLESS
+      // the agent is a legitimate bare-metal/hypervisor host running ON that node.
+      const agentIsHost = agent.host_type === 'bare-metal' || agent.host_type === 'hypervisor';
+      const agentHostnameMatches = norm(agent.host_name) === norm(node.spec.hostname);
+      if (agentIsHost || agentHostnameMatches) {
+        continue; // legitimate host agent, don't reject
+      }
       return { valid: false, nodeIp: node.spec.ip };
     }
   }
