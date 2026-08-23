@@ -193,6 +193,24 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       s.spec.profile.baseNetUpMbps = m.netUpMbps;
       s.spec.profile.baseNetDownMbps = m.netDownMbps;
 
+      // Inherit temperature from parent Proxmox node if we're a VM with no
+      // thermal zones. Match by subnet to find the correct parent node.
+      if (s.tempC == null || s.tempC === 0) {
+        const ownParts = ownIp.split('.');
+        for (const candidate of servers) {
+          if (candidate.spec.role !== 'hypervisor') continue;
+          if (!candidate.spec.ip) continue;
+          if (candidate.tempC <= 0) continue;
+          const cp = candidate.spec.ip.split('.');
+          if (ownParts[0] === cp[0] && ownParts[1] === cp[1] && ownParts[2] === cp[2]) {
+            s.tempC = candidate.tempC;
+            s.spec.profile.baseTemp = candidate.tempC;
+            (s.spec as any)._tempSource = candidate.spec.hostname;
+            break;
+          }
+        }
+      }
+
       break; // only enrich one server
     }
   }
