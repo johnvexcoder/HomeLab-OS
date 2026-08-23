@@ -52,5 +52,13 @@ export function createApp(ctx: ApiContext): Express {
   // SPA-ish friendly 404 for unknown API routes.
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
+  // Global error handler — prevents socket hang up from uncaught errors
+  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('[express] Unhandled error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'internal_error', message: err.message });
+    }
+  });
+
   return app;
 }

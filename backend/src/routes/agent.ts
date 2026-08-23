@@ -136,160 +136,167 @@ export function createAgentRouter(): Router {
 
   // ── Agent self-report (called by agents every few seconds) ──
   router.post('/report', requireAgentAuth, (req: Request, res: Response) => {
-    const agent = (req as any).agent as Record<string, unknown>;
-    const body = req.body as Record<string, unknown>;
-    const now = Date.now();
-    const db = getDb();
+    try {
+      const agent = (req as any).agent as Record<string, unknown>;
+      const body = req.body as Record<string, unknown>;
+      const now = Date.now();
+      const db = getDb();
 
-    // v2 format: body has hostInfo, capabilities, plugins[], events[]
-    // v1 format: body has flat metrics directly
-    const hostInfo = body.hostInfo as Record<string, unknown> | undefined;
-    const capabilities = body.capabilities as string[] | undefined;
-    const plugins = body.plugins as Array<{ plugin: string; collectedAt: number; data: Record<string, unknown> }> | undefined;
+      // v2 format: body has hostInfo, capabilities, plugins[], events[]
+      // v1 format: body has flat metrics directly
+      const hostInfo = body.hostInfo as Record<string, unknown> | undefined;
+      const capabilities = body.capabilities as string[] | undefined;
+      const plugins = body.plugins as Array<{ plugin: string; collectedAt: number; data: Record<string, unknown> }> | undefined;
 
-    // Extract flat metrics for the agents table columns
-    const flat = extractFlatMetrics(body);
+      // Extract flat metrics for the agents table columns
+      const flat = extractFlatMetrics(body);
 
-    // Build the full plugin payload for plugins_json
-    const pluginsJson = plugins ? JSON.stringify(plugins) : null;
-    const capabilitiesJson = capabilities ? JSON.stringify(capabilities) : null;
+      // Build the full plugin payload for plugins_json
+      const pluginsJson = plugins ? JSON.stringify(plugins) : null;
+      const capabilitiesJson = capabilities ? JSON.stringify(capabilities) : null;
 
-    // Use hostInfo values if present (v2), otherwise fall back to flat body (v1)
-    const ip = hostInfo?.ip as string ?? String(body.ip ?? agent.ip ?? '');
-    const os = hostInfo?.os as string ?? String(body.os ?? agent.os ?? '');
-    const hostType = hostInfo?.hostType as string ?? String(body.hostType ?? agent.host_type ?? 'unknown');
-    const cpuCores = Number(flat.cpuCores ?? hostInfo?.arch ? 0 : body.cpuCores) || Number(agent.cpu_cores) || 0;
-    const ramTotalGb = Number(flat.ramTotalGb ?? 0) || Number(agent.ram_total_gb) || 0;
-    const cpuUsage = Number(flat.cpuUsage ?? 0);
-    const ramUsedGb = Number(flat.ramUsedGb ?? 0);
-    const diskUsedGb = Number(flat.diskUsedGb ?? 0);
-    const diskTotalGb = Number(flat.diskTotalGb ?? 0);
-    const netDownMbps = Number(flat.netDownMbps ?? 0);
-    const netUpMbps = Number(flat.netUpMbps ?? 0);
-    const uptimeSeconds = Number(flat.uptimeSeconds ?? hostInfo?.uptimeSeconds ?? 0);
-    const tempC = flat.tempC != null ? Number(flat.tempC) : null;
-    const load1 = Number(flat.load1 ?? 0);
+      // Use hostInfo values if present (v2), otherwise fall back to flat body (v1)
+      const ip = hostInfo?.ip as string ?? String(body.ip ?? agent.ip ?? '');
+      const os = hostInfo?.os as string ?? String(body.os ?? agent.os ?? '');
+      const hostType = hostInfo?.hostType as string ?? String(body.hostType ?? agent.host_type ?? 'unknown');
+      const cpuCores = Number(flat.cpuCores ?? (hostInfo?.arch ? 0 : body.cpuCores)) || Number(agent.cpu_cores) || 0;
+      const ramTotalGb = Number(flat.ramTotalGb ?? 0) || Number(agent.ram_total_gb) || 0;
+      const cpuUsage = Number(flat.cpuUsage ?? 0);
+      const ramUsedGb = Number(flat.ramUsedGb ?? 0);
+      const diskUsedGb = Number(flat.diskUsedGb ?? 0);
+      const diskTotalGb = Number(flat.diskTotalGb ?? 0);
+      const netDownMbps = Number(flat.netDownMbps ?? 0);
+      const netUpMbps = Number(flat.netUpMbps ?? 0);
+      const uptimeSeconds = Number(flat.uptimeSeconds ?? hostInfo?.uptimeSeconds ?? 0);
+      const tempC = flat.tempC != null ? Number(flat.tempC) : null;
+      const load1 = Number(flat.load1 ?? 0);
 
-    db.prepare(`
-      UPDATE agents SET
-        os = ?, cpu_cores = ?, ram_total_gb = ?, host_type = ?,
-        ip = ?, cpu_usage = ?, ram_used_gb = ?, disk_used_gb = ?, disk_total_gb = ?,
-        net_down_mbps = ?, net_up_mbps = ?, uptime_seconds = ?,
-        temp_c = ?, load_1 = ?, containers_json = ?,
-        plugins_json = ?, capabilities_json = ?,
-        vm_id = ?, parent_ip = ?, virt_type = ?,
-        machine_id = CASE WHEN ? != '' THEN ? ELSE machine_id END,
-        mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
-        host_type_detected = CASE WHEN ? != '' THEN ? ELSE host_type_detected END,
-        hypervisor = CASE WHEN ? != '' THEN ? ELSE hypervisor END,
-        container_count = ?, running_count = ?, unhealthy_count = ?,
-        process_count = ?,
-        status = 'online', last_report_at = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      os,
-      cpuCores,
-      ramTotalGb,
-      hostType,
-      ip,
-      cpuUsage,
-      ramUsedGb,
-      diskUsedGb,
-      diskTotalGb,
-      netDownMbps,
-      netUpMbps,
-      uptimeSeconds,
-      tempC,
-      load1,
-      flat.containersJson ? String(flat.containersJson) : '[]',
-      pluginsJson,
-      capabilitiesJson,
-      String(hostInfo?.vmId ?? ''),
-      String(hostInfo?.parentIp ?? ''),
-      String(hostInfo?.virtType ?? ''),
-      String(hostInfo?.machineId ?? ''),
-      String(hostInfo?.machineId ?? ''),
-      String(hostInfo?.mac ?? ''),
-      String(hostInfo?.mac ?? ''),
-      String(hostInfo?.hostType ?? ''),
-      String(hostInfo?.hostType ?? ''),
-      String(hostInfo?.hypervisor ?? ''),
-      String(hostInfo?.hypervisor ?? ''),
-      Number(flat.containerCount ?? 0),
-      Number(flat.runningCount ?? 0),
-      Number(flat.unhealthyCount ?? 0),
-      Number(flat.processCount ?? 0),
-      now,
-      now,
-      agent.id,
-    );
+      db.prepare(`
+        UPDATE agents SET
+          os = ?, cpu_cores = ?, ram_total_gb = ?, host_type = ?,
+          ip = ?, cpu_usage = ?, ram_used_gb = ?, disk_used_gb = ?, disk_total_gb = ?,
+          net_down_mbps = ?, net_up_mbps = ?, uptime_seconds = ?,
+          temp_c = ?, load_1 = ?, containers_json = ?,
+          plugins_json = ?, capabilities_json = ?,
+          vm_id = ?, parent_ip = ?, virt_type = ?,
+          machine_id = CASE WHEN ? != '' THEN ? ELSE machine_id END,
+          mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
+          host_type_detected = CASE WHEN ? != '' THEN ? ELSE host_type_detected END,
+          hypervisor = CASE WHEN ? != '' THEN ? ELSE hypervisor END,
+          container_count = ?, running_count = ?, unhealthy_count = ?,
+          process_count = ?,
+          status = 'online', last_report_at = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        os,
+        cpuCores,
+        ramTotalGb,
+        hostType,
+        ip,
+        cpuUsage,
+        ramUsedGb,
+        diskUsedGb,
+        diskTotalGb,
+        netDownMbps,
+        netUpMbps,
+        uptimeSeconds,
+        tempC,
+        load1,
+        flat.containersJson ? String(flat.containersJson) : '[]',
+        pluginsJson,
+        capabilitiesJson,
+        String(hostInfo?.vmId ?? ''),
+        String(hostInfo?.parentIp ?? ''),
+        String(hostInfo?.virtType ?? ''),
+        String(hostInfo?.machineId ?? ''),
+        String(hostInfo?.machineId ?? ''),
+        String(hostInfo?.mac ?? ''),
+        String(hostInfo?.mac ?? ''),
+        String(hostInfo?.hostType ?? ''),
+        String(hostInfo?.hostType ?? ''),
+        String(hostInfo?.hypervisor ?? ''),
+        String(hostInfo?.hypervisor ?? ''),
+        Number(flat.containerCount ?? 0),
+        Number(flat.runningCount ?? 0),
+        Number(flat.unhealthyCount ?? 0),
+        Number(flat.processCount ?? 0),
+        now,
+        now,
+        agent.id,
+      );
 
-    // ── Container state change detection ──
-    // Compare previous containers_json with new data to detect stopped/started containers
-    const prevContainersJson = String(agent.containers_json ?? '[]');
-    const newContainersJson = String(flat.containersJson ?? '[]');
-    if (prevContainersJson !== '[]' && newContainersJson !== '[]' && prevContainersJson !== newContainersJson) {
-      try {
-        const prevContainers = JSON.parse(prevContainersJson) as Array<{ name: string; running: boolean; image: string }>;
-        const newContainers = JSON.parse(newContainersJson) as Array<{ name: string; running: boolean; image: string }>;
-        const prevMap = new Map(prevContainers.map((c) => [c.name, c]));
-        const newMap = new Map(newContainers.map((c) => [c.name, c]));
+      // ── Container state change detection ──
+      // Compare previous containers_json with new data to detect stopped/started containers
+      const prevContainersJson = String(agent.containers_json ?? '[]');
+      const newContainersJson = String(flat.containersJson ?? '[]');
+      if (prevContainersJson !== '[]' && newContainersJson !== '[]' && prevContainersJson !== newContainersJson) {
+        try {
+          const prevContainers = JSON.parse(prevContainersJson) as Array<{ name: string; running: boolean; image: string }>;
+          const newContainers = JSON.parse(newContainersJson) as Array<{ name: string; running: boolean; image: string }>;
+          const prevMap = new Map(prevContainers.map((c) => [c.name, c]));
+          const newMap = new Map(newContainers.map((c) => [c.name, c]));
 
-        // Detect stopped containers (was running, now stopped)
-        for (const [name, prev] of prevMap) {
-          const cur = newMap.get(name);
-          if (cur && prev.running && !cur.running) {
-            const n: Notification = {
-              id: `ntf-agent-stopped-${name}-${crypto.randomUUID()}`,
-              title: 'Container Stopped',
-              message: `Container "${name}" on agent ${agent.host_name} has stopped.\nImage: ${cur.image}`,
-              severity: 'critical',
-              timestamp: now,
-              read: false,
-              serverId: `agent-${agent.host_id}`,
-            };
-            dispatchNotification(n);
+          // Detect stopped containers (was running, now stopped)
+          for (const [name, prev] of prevMap) {
+            const cur = newMap.get(name);
+            if (cur && prev.running && !cur.running) {
+              const n: Notification = {
+                id: `ntf-agent-stopped-${name}-${crypto.randomUUID()}`,
+                title: 'Container Stopped',
+                message: `Container "${name}" on agent ${agent.host_name} has stopped.\nImage: ${cur.image}`,
+                severity: 'critical',
+                timestamp: now,
+                read: false,
+                serverId: `agent-${agent.host_id}`,
+              };
+              dispatchNotification(n);
+            }
           }
-        }
 
-        // Detect started containers (was stopped, now running)
-        for (const [name, prev] of prevMap) {
-          const cur = newMap.get(name);
-          if (cur && !prev.running && cur.running) {
-            const n: Notification = {
-              id: `ntf-agent-started-${name}-${crypto.randomUUID()}`,
-              title: 'Container Started',
-              message: `Container "${name}" on agent ${agent.host_name} is back online.\nImage: ${cur.image}`,
-              severity: 'success',
-              timestamp: now,
-              read: false,
-              serverId: `agent-${agent.host_id}`,
-            };
-            dispatchNotification(n);
+          // Detect started containers (was stopped, now running)
+          for (const [name, prev] of prevMap) {
+            const cur = newMap.get(name);
+            if (cur && !prev.running && cur.running) {
+              const n: Notification = {
+                id: `ntf-agent-started-${name}-${crypto.randomUUID()}`,
+                title: 'Container Started',
+                message: `Container "${name}" on agent ${agent.host_name} is back online.\nImage: ${cur.image}`,
+                severity: 'success',
+                timestamp: now,
+                read: false,
+                serverId: `agent-${agent.host_id}`,
+              };
+              dispatchNotification(n);
+            }
           }
-        }
 
-        // Detect new containers (not in previous, running now)
-        for (const [name, cur] of newMap) {
-          if (!prevMap.has(name) && cur.running) {
-            const n: Notification = {
-              id: `ntf-agent-added-${name}-${crypto.randomUUID()}`,
-              title: 'Container Added',
-              message: `New container "${name}" detected on agent ${agent.host_name}.\nImage: ${cur.image}`,
-              severity: 'info',
-              timestamp: now,
-              read: false,
-              serverId: `agent-${agent.host_id}`,
-            };
-            dispatchNotification(n);
+          // Detect new containers (not in previous, running now)
+          for (const [name, cur] of newMap) {
+            if (!prevMap.has(name) && cur.running) {
+              const n: Notification = {
+                id: `ntf-agent-added-${name}-${crypto.randomUUID()}`,
+                title: 'Container Added',
+                message: `New container "${name}" detected on agent ${agent.host_name}.\nImage: ${cur.image}`,
+                severity: 'info',
+                timestamp: now,
+                read: false,
+                serverId: `agent-${agent.host_id}`,
+              };
+              dispatchNotification(n);
+            }
           }
+        } catch {
+          // JSON parse error — ignore, don't crash the report handler
         }
-      } catch {
-        // JSON parse error — ignore, don't crash the report handler
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[agent/report] Handler error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'report_handler_error', message: (err as Error).message });
       }
     }
-
-    res.json({ ok: true });
   });
 
   // ── Agent registration (called once on first boot) ──
