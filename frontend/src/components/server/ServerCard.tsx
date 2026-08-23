@@ -107,7 +107,7 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
           <span className="flex items-center gap-1 whitespace-nowrap"><ArrowDown className="h-3 w-3 text-success" />{formatMbps(server.netDownMbps)}</span>
           <span className="flex items-center gap-1 whitespace-nowrap"><ArrowUp className="h-3 w-3 text-info" />{formatMbps(server.netUpMbps)}</span>
-          {s.role === 'docker' || s.parentId ? (
+          {(s.role === 'docker' || s.role === 'vm' || s.role === 'lxc' || s.parentId) ? (
             <span className="flex items-center gap-1 whitespace-nowrap"><Layers className="h-3 w-3" />{s.profile.containers} CTs</span>
           ) : (
             <span className="flex items-center gap-1 whitespace-nowrap"><Layers className="h-3 w-3" />{s.profile.vms} VMs</span>

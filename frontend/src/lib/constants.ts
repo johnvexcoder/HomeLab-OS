@@ -57,6 +57,8 @@ export const SEVERITY_META = {
 
 export const ROLE_META: Record<string, { label: string; dot: string }> = {
   hypervisor: { label: 'Hypervisor', dot: 'bg-accent' },
+  vm: { label: 'Virtual Machine', dot: 'bg-primary' },
+  lxc: { label: 'LXC Container', dot: 'bg-primary' },
   docker: { label: 'Container Host', dot: 'bg-info' },
   storage: { label: 'Storage', dot: 'bg-warn' },
   gateway: { label: 'Gateway', dot: 'bg-crit' },
@@ -98,6 +100,14 @@ export function getSecondaryRole(
   // Docker hosts
   if (role === 'docker') {
     return { label: 'DOCKER HOST', tone: 'bg-blue-500/15 text-blue-400 border-blue-500/20' };
+  }
+
+  // VMs running containers (new vm/lxc roles)
+  if (role === 'vm' || role === 'lxc') {
+    if (profile.containers > 0) {
+      return { label: 'CONTAINERS', tone: 'bg-amber-500/15 text-amber-400 border-amber-500/20' };
+    }
+    return { label: 'VIRTUAL MACHINE', tone: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' };
   }
 
   // Storage

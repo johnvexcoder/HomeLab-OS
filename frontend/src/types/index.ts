@@ -1,6 +1,6 @@
 export type ServerStatus = 'online' | 'degraded' | 'offline';
 export type Reachability = 'accessible' | 'degraded' | 'unreachable';
-export type ServerRole = 'hypervisor' | 'server' | 'docker' | 'storage' | 'network' | 'gateway' | 'switch';
+export type ServerRole = 'hypervisor' | 'server' | 'vm' | 'lxc' | 'docker' | 'storage' | 'network' | 'gateway' | 'switch';
 export type Severity = 'info' | 'success' | 'warning' | 'critical';
 export type Tone = 'neutral' | 'good' | 'warn' | 'crit';
 

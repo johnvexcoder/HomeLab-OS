@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
 const FILTERS: Array<{ id: ServerRole | 'all'; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'hypervisor', label: 'Hypervisors' },
-  { id: 'server', label: 'V Machines' },
+  { id: 'vm', label: 'VMs' },
+  { id: 'lxc', label: 'LXC' },
   { id: 'docker', label: 'Containers' },
   { id: 'storage', label: 'Storage' },
   { id: 'gateway', label: 'Gateway' },
