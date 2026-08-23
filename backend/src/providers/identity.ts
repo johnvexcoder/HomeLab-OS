@@ -544,6 +544,33 @@ export function reconcileServers(
     }
   }
 
+  // ── Phase 1.5: Second-pass temperature inheritance ──
+  // Agents are processed in alphabetical order, so a guest (e.g. docker02) may
+  // be enriched before its parent host (e.g. pve0) — meaning the parent's tempC
+  // was still 0 during the first pass. Re-scan all servers that ended up with
+  // tempC=0 and try to inherit from their now-enriched parent Proxmox node.
+  for (const server of proxmoxServers) {
+    if (server.tempC > 0) continue;
+    if (!server.spec.parentId) continue;
+    const parent = proxmoxServers.find((s) => s.spec.id === server.spec.parentId);
+    if (parent && parent.tempC > 0) {
+      server.tempC = round(parent.tempC, 1);
+      server.spec.profile.baseTemp = server.tempC;
+      (server.spec as any)._tempSource = parent.spec.hostname;
+    }
+  }
+  // Also fix standalone agent servers whose parent wasn't enriched yet.
+  for (const server of extraServers) {
+    if (server.tempC > 0) continue;
+    if (!server.spec.clusterId) continue;
+    const parent = proxmoxServers.find((s) => s.spec.id === server.spec.clusterId);
+    if (parent && parent.tempC > 0) {
+      server.tempC = round(parent.tempC, 1);
+      server.spec.profile.baseTemp = server.tempC;
+      (server.spec as any)._tempSource = parent.spec.hostname;
+    }
+  }
+
   // ── Phase 2: Handle Proxmox-reported stopped VMs ──
   // Even if we have no agent, if Proxmox says stopped → mark offline
   for (const server of proxmoxServers) {
