@@ -193,25 +193,30 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       s.spec.profile.baseNetUpMbps = m.netUpMbps;
       s.spec.profile.baseNetDownMbps = m.netDownMbps;
 
-      // Inherit temperature from parent Proxmox node if we're a VM with no
-      // thermal zones. Match by subnet to find the correct parent node.
-      if (s.tempC == null || s.tempC === 0) {
-        const ownParts = ownIp.split('.');
-        for (const candidate of servers) {
-          if (candidate.spec.role !== 'hypervisor') continue;
-          if (!candidate.spec.ip) continue;
-          if (candidate.tempC <= 0) continue;
-          const cp = candidate.spec.ip.split('.');
-          if (ownParts[0] === cp[0] && ownParts[1] === cp[1] && ownParts[2] === cp[2]) {
-            s.tempC = candidate.tempC;
-            s.spec.profile.baseTemp = candidate.tempC;
-            (s.spec as any)._tempSource = candidate.spec.hostname;
-            break;
-          }
+      break; // only enrich one server
+    }
+
+    // Temperature inheritance pass: any server without tempC inherits from the
+    // parent Proxmox node on the same subnet. This runs AFTER self-enrichment
+    // and agent enrichment so it catches docker host runtimes, self-enriched
+    // VMs, and unmatched Proxmox guest cards alike.
+    for (const s of servers) {
+      if (s.tempC != null && s.tempC > 0) continue;
+      if (!s.spec.ip) continue;
+      const sp = s.spec.ip.split('.');
+      if (sp.length !== 4) continue;
+      for (const candidate of servers) {
+        if (candidate.spec.role !== 'hypervisor') continue;
+        if (!candidate.spec.ip) continue;
+        if (candidate.tempC <= 0) continue;
+        const cp = candidate.spec.ip.split('.');
+        if (sp[0] === cp[0] && sp[1] === cp[1] && sp[2] === cp[2]) {
+          s.tempC = round(candidate.tempC, 1);
+          s.spec.profile.baseTemp = s.tempC;
+          (s.spec as any)._tempSource = candidate.spec.hostname;
+          break;
         }
       }
-
-      break; // only enrich one server
     }
   }
 
