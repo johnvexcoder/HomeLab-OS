@@ -320,7 +320,10 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       const parentNode = s.spec.clusterId && nodes.some((n) => n.id === s.spec.clusterId)
         ? s.spec.clusterId
         : 'gateway';
-      const nodeType: NetworkNode['type'] = s.spec.role === 'docker' ? 'docker' : 'container';
+      const nodeType: NetworkNode['type'] =
+        s.spec.role === 'vm' ? 'vm'
+        : s.spec.role === 'lxc' ? 'lxc'
+        : 'container';
       nodes.push({
         id: s.spec.id,
         label: s.spec.name,
@@ -413,6 +416,56 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
           if (uplink) uplink.throughputMbps = hostNet;
         }
       }
+    }
+
+    // Ensure all servers with IPs appear in the network (catches docker host
+    // runtimes and any other servers that the primary network doesn't include).
+    const allServers = this.getServers();
+    for (const s of allServers) {
+      if (existingIds.has(s.spec.id)) continue;
+      if (nodes.some((n) => n.id === s.spec.id)) continue;
+      if (!s.spec.ip) continue;
+
+      // Find parent hypervisor node by subnet
+      let parentId = 'gateway';
+      const sp = s.spec.ip.split('.');
+      if (sp.length === 4) {
+        for (const n of nodes) {
+          if (n.type !== 'hypervisor' || !n.ip) continue;
+          const cp = n.ip.split('.');
+          if (sp[0] === cp[0] && sp[1] === cp[1] && sp[2] === cp[2]) {
+            parentId = n.id;
+            break;
+          }
+        }
+      }
+
+      const nodeType: NetworkNode['type'] =
+        s.spec.role === 'vm' ? 'vm'
+        : s.spec.role === 'lxc' ? 'lxc'
+        : 'container';
+      nodes.push({
+        id: s.spec.id,
+        label: s.spec.name,
+        type: nodeType,
+        status: s.status,
+        x: 50, y: 50,
+        parentId,
+        ip: s.spec.ip,
+        health: s.health,
+        tempC: s.tempC,
+        cpuPercent: s.cpu,
+      });
+      links.push({
+        id: `${parentId}-${s.spec.id}`,
+        source: parentId,
+        target: s.spec.id,
+        status: s.status === 'online' ? 'healthy' : s.status === 'degraded' ? 'warning' : 'critical',
+        latencyMs: 1,
+        throughputMbps: round(s.netUpMbps + s.netDownMbps, 1),
+        jitterMs: 0.1,
+        packetLoss: 0,
+      });
     }
 
     return { nodes: applyLayout(nodes, calculateHierarchicalLayout(nodes, 100, 100)), links };

@@ -40,6 +40,8 @@ const SPINE: Array<{ id: string; label: string; type: NetworkNode['type'] }> = [
 const ROLE_TO_TYPE: Record<ServerSpec['role'], NetworkNode['type']> = {
   hypervisor: 'hypervisor',
   docker: 'docker',
+  vm: 'vm',
+  lxc: 'lxc',
   storage: 'storage',
   gateway: 'gateway',
   switch: 'switch',

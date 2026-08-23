@@ -69,7 +69,7 @@ export const INFRA_ICON_COMPONENTS: Record<string, React.FC<InfraIconProps>> = {
   hypervisor: ({ size = 20 }: InfraIconProps) => <ProxmoxIcon size={size} />,
   vm: ({ size = 20 }: InfraIconProps) => <Box size={size} className="text-emerald-400" />,
   lxc: ({ size = 20 }: InfraIconProps) => <Box size={size} className="text-blue-300" />,
-  container: ({ size = 20 }: InfraIconProps) => <Box size={size} className="text-blue-300" />,
+  container: ({ size = 20 }: InfraIconProps) => <DockerIcon size={size} />,
   docker: ({ size = 20 }: InfraIconProps) => <DockerIcon size={size} />,
   podman: ({ size = 20 }: InfraIconProps) => <DockerIcon size={size} />,
   kubernetes: ({ size = 20 }: InfraIconProps) => <KubernetesIcon size={size} />,

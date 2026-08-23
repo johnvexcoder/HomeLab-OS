@@ -257,6 +257,8 @@ function matchAgentToInfrastructure(
 function hostLogo(hostType: string): string {
   switch (hostType) {
     case 'proxmox': return '\u{1F7E9}';
+    case 'vm':
+    case 'lxc': return '\u{1F4E6}'; // box icon for VMs
     case 'debian':
     case 'ubuntu':
     case 'linux': return '\u{1F427}';
@@ -387,7 +389,9 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?:
       logo: hostLogo(agent.host_type),
       os: agent.os || 'Unknown OS',
       description: `HomeLab Agent on ${agent.host_name}`,
-      role: containers.length > 0 ? 'docker' : 'server',
+      role: agent.host_type === 'vm' || agent.host_type === 'lxc' ? 'vm'
+        : agent.host_type === 'bare-metal' || agent.host_type === 'hypervisor' ? 'server'
+        : 'server',
       capabilities: ['monitoring'],
       clusterId: parentNodeId || null,
       ip: agent.ip,

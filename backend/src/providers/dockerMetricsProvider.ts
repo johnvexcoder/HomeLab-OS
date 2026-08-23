@@ -279,10 +279,10 @@ export class DockerMetricsProvider {
       serverId: this.serverId,
       hostname: name,
       name,
-      logo: '🐳',
+      logo: '\u{1F4E6}', // box icon — this is a VM running Docker
       os: [info.os, info.kernel].filter(Boolean).join(' / '),
-      description: 'Docker host',
-      role: 'docker',
+      description: 'VM running Docker',
+      role: 'vm',
       capabilities: ['containerization'],
       clusterId: null,
       ip: getHostIp(),
