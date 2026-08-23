@@ -300,14 +300,18 @@ function enrichServerWithAgent(
 
   // ── Temperature: agent sensors if available, else inherit from parent ──
   const agentHasTemp = agent.temp_c != null && agent.temp_c > 0;
+  let tempSource: string | undefined = undefined;
   if (agentHasTemp) {
     server.tempC = round(agent.temp_c!, 1);
+    tempSource = 'agent';
   } else if (parentNode && parentNode.tempC > 0) {
     server.tempC = round(parentNode.tempC, 1);
-    // Tag the temperature source for the UI to display "Inherited from PVE0"
-    (server.spec as any)._tempSource = parentNode.spec.hostname;
+    tempSource = parentNode.spec.hostname;
   }
   // else: keep the existing server.tempC (from Proxmox) — do NOT overwrite with 0
+  if (tempSource) {
+    (server.spec as any)._tempSource = tempSource;
+  }
 
   // ── Profile ──
   server.spec.profile.baseCpu = server.cpu;
