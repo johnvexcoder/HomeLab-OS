@@ -37,7 +37,7 @@ export function createApp(ctx: ApiContext): Express {
   app.use(securityHeaders);
   app.use(cookieParser);
   app.use(cors({ origin: config.corsOrigin.split(','), credentials: true }));
-  app.use(express.json({ limit: '256kb' }));
+  app.use(express.json({ limit: '2mb' }));
 
   // Global mutation guard: CSRF + read-only/emergency/safe modes.
   app.use('/api', mutationGuard);
