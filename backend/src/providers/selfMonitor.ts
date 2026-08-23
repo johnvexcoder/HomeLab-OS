@@ -56,16 +56,19 @@ function getCpuTimes(): { idle: number; total: number } {
 }
 
 function getTemp(): number | null {
-  try {
-    const zones = fs.readdirSync('/sys/class/thermal').filter((z) => z.startsWith('thermal_zone'));
-    for (const zone of zones) {
-      const raw = readProcFile(`/sys/class/thermal/${zone}/temp`).trim();
-      const val = parseInt(raw, 10);
-      if (Number.isFinite(val) && val > 0) {
-        return val > 1000 ? val / 1000 : val; // some report in millidegrees
+  const paths = ['/sys/class/thermal', '/host-thermal'];
+  for (const basePath of paths) {
+    try {
+      const zones = fs.readdirSync(basePath).filter((z) => z.startsWith('thermal_zone'));
+      for (const zone of zones) {
+        const raw = readProcFile(`${basePath}/${zone}/temp`).trim();
+        const val = parseInt(raw, 10);
+        if (Number.isFinite(val) && val > 0) {
+          return val > 1000 ? val / 1000 : val; // some report in millidegrees
+        }
       }
-    }
-  } catch { /* no thermal zones */ }
+    } catch { /* path not found, try next */ }
+  }
   return null;
 }
 

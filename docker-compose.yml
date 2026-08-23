@@ -26,7 +26,7 @@ services:
     volumes:
       - homelab-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - /sys/class/thermal:/sys/class/thermal:ro
+      - /sys/class/thermal:/host-thermal:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
       interval: 10s
