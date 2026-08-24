@@ -293,7 +293,7 @@ function enrichServerWithAgent(
   if (agent.host_type === 'vm' || agent.host_type === 'lxc') {
     server.spec.role = 'vm';
   } else if (agent.host_type === 'bare-metal' || agent.host_type === 'hypervisor') {
-    server.spec.role = 'server';
+    server.spec.role = 'hypervisor';
   }
 
   // ── Description: preserve Proxmox VM description for VMs ──
