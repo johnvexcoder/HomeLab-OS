@@ -12,7 +12,6 @@ import type {
   QuickStat,
   ServerRuntime,
 } from '../types';
-import { config } from '../config';
 import { round } from '../telemetry/random';
 import { insertMetrics } from '../db/database';
 import { statsHistoryFor } from './history';
@@ -193,6 +192,15 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       s.spec.profile.baseNetUpMbps = m.netUpMbps;
       s.spec.profile.baseNetDownMbps = m.netDownMbps;
 
+      // Populate container list from local Docker socket for the backend host
+      if (!s.containers || s.containers.length === 0) {
+        const localContainers = this.docker?.getContainers() ?? [];
+        if (localContainers.length > 0) {
+          s.containers = localContainers;
+          s.spec.profile.containers = localContainers.filter((c) => c.running).length;
+        }
+      }
+
       break; // only enrich one server
     }
 
@@ -348,79 +356,64 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       });
     }
 
-    // Add local Docker containers: group under a Docker engine node
-    const containers = this.docker?.getContainers() ?? [];
-    if (containers.length > 0) {
-      const match = config.docker.hostGuest.trim().toLowerCase();
-      const guests = nodes.filter((n) => n.type === 'vm' || n.type === 'lxc' || n.type === 'container');
-      const host =
-        (match ? guests.find((g) => g.label.toLowerCase().includes(match)) : undefined) ??
-        guests[0] ??
-        nodes.find((n) => n.type === 'hypervisor');
-      if (host) {
-        const engineId = `${host.id}-docker`;
-        if (!existingIds.has(engineId)) {
-          nodes.push({
-            id: engineId,
-            label: 'Docker',
-            type: 'docker',
-            status: containers.some((c) => !c.running) ? 'degraded' : 'online',
-            x: 50, y: 50,
-            parentId: host.id,
-            health: 100,
-            childCount: containers.length,
-          });
-          links.push({
-            id: `${host.id}-${engineId}`,
-            source: host.id,
-            target: engineId,
-            status: 'healthy',
-            latencyMs: 0.1,
-            throughputMbps: 0,
-            jitterMs: 0.05,
-            packetLoss: 0,
-          });
-        }
+    // ── Container nodes: attach directly to their parent server ──
+    // Source of truth: agent-reported containers on each ServerRuntime.
+    // Fallback: local Docker socket containers matched to the backend host by IP.
+    const allServers = this.getServers();
 
-        const dockerIp = host.ip || undefined;
-        containers.slice(0, 40).forEach((c) => {
-          const id = `docker-${c.id}`;
-          nodes.push({
-            id,
-            label: c.name,
-            type: 'container',
-            status: c.running ? 'online' : 'offline',
-            x: 50, y: 50,
-            parentId: engineId,
-            ip: dockerIp,
-            health: c.running ? 100 : 0,
-          });
-          links.push({
-            id: `${engineId}-${id}`,
-            source: engineId,
-            target: id,
-            status: c.running ? 'healthy' : 'warning',
-            latencyMs: 0.1,
-            throughputMbps: round((c.netDownMbps ?? 0) + (c.netUpMbps ?? 0), 2),
-            jitterMs: 0.05,
-            packetLoss: 0,
-          });
+    // Build a lookup of agent-reported containers per server IP
+    const agentContainersByIp = new Map<string, Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }>>();
+    for (const s of allServers) {
+      if (s.containers && s.containers.length > 0 && s.spec.ip) {
+        agentContainersByIp.set(s.spec.ip, s.containers);
+      }
+    }
+
+    // Fallback: if the backend host has Docker containers but no agent data,
+    // use the DockerMetricsProvider containers matched by IP
+    const localDockerContainers = this.docker?.getContainers() ?? [];
+    if (localDockerContainers.length > 0) {
+      const hostRuntime = this.docker?.getHostRuntime();
+      const hostIp = hostRuntime?.spec.ip;
+      if (hostIp && !agentContainersByIp.has(hostIp)) {
+        agentContainersByIp.set(hostIp, localDockerContainers);
+      }
+    }
+
+    // Create container nodes for every server that has containers
+    for (const [hostIp, containers] of agentContainersByIp) {
+      // Find the parent network node for this host IP
+      const parentNode = nodes.find((n) => n.ip === hostIp);
+      if (!parentNode) continue;
+
+      for (const c of containers.slice(0, 40)) {
+        const id = `docker-${c.id}`;
+        if (nodes.some((n) => n.id === id)) continue;
+        nodes.push({
+          id,
+          label: c.name,
+          type: 'container',
+          status: c.running ? 'online' : 'offline',
+          x: 50, y: 50,
+          parentId: parentNode.id,
+          ip: hostIp,
+          health: c.running ? 100 : 0,
         });
-
-        const hostRuntime = this.docker?.getHostRuntime();
-        if (hostRuntime) {
-          const hostNet = round(hostRuntime.netUpMbps + hostRuntime.netDownMbps, 2);
-          const uplink = links.find(
-            (l) => (l.source === host.id || l.target === host.id) && l.id !== 'internet',
-          );
-          if (uplink) uplink.throughputMbps = hostNet;
-        }
+        links.push({
+          id: `${parentNode.id}-${id}`,
+          source: parentNode.id,
+          target: id,
+          status: c.running ? 'healthy' : 'warning',
+          latencyMs: 0.1,
+          throughputMbps: 0,
+          jitterMs: 0.05,
+          packetLoss: 0,
+        });
       }
     }
 
     // Ensure all servers with IPs appear in the network (catches docker host
     // runtimes and any other servers that the primary network doesn't include).
-    const allServers = this.getServers();
     for (const s of allServers) {
       if (existingIds.has(s.spec.id)) continue;
       if (nodes.some((n) => n.id === s.spec.id)) continue;

@@ -289,6 +289,13 @@ function enrichServerWithAgent(
   }
   if (agent.ip) server.spec.ip = agent.ip;
 
+  // ── Role: agent host_type is authoritative ──
+  if (agent.host_type === 'vm' || agent.host_type === 'lxc') {
+    server.spec.role = 'vm';
+  } else if (agent.host_type === 'bare-metal' || agent.host_type === 'hypervisor') {
+    server.spec.role = 'server';
+  }
+
   // ── Description: preserve Proxmox VM description for VMs ──
   if (server.spec.role !== 'server' || !server.spec.description?.includes('VM')) {
     server.spec.description = server.spec.role === 'hypervisor'
@@ -330,10 +337,8 @@ function enrichServerWithAgent(
   server.spec.profile.baseNetDownMbps = server.netDownMbps;
   server.spec.profile.containers = containers.filter((c) => c.running).length;
 
-  // ── Role upgrade: server → docker if containers running ──
-  if (server.spec.profile.containers > 0 && server.spec.role === 'server') {
-    server.spec.role = 'docker';
-  }
+  // Store the canonical container list for network topology
+  server.containers = containers;
 
   // ── History ──
   const cpuPct = server.cpu;
@@ -441,6 +446,7 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?:
       netDown: ph('netDown', round(agent.net_down_mbps)),
       load: ph('load', round(agent.load_1, 2)),
     },
+    containers,
   };
 }
 

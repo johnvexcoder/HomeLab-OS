@@ -146,6 +146,8 @@ export interface ServerRuntime {
     'cpu' | 'ram' | 'disk' | 'temp' | 'netUp' | 'netDown' | 'load',
     number[]
   >;
+  /** Canonical container list from the agent (source of truth for topology) */
+  containers?: Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }>;
 }
 
 export interface Notification {
