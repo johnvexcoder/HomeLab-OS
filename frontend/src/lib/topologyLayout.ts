@@ -1,16 +1,17 @@
 /**
- * Responsive Smart Graph Layout Engine for Network Topology Map
+ * Responsive Smart Graph Layout & Node Presentation Engine for Network Topology Map
  *
- * Computes node positions, cable paths, and sizing metrics that automatically
- * adapt to container dimensions and aspect ratio (Desktop, Laptop, Tablet, Smartphone).
+ * Separates topology graph positioning from node presentation modes:
+ * - FULL (Desktop >= 1024px): Full card (Icon, Name, IP, Status)
+ * - COMPACT (Tablet 600px-1023px): Compact card (Icon, Name, IP, Status)
+ * - MINIMAL (Smartphone < 600px): Minimal card (Icon, Name, Status — IP hidden from card, accessible via click/hover)
  *
- * Wide viewports (Desktop/Laptop): Left-to-right horizontal NOC flow.
- * Narrow viewports (Smartphone/Tablet): Top-to-bottom vertical flow.
- *
- * Guarantees zero node clipping, zero cable clipping, and balanced board utilization.
+ * Prevents node overlapping, guarantees safe boarder margins, and avoids huge stretched nodes.
  */
 
 import type { NetworkLink, NetworkNode } from '@/types';
+
+export type PresentationMode = 'full' | 'compact' | 'minimal';
 
 export interface LayoutMetrics {
   nodeWidth: number;
@@ -18,6 +19,8 @@ export interface LayoutMetrics {
   iconSize: number;
   fontSize: number;
   isVertical: boolean;
+  mode: PresentationMode;
+  showIpOnNode: boolean;
 }
 
 export interface LayoutedNode {
@@ -75,6 +78,56 @@ function getDefaultDepth(type: NetworkNode['type']): number {
   }
 }
 
+/** Resolve node presentation mode and fixed card dimensions */
+export function getPresentationMode(w: number, h: number): {
+  mode: PresentationMode;
+  nodeWidth: number;
+  nodeHeight: number;
+  iconSize: number;
+  fontSize: number;
+  showIpOnNode: boolean;
+  isVertical: boolean;
+} {
+  const isVertical = w < 600 || h > w * 1.2;
+
+  if (w < 600) {
+    // Smartphone / Narrow Viewport -> MINIMAL mode
+    return {
+      mode: 'minimal',
+      nodeWidth: 88,
+      nodeHeight: 44,
+      iconSize: 18,
+      fontSize: 10,
+      showIpOnNode: false,
+      isVertical: true,
+    };
+  }
+
+  if (w < 1024) {
+    // Tablet / Medium Viewport -> COMPACT mode
+    return {
+      mode: 'compact',
+      nodeWidth: 115,
+      nodeHeight: 48,
+      iconSize: 18,
+      fontSize: 11,
+      showIpOnNode: true,
+      isVertical,
+    };
+  }
+
+  // Desktop / Large Viewport -> FULL mode
+  return {
+    mode: 'full',
+    nodeWidth: 138,
+    nodeHeight: 52,
+    iconSize: 20,
+    fontSize: 11,
+    showIpOnNode: true,
+    isVertical: false,
+  };
+}
+
 export function computeTopologyLayout(
   nodes: NetworkNode[],
   links: NetworkLink[],
@@ -84,18 +137,13 @@ export function computeTopologyLayout(
   const w = Math.max(280, containerWidth);
   const h = Math.max(280, containerHeight);
 
-  // Responsive mode: Vertical flow if tall/narrow viewport (Smartphones/Tablets)
-  const isVertical = w < 640 || h > w * 1.15;
-
-  // Responsive node sizing
-  const nodeWidth = clamp(isVertical ? Math.min(w * 0.42, 130) : Math.min(w * 0.22, 140), 95, 145);
-  const nodeHeight = clamp(isVertical ? 48 : 54, 42, 60);
+  const { mode, nodeWidth, nodeHeight, iconSize, fontSize, showIpOnNode, isVertical } = getPresentationMode(w, h);
 
   if (nodes.length === 0) {
     return {
       width: w,
       height: h,
-      metrics: { nodeWidth, nodeHeight, iconSize: 18, fontSize: 11, isVertical },
+      metrics: { nodeWidth, nodeHeight, iconSize, fontSize, isVertical, mode, showIpOnNode },
       nodes: new Map(),
       cables: new Map(),
     };
@@ -159,15 +207,15 @@ export function computeTopologyLayout(
   const sortedDepths = [...levels.keys()].sort((a, b) => a - b);
   const numLevels = Math.max(1, sortedDepths.length);
 
-  const padX = clamp(w * 0.08, 24, 60);
-  const padY = clamp(h * 0.08, 24, 60);
+  const padX = clamp(w * 0.06, 20, 50);
+  const padY = clamp(h * 0.06, 20, 50);
 
   const positions = new Map<string, LayoutedNode>();
 
   if (!isVertical) {
-    // ── Horizontal Layout (Desktop / Laptop / Wide Board) ──────────────
+    // ── Horizontal Layout (Desktop / Laptop) ──────────────────────────
     const usableW = w - padX * 2 - nodeWidth;
-    const colGap = numLevels > 1 ? usableW / (numLevels - 1) : 0;
+    const colGap = numLevels > 1 ? clamp(usableW / (numLevels - 1), 110, 220) : 0;
 
     sortedDepths.forEach((d, colIndex) => {
       const colNodes = levels.get(d) ?? [];
@@ -175,11 +223,12 @@ export function computeTopologyLayout(
       const x = padX + nodeWidth / 2 + colIndex * colGap;
 
       const usableH = h - padY * 2 - nodeHeight;
-      const rowGap = count > 1 ? usableH / (count - 1) : 0;
-      const startY = count > 1 ? padY + nodeHeight / 2 : h / 2;
+      const rowGap = count > 1 ? clamp(usableH / (count - 1), 20, 75) : 0;
+      const totalColH = (count - 1) * (nodeHeight + rowGap);
+      const startY = count > 1 ? clamp((h - totalColH) / 2, padY + nodeHeight / 2, h - padY - nodeHeight / 2) : h / 2;
 
       colNodes.forEach((n, idx) => {
-        const y = count > 1 ? startY + idx * rowGap : startY;
+        const y = count > 1 ? startY + idx * (nodeHeight + rowGap) : startY;
         positions.set(n.id, {
           id: n.id,
           x: round1(clamp(x, nodeWidth / 2 + 12, w - nodeWidth / 2 - 12)),
@@ -189,25 +238,26 @@ export function computeTopologyLayout(
       });
     });
   } else {
-    // ── Vertical Layout (Smartphone / Tablet / Tall Board) ─────────────
+    // ── Vertical Layout (Smartphone / Tablet) ─────────────────────────
     const usableH = h - padY * 2 - nodeHeight;
-    const rowGap = numLevels > 1 ? usableH / (numLevels - 1) : 0;
+    const rowGap = numLevels > 1 ? clamp(usableH / (numLevels - 1), 48, 85) : 0;
 
     sortedDepths.forEach((d, rowIndex) => {
       const rowNodes = levels.get(d) ?? [];
       const count = rowNodes.length;
-      const y = padY + nodeHeight / 2 + rowIndex * rowGap;
+      const y = padY + nodeHeight / 2 + rowIndex * (nodeHeight + rowGap);
 
       const usableW = w - padX * 2 - nodeWidth;
-      const colGap = count > 1 ? usableW / (count - 1) : 0;
-      const startX = count > 1 ? padX + nodeWidth / 2 : w / 2;
+      const colGap = count > 1 ? clamp(usableW / (count - 1), 12, 45) : 0;
+      const totalRowW = (count - 1) * (nodeWidth + colGap);
+      const startX = count > 1 ? clamp((w - totalRowW) / 2, padX + nodeWidth / 2, w - padX - nodeWidth / 2) : w / 2;
 
       rowNodes.forEach((n, idx) => {
-        const x = count > 1 ? startX + idx * colGap : startX;
+        const x = count > 1 ? startX + idx * (nodeWidth + colGap) : startX;
         positions.set(n.id, {
           id: n.id,
-          x: round1(clamp(x, nodeWidth / 2 + 12, w - nodeWidth / 2 - 12)),
-          y: round1(clamp(y, nodeHeight / 2 + 12, h - nodeHeight / 2 - 12)),
+          x: round1(clamp(x, nodeWidth / 2 + 10, w - nodeWidth / 2 - 10)),
+          y: round1(clamp(y, nodeHeight / 2 + 10, h - nodeHeight / 2 - 10)),
           depth: d,
         });
       });
@@ -227,13 +277,13 @@ export function computeTopologyLayout(
     if (!isVertical) {
       // Smooth horizontal Bezier curves
       const dx = Math.abs(b.x - a.x);
-      const hx = clamp(dx * 0.45, 30, 120);
+      const hx = clamp(dx * 0.45, 25, 110);
       dIn = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
       dOut = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
     } else {
-      // Smooth vertical Bezier curves for narrow mobile viewports
+      // Smooth vertical Bezier curves for narrow viewports
       const dy = Math.abs(b.y - a.y);
-      const hy = clamp(dy * 0.45, 25, 100);
+      const hy = clamp(dy * 0.45, 20, 80);
       dIn = `M ${a.x} ${a.y} C ${a.x} ${round1(a.y + hy)}, ${b.x} ${round1(b.y - hy)}, ${b.x} ${b.y}`;
       dOut = `M ${a.x} ${a.y} C ${a.x} ${round1(a.y + hy)}, ${b.x} ${round1(b.y - hy)}, ${b.x} ${b.y}`;
     }
@@ -256,7 +306,7 @@ export function computeTopologyLayout(
   return {
     width: w,
     height: h,
-    metrics: { nodeWidth, nodeHeight, iconSize: 18, fontSize: 11, isVertical },
+    metrics: { nodeWidth, nodeHeight, iconSize, fontSize, isVertical, mode, showIpOnNode },
     nodes: positions,
     cables,
   };

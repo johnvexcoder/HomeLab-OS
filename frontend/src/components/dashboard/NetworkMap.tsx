@@ -247,12 +247,14 @@ export function NetworkMap() {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.3, ease: 'easeOut' }}
                         className={cn(
-                          'group flex cursor-pointer items-center gap-2.5 rounded-xl border bg-[#111625]/90 px-3 py-2 text-left shadow-lg backdrop-blur-md transition-all duration-200 select-none outline-none',
+                          'group flex cursor-pointer items-center gap-2 rounded-xl border bg-[#111625]/90 px-2.5 py-1.5 text-left shadow-lg backdrop-blur-md transition-all duration-200 select-none outline-none',
                           isHovered || isSelected
                             ? 'border-accent ring-2 ring-accent/30 shadow-accent/20 translate-y-[-2px]'
                             : 'border-surface-border hover:border-surface-border/80 hover:bg-[#161C2E]',
                         )}
                         style={{
+                          width: layout.metrics.nodeWidth,
+                          height: layout.metrics.nodeHeight,
                           boxShadow: isHovered || isSelected ? `0 0 20px ${statusColor}33` : undefined,
                         }}
                         onMouseEnter={() => setHoveredNode(node)}
@@ -264,29 +266,34 @@ export function NetworkMap() {
                       >
                         {/* Node Icon Box */}
                         <div
-                          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-black/40"
+                          className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-black/40"
                           style={{ borderColor: `${statusColor}44` }}
                         >
                           {IconComponent ? (
-                            <IconComponent size={20} />
+                            <IconComponent size={layout.metrics.iconSize} />
                           ) : (
-                            <span className="text-base">{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>
+                            <span className="text-sm">{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>
                           )}
                           {/* Status Indicator Dot */}
                           <span
-                            className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#090C15]"
+                            className="absolute -right-1 -top-1 h-2 w-2 rounded-full border-2 border-[#090C15]"
                             style={{ backgroundColor: statusColor }}
                           />
                         </div>
 
-                        {/* Node Text Label & IP */}
-                        <div className="min-w-0 flex-1 pr-1">
-                          <div className="truncate text-xs font-semibold text-text-primary group-hover:text-accent">
+                        {/* Node Text Label & Optional IP */}
+                        <div className="min-w-0 flex-1 pr-0.5">
+                          <div
+                            className="truncate font-semibold text-text-primary group-hover:text-accent"
+                            style={{ fontSize: layout.metrics.fontSize }}
+                          >
                             {node.label}
                           </div>
-                          <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-muted">
-                            <span className="truncate font-mono">{node.ip ?? (server?.spec.ip || node.type)}</span>
-                          </div>
+                          {layout.metrics.showIpOnNode && (
+                            <div className="mt-0.5 flex items-center gap-1 text-[9px] text-text-muted">
+                              <span className="truncate font-mono">{node.ip ?? (server?.spec.ip || node.type)}</span>
+                            </div>
+                          )}
                         </div>
                       </motion.button>
                     </div>
