@@ -544,7 +544,7 @@ export class ProxmoxMetricsProvider {
       capabilities: ['monitoring'],
       clusterId: nodeSpec.clusterId,
       parentId: nodeSpec.id,
-      ip: nodeSpec.ip,
+      ip: '',
       location: `${nodeSpec.hostname} / VMID ${guest.vmid}`,
       cpuModel: nodeSpec.cpuModel,
       cpuCores: guest.cpus || 1,

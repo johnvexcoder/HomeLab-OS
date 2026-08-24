@@ -240,8 +240,9 @@ function matchAgentToInfrastructure(
           unmatchedGuests.push(guest);
         }
 
-        // Only match subnet heuristic when there's exactly one candidate
-        if (unmatchedGuests.length === 1) {
+        // Match subnet heuristic when there are unmatched candidates
+        // Agents are processed sequentially, so each agent claims the first available guest
+        if (unmatchedGuests.length > 0) {
           const parent = findParentNode(unmatchedGuests[0].nodeId, proxmoxServers);
           if (parent) {
             return { kind: 'guest', parentServer: parent, guest: unmatchedGuests[0], confidence: 'low', signal: 'subnet' };
