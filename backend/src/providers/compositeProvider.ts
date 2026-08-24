@@ -152,62 +152,64 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
    * This ensures the backend's own VM always shows real metrics.
    */
   private selfEnrichIfUnenriched(servers: ServerRuntime[]): void {
+    // ── Self-enrichment for the backend's own server ──
+    // Only runs if the backend can detect its own IP on the LAN.
     const ownIp = this.getOwnIp();
-    if (!ownIp) return;
+    if (ownIp) {
+      for (const s of servers) {
+        if (s.spec.ip !== ownIp) continue;
+        // Skip entirely if agent already provided any real metrics — the agent
+        // is the source of truth for CPU/RAM/disk; temperature is inherited from
+        // the parent Proxmox node via buildAgentRuntime() / enrichServerWithAgent().
+        if (s.cpu > 0 || s.diskUsedGb > 0) continue;
 
-    // Find a server with our IP and apply self-monitor fallback for tempC
-    for (const s of servers) {
-      if (s.spec.ip !== ownIp) continue;
-      // Skip entirely if agent already provided any real metrics — the agent
-      // is the source of truth for CPU/RAM/disk; temperature is inherited from
-      // the parent Proxmox node via buildAgentRuntime() / enrichServerWithAgent().
-      if (s.cpu > 0 || s.diskUsedGb > 0) continue;
+        const m = collectSelfMetrics();
+        s.cpu = m.cpuUsage;
+        s.ramUsedGb = m.ramUsedGb;
+        s.spec.ramTotalGb = m.ramTotalGb;
+        s.diskUsedGb = m.diskUsedGb;
+        s.spec.diskTotalGb = m.diskTotalGb;
+        if (m.tempC != null) s.tempC = m.tempC;
+        s.netUpMbps = m.netUpMbps;
+        s.netDownMbps = m.netDownMbps;
+        s.load = m.load1;
+        s.uptimeSeconds = m.uptimeSeconds;
+        s.processes = m.processes;
+        s.spec.cpuCores = m.cpuCores;
+        s.spec.os = m.os;
+        s.status = 'online';
+        s.reachability = 'accessible';
+        s.health = 100;
 
-      const m = collectSelfMetrics();
-      s.cpu = m.cpuUsage;
-      s.ramUsedGb = m.ramUsedGb;
-      s.spec.ramTotalGb = m.ramTotalGb;
-      s.diskUsedGb = m.diskUsedGb;
-      s.spec.diskTotalGb = m.diskTotalGb;
-      if (m.tempC != null) s.tempC = m.tempC;
-      s.netUpMbps = m.netUpMbps;
-      s.netDownMbps = m.netDownMbps;
-      s.load = m.load1;
-      s.uptimeSeconds = m.uptimeSeconds;
-      s.processes = m.processes;
-      s.spec.cpuCores = m.cpuCores;
-      s.spec.os = m.os;
-      s.status = 'online';
-      s.reachability = 'accessible';
-      s.health = 100;
+        const ramPct = m.ramTotalGb > 0 ? (m.ramUsedGb / m.ramTotalGb) * 100 : 0;
+        const diskPct = m.diskTotalGb > 0 ? (m.diskUsedGb / m.diskTotalGb) * 100 : 0;
+        s.health = Math.round(100 - (m.cpuUsage > 85 ? 15 : 0) - (ramPct > 90 ? 15 : 0) - (diskPct > 92 ? 10 : 0));
+        s.status = m.cpuUsage > 90 || ramPct > 95 ? 'degraded' : 'online';
 
-      const ramPct = m.ramTotalGb > 0 ? (m.ramUsedGb / m.ramTotalGb) * 100 : 0;
-      const diskPct = m.diskTotalGb > 0 ? (m.diskUsedGb / m.diskTotalGb) * 100 : 0;
-      s.health = Math.round(100 - (m.cpuUsage > 85 ? 15 : 0) - (ramPct > 90 ? 15 : 0) - (diskPct > 92 ? 10 : 0));
-      s.status = m.cpuUsage > 90 || ramPct > 95 ? 'degraded' : 'online';
+        s.spec.profile.baseCpu = m.cpuUsage;
+        s.spec.profile.baseRamGb = m.ramUsedGb;
+        if (m.tempC != null) s.spec.profile.baseTemp = m.tempC;
+        s.spec.profile.baseNetUpMbps = m.netUpMbps;
+        s.spec.profile.baseNetDownMbps = m.netDownMbps;
 
-      s.spec.profile.baseCpu = m.cpuUsage;
-      s.spec.profile.baseRamGb = m.ramUsedGb;
-      if (m.tempC != null) s.spec.profile.baseTemp = m.tempC;
-      s.spec.profile.baseNetUpMbps = m.netUpMbps;
-      s.spec.profile.baseNetDownMbps = m.netDownMbps;
-
-      // Populate container list from local Docker socket for the backend host
-      if (!s.containers || s.containers.length === 0) {
-        const localContainers = this.docker?.getContainers() ?? [];
-        if (localContainers.length > 0) {
-          s.containers = localContainers;
-          s.spec.profile.containers = localContainers.filter((c) => c.running).length;
+        // Populate container list from local Docker socket for the backend host
+        if (!s.containers || s.containers.length === 0) {
+          const localContainers = this.docker?.getContainers() ?? [];
+          if (localContainers.length > 0) {
+            s.containers = localContainers;
+            s.spec.profile.containers = localContainers.filter((c) => c.running).length;
+          }
         }
-      }
 
-      break; // only enrich one server
+        break; // only enrich one server
+      }
     }
 
-    // Temperature inheritance pass: any server without tempC inherits from the
-    // parent Proxmox node on the same subnet. This runs AFTER self-enrichment
-    // and agent enrichment so it catches docker host runtimes, self-enriched
-    // VMs, and unmatched Proxmox guest cards alike.
+    // ── Temperature inheritance pass ──
+    // Any server without tempC inherits from the parent Proxmox node on the
+    // same subnet. This ALWAYS runs — independent of ownIp detection — so
+    // that VMs and containers get their host's temperature even when the
+    // backend cannot determine its own IP (e.g. running inside a container).
     for (const s of servers) {
       if (s.tempC != null && s.tempC > 0) continue;
       if (!s.spec.ip) continue;

@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Thermometer, ArrowDown, ArrowUp, Layers, Server } from 'lucide-react';
+import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Thermometer, ArrowDown, ArrowUp, Layers } from 'lucide-react';
 import type { ServerRuntime } from '@/types';
 import { ROLE_META, REACH_META, CAPABILITY_META, statusTextClass, statusDotClass, compactClusterLabel, getSecondaryRole } from '@/lib/constants';
+import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import { formatUptime, formatBytes, formatMbps, pct, cn } from '@/lib/utils';
 import { useTelemetryStore } from '@/store/telemetry';
 import { useClusters } from '@/hooks/useQueries';
@@ -20,6 +21,7 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
   const secondaryRole = getSecondaryRole(server as any, clusters);
   const cluster = s.clusterId ? clusters.find((c) => c.id === s.clusterId) : undefined;
   const clusterLabel = cluster ? compactClusterLabel(cluster.name) : undefined;
+  const IconComponent = INFRA_ICON_COMPONENTS[s.role] ?? INFRA_ICON_COMPONENTS.physical;
 
   const cpuPct = server.cpu;
   const ramPct = pct(server.ramUsedGb, s.ramTotalGb);
@@ -32,8 +34,8 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
       {/* Identity + status header — grid keeps the status column from collapsing */}
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated text-2xl">
-            {s.logo}
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated">
+            {IconComponent && <IconComponent size={24} />}
             <span
               className={cn(
                 'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface-elevated',
