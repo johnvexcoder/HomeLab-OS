@@ -14,6 +14,63 @@ function generateApiKey(): { plain: string; prefix: string; hash: string } {
   return { plain, prefix, hash };
 }
 
+function isValidIp(ip: string): boolean {
+  return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip) && ip !== '0.0.0.0' && ip !== '127.0.0.1';
+}
+
+function isDockerBridgeIp(ip: string): boolean {
+  if (!isValidIp(ip)) return false;
+  const parts = ip.split('.').map(Number);
+  if (parts[0] === 172 && parts[1] >= 17 && parts[1] <= 31) return true;
+  if (parts[0] === 10 && parts[1] <= 1) return true;
+  return false;
+}
+
+/**
+ * Extract authoritative LAN IP address for an agent.
+ * Handles agents reporting internal Docker bridge IPs (e.g. 172.17.0.1) by
+ * falling back to non-bridge network interfaces or the TCP request remote IP.
+ */
+function extractRealAgentIp(reportedIp: string, req: Request, flat: Record<string, unknown>): string {
+  const cleanReported = (reportedIp ?? '').replace(/^::ffff:/, '').trim();
+
+  // If reported IP is valid and NOT a docker bridge or loopback IP, use it!
+  if (isValidIp(cleanReported) && !isDockerBridgeIp(cleanReported)) {
+    return cleanReported;
+  }
+
+  // 1. Check network interfaces from plugin data if available
+  const ifaces = flat.networkInterfaces as Array<{ ip?: string; name?: string }> | undefined;
+  if (Array.isArray(ifaces)) {
+    for (const iface of ifaces) {
+      const ifip = (iface.ip ?? '').replace(/^::ffff:/, '').trim();
+      const ifname = (iface.name ?? '').toLowerCase();
+      if (
+        isValidIp(ifip) &&
+        !isDockerBridgeIp(ifip) &&
+        !ifname.startsWith('docker') &&
+        !ifname.startsWith('veth') &&
+        !ifname.startsWith('br-')
+      ) {
+        return ifip;
+      }
+    }
+  }
+
+  // 2. Fallback to TCP connection source IP from request headers or socket
+  const forwarded = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim().replace(/^::ffff:/, '');
+  if (forwarded && isValidIp(forwarded) && !isDockerBridgeIp(forwarded)) {
+    return forwarded;
+  }
+
+  const socketIp = (req.socket.remoteAddress ?? req.ip ?? '').replace(/^::ffff:/, '').trim();
+  if (socketIp && isValidIp(socketIp) && !isDockerBridgeIp(socketIp)) {
+    return socketIp;
+  }
+
+  return cleanReported;
+}
+
 /** Middleware: authenticate agent requests via X-Agent-Key header. */
 function requireAgentAuth(req: Request, res: Response, next: NextFunction): void {
   const key = req.headers['x-agent-key'] as string | undefined;
@@ -156,7 +213,8 @@ export function createAgentRouter(): Router {
       const capabilitiesJson = capabilities ? JSON.stringify(capabilities) : null;
 
       // Use hostInfo values if present (v2), otherwise fall back to flat body (v1)
-      const ip = hostInfo?.ip as string ?? String(body.ip ?? agent.ip ?? '');
+      const reportedIp = hostInfo?.ip as string ?? String(body.ip ?? agent.ip ?? '');
+      const ip = extractRealAgentIp(reportedIp, req, flat);
       const os = hostInfo?.os as string ?? String(body.os ?? agent.os ?? '');
       const hostType = hostInfo?.hostType as string ?? String(body.hostType ?? agent.host_type ?? 'unknown');
       const cpuCores = Number(flat.cpuCores ?? (hostInfo?.arch ? 0 : body.cpuCores)) || Number(agent.cpu_cores) || 0;
@@ -309,6 +367,8 @@ export function createAgentRouter(): Router {
     // v2 format has hostInfo + capabilities + plugins
     const hostInfo = body.hostInfo as Record<string, unknown> | undefined;
     const capabilities = body.capabilities as string[] | undefined;
+    const reportedRegIp = String(body.ip ?? hostInfo?.ip ?? agent.ip ?? '');
+    const regIp = extractRealAgentIp(reportedRegIp, req, {});
 
     db.prepare(`
       UPDATE agents SET
@@ -320,7 +380,7 @@ export function createAgentRouter(): Router {
       WHERE id = ?
     `).run(
       String(body.hostName ?? hostInfo?.hostName ?? agent.host_name),
-      String(body.ip ?? hostInfo?.ip ?? agent.ip),
+      regIp,
       String(body.os ?? hostInfo?.os ?? ''),
       String(body.hostType ?? hostInfo?.hostType ?? 'unknown'),
       capabilities ? JSON.stringify(capabilities) : null,

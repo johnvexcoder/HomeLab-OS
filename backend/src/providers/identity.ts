@@ -128,10 +128,53 @@ function isDockerBridgeIp(ip: string): boolean {
   // 172.17-31.x.x = Docker default bridge range
   if (parts[0] === 172 && parts[1] >= 17 && parts[1] <= 31) return true;
   // 10.x.x.x = common custom Docker networks (only /8, skip if it's a routable LAN)
-  // We only flag 10.x when it looks like a container IP (often 10.0.x.x or 10.1.x.x)
   if (parts[0] === 10 && parts[1] <= 1) return true;
-  // 192.168.x.1 with high host parts are sometimes Docker bridge (192.168.x.1 = gateway)
   return false;
+}
+
+/**
+ * Extract authoritative LAN IP address for an agent row.
+ * Handles agents reporting internal Docker bridge IPs (e.g. 172.17.0.1) by
+ * checking plugins_json for non-bridge interfaces or using parent_ip.
+ */
+function extractRealAgentIpFromRow(agent: AgentRow): string {
+  const rawIp = (agent.ip ?? '').replace(/^::ffff:/, '').trim();
+  if (isValidIp(rawIp) && !isDockerBridgeIp(rawIp)) {
+    return rawIp;
+  }
+
+  // Parse plugins_json if present to look for non-docker network interface IP
+  if (agent.plugins_json) {
+    try {
+      const plugins = JSON.parse(agent.plugins_json) as Array<{ plugin: string; data?: Record<string, unknown> }>;
+      const netPlugin = plugins.find((p) => p.plugin === 'network');
+      if (netPlugin?.data?.interfaces && Array.isArray(netPlugin.data.interfaces)) {
+        for (const iface of netPlugin.data.interfaces as Array<{ ip?: string; name?: string }>) {
+          const ifip = (iface.ip ?? '').replace(/^::ffff:/, '').trim();
+          const ifname = (iface.name ?? '').toLowerCase();
+          if (
+            isValidIp(ifip) &&
+            !isDockerBridgeIp(ifip) &&
+            !ifname.startsWith('docker') &&
+            !ifname.startsWith('veth') &&
+            !ifname.startsWith('br-')
+          ) {
+            return ifip;
+          }
+        }
+      }
+    } catch {
+      /* ignore JSON parse errors */
+    }
+  }
+
+  // Fallback to parent_ip if valid and not bridge
+  const parentIp = (agent.parent_ip ?? '').replace(/^::ffff:/, '').trim();
+  if (isValidIp(parentIp) && !isDockerBridgeIp(parentIp)) {
+    return parentIp;
+  }
+
+  return rawIp;
 }
 
 function findParentNode(nodeId: string | undefined, proxmoxServers: ServerRuntime[]): ServerRuntime | undefined {
@@ -307,8 +350,11 @@ function enrichServerWithAgent(
     server.spec.hostname = agent.host_name;
     server.spec.name = agent.host_name;
   }
-  // Don't overwrite a valid LAN IP with a Docker bridge IP (172.17.x.x etc.)
-  if (agent.ip && !isDockerBridgeIp(agent.ip)) server.spec.ip = agent.ip;
+  // Update IP if authoritative LAN IP is resolved from agent row
+  const resolvedIp = extractRealAgentIpFromRow(agent);
+  if (resolvedIp && isValidIp(resolvedIp) && !isDockerBridgeIp(resolvedIp)) {
+    server.spec.ip = resolvedIp;
+  }
 
   // ── Role: agent host_type is authoritative ──
   if (agent.host_type === 'vm' || agent.host_type === 'lxc') {
@@ -411,11 +457,8 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?:
   const hasContainers = containers.length > 0;
   const serverId = hasContainers ? `docker-${agent.host_name}` : `agent-${agent.host_id}`;
 
-  // Don't show Docker bridge IPs (172.17.x.x etc.) — they're not routable on the LAN.
-  // Fall back to parent_ip which is at least on the correct subnet.
-  const agentIp = (isDockerBridgeIp(agent.ip) && agent.parent_ip && isValidIp(agent.parent_ip))
-    ? agent.parent_ip
-    : agent.ip;
+  // Resolve real LAN IP address (extract non-bridge IP if agent reported 172.17.0.1)
+  const agentIp = extractRealAgentIpFromRow(agent);
 
   return {
     spec: {
@@ -561,31 +604,32 @@ export function reconcileServers(
     // Find parent Proxmox node for temperature inheritance (VMs on same subnet)
     let parentTempC = 0;
     let parentNodeId: string | undefined;
-    const agentIp = agent.ip?.trim();
+    const resolvedAgentIp = extractRealAgentIpFromRow(agent);
     const agentParentIp = agent.parent_ip?.trim();
 
-    // When agent IP is a Docker bridge (172.17.x.x), use parent_ip for subnet matching.
-    // The parent_ip is the Proxmox host that the agent detected as its gateway/node.
-    const effectiveIp = (agentIp && isDockerBridgeIp(agentIp) && agentParentIp && isValidIp(agentParentIp))
-      ? agentParentIp
-      : agentIp;
+    // Use resolved LAN IP (e.g. 192.168.1.32) or fallback to parent_ip (192.168.1.30)
+    const effectiveIp = (resolvedAgentIp && isValidIp(resolvedAgentIp) && !isDockerBridgeIp(resolvedAgentIp))
+      ? resolvedAgentIp
+      : (agentParentIp && isValidIp(agentParentIp)) ? agentParentIp : resolvedAgentIp;
 
-    // When parent_ip exactly matches a Proxmox node, that IS the parent by definition.
-    // Otherwise fall back to subnet matching (skip same-IP to avoid self-matching).
     if (effectiveIp && isValidIp(effectiveIp)) {
       for (const server of proxmoxServers) {
         if (!server.spec.ip) continue;
         if (server.spec.role !== 'hypervisor') continue;
-        if (effectiveIp === server.spec.ip) {
+        if (effectiveIp === server.spec.ip || sameSubnet(effectiveIp, server.spec.ip)) {
           parentTempC = server.tempC || 0;
           parentNodeId = server.spec.id;
           break;
         }
-        if (sameSubnet(effectiveIp, server.spec.ip)) {
-          parentTempC = server.tempC || 0;
-          parentNodeId = server.spec.id;
-          break;
-        }
+      }
+    }
+
+    // Default fallback: if still no parentNodeId, assign primary hypervisor (e.g. pve0) so VM inherits temperature
+    if (!parentNodeId && proxmoxServers.length > 0) {
+      const hypervisor = proxmoxServers.find((s) => s.spec.role === 'hypervisor') ?? proxmoxServers[0];
+      if (hypervisor) {
+        parentNodeId = hypervisor.spec.id;
+        parentTempC = hypervisor.tempC || 0;
       }
     }
 
@@ -630,12 +674,27 @@ export function reconcileServers(
   // Also fix standalone agent servers whose parent wasn't enriched yet.
   for (const server of extraServers) {
     if (server.tempC > 0) continue;
-    if (!server.spec.clusterId) continue;
-    const parent = proxmoxServers.find((s) => s.spec.id === server.spec.clusterId);
-    if (parent && parent.tempC > 0) {
-      server.tempC = round(parent.tempC, 1);
+
+    // 1. Try clusterId parent
+    if (server.spec.clusterId) {
+      const parent = proxmoxServers.find((s) => s.spec.id === server.spec.clusterId);
+      if (parent && parent.tempC > 0) {
+        server.tempC = round(parent.tempC, 1);
+        server.spec.profile.baseTemp = server.tempC;
+        (server.spec as any)._tempSource = parent.spec.hostname;
+        continue;
+      }
+    }
+
+    // 2. Fallback: if server has no temperature, find any hypervisor node with tempC > 0
+    const fallbackParent = proxmoxServers.find((s) => s.spec.role === 'hypervisor' && s.tempC > 0) ?? proxmoxServers.find((s) => s.tempC > 0);
+    if (fallbackParent) {
+      server.tempC = round(fallbackParent.tempC, 1);
       server.spec.profile.baseTemp = server.tempC;
-      (server.spec as any)._tempSource = parent.spec.hostname;
+      (server.spec as any)._tempSource = fallbackParent.spec.hostname;
+      if (!server.spec.clusterId) {
+        server.spec.clusterId = fallbackParent.spec.id;
+      }
     }
   }
 
