@@ -326,7 +326,7 @@ export class DockerMetricsProvider {
       reachability,
       health: round(health, 1),
       load: round(this.cpuPct / 100, 2),
-      uptimeSeconds: Math.max(0, Math.floor((now - this.startedAt) / 1000)),
+      uptimeSeconds: Math.floor(os.uptime()),
       cpu: this.cpuPct,
       ramUsedGb: this.memUsedGb,
       diskUsedGb: this.diskUsedGb,
