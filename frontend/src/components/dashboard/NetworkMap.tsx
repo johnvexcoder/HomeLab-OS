@@ -8,7 +8,7 @@ import type { NetworkNode, NetworkLink } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
 import { generateTraffic, topologySignature, type TrafficEvent } from '@/lib/trafficEngine';
-import { computeTopologyLayout, type TopologyLayout, type LayoutedNode, type GroupBounds } from '@/lib/topologyLayout';
+import { computeTopologyLayout, type TopologyLayout, type LayoutedNode } from '@/lib/topologyLayout';
 
 const IN_COLOR = '#22D3EE';
 const OUT_COLOR = 'var(--accent)';
@@ -63,7 +63,7 @@ export function NetworkMap() {
   const { topology, refetch, isLoading, error, isFetching } = useNetwork();
   const nodes = topology?.nodes ?? [];
   const links = topology?.links ?? [];
-  const { ref, size } = useElementSize<HTMLDivElement>();
+  const { ref: containerRef, size: containerSize } = useElementSize<HTMLDivElement>();
 
   const [hoveredNode, setHoveredNode] = useState<NetworkNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
@@ -75,53 +75,7 @@ export function NetworkMap() {
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
-  const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.25, 3)), []);
-  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.25, 0.2)), []);
-  const handleZoomReset = useCallback(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, []);
-
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    isPanning.current = true;
-    panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
-    setSelectedNode(null);
-    setSelectedLink(null);
-    setHoveredLink(null);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }, [pan]);
-
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isPanning.current) return;
-    const dx = e.clientX - panStart.current.x;
-    const dy = e.clientY - panStart.current.y;
-    setPan({ x: panStart.current.panX + dx, y: panStart.current.panY + dy });
-  }, []);
-
-  const onPointerUp = useCallback(() => { isPanning.current = false; }, []);
-
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((z) => clamp(z * delta, 0.2, 3));
-  }, []);
-
-  const toggleCollapse = (id: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const prevNodesRef = useRef<Map<string, NetworkNode['status']>>(new Map());
-
-  useEffect(() => {
-    const curr = new Map(nodes.map((n) => [n.id, n.status]));
-    prevNodesRef.current = curr;
-  }, [nodes]);
-
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
-  const linkById = useMemo(() => new Map(links.map((l) => [l.id, l])), [links]);
 
   const signature = useMemo(() => topologySignature(nodes, links), [nodes, links]);
   const trafficEvents = useMemo(() => generateTraffic(nodes, links), [signature]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -135,7 +89,17 @@ export function NetworkMap() {
     return m;
   }, [links]);
 
-  // Filter nodes: hide children of collapsed groups
+  // ── Collapse / expand ──────────────────────────────────────────
+  const toggleCollapse = (id: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // ── Visible nodes after collapse ───────────────────────────────
   const visibleNodeIds = useMemo(() => {
     const hidden = new Set<string>();
     const children = new Map<string, string[]>();
@@ -163,11 +127,15 @@ export function NetworkMap() {
     [links, visibleNodeIds],
   );
 
+  // ── Layout computation ─────────────────────────────────────────
+  // The layout engine computes positions for ALL visible nodes in a
+  // self-contained coordinate system. The SVG and HTML nodes both live
+  // inside a single transform container so they share coordinates.
   const layout: TopologyLayout | null = useMemo(
-    () => (size.width > 0 && size.height > 0 ? computeTopologyLayout(visibleNodes, visibleLinks, size.width, size.height) : null),
-    [visibleNodes, visibleLinks, size.width, size.height],
+    () => (visibleNodes.length > 0 ? computeTopologyLayout(visibleNodes, visibleLinks) : null),
+    [visibleNodes, visibleLinks],
   );
-  const { width, height, metrics, nodes: layoutNodes, cables, groups } = layout ?? {
+  const { width: layoutW, height: layoutH, metrics, nodes: layoutNodes, cables, groups } = layout ?? {
     width: 0,
     height: 0,
     metrics: null,
@@ -176,9 +144,76 @@ export function NetworkMap() {
     groups: [],
   };
 
-  // Layout positions are the only positions (read-only topology)
   const finalPositions = layoutNodes;
 
+  // ── Fit-to-view zoom ───────────────────────────────────────────
+  const fitZoom = useMemo(() => {
+    if (!layout || containerSize.width === 0 || containerSize.height === 0) return 1;
+    const pad = 48;
+    const scaleX = (containerSize.width - pad * 2) / layoutW;
+    const scaleY = (containerSize.height - pad * 2) / layoutH;
+    return clamp(Math.min(scaleX, scaleY), 0.15, 2);
+  }, [layout, containerSize, layoutW, layoutH]);
+
+  // Auto-fit on first layout
+  const initRef = useRef(false);
+  useEffect(() => {
+    if (layout && !initRef.current) {
+      setZoom(fitZoom);
+      initRef.current = true;
+    }
+  }, [layout, fitZoom]);
+
+  // Reset init flag when topology changes significantly
+  useEffect(() => {
+    initRef.current = false;
+  }, [signature]);
+
+  // ── Layout-to-screen conversion (for tooltips) ─────────────────
+  const layoutToScreen = useCallback((lx: number, ly: number) => {
+    const cx = containerSize.width / 2;
+    const cy = containerSize.height / 2;
+    return {
+      x: cx + (lx - layoutW / 2) * zoom + pan.x,
+      y: cy + (ly - layoutH / 2) * zoom + pan.y,
+    };
+  }, [containerSize, layoutW, layoutH, zoom, pan]);
+
+  // ── Zoom / pan handlers ────────────────────────────────────────
+  const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.25, 4)), []);
+  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.25, 0.1)), []);
+  const handleFitView = useCallback(() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }, [fitZoom]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    isPanning.current = true;
+    panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    setSelectedNode(null);
+    setSelectedLink(null);
+    setHoveredLink(null);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [pan]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanning.current) return;
+    const dx = e.clientX - panStart.current.x;
+    const dy = e.clientY - panStart.current.y;
+    setPan({ x: panStart.current.panX + dx, y: panStart.current.panY + dy });
+  }, []);
+
+  const onPointerUp = useCallback(() => { isPanning.current = false; }, []);
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom((z) => clamp(z * delta, 0.1, 4));
+  }, []);
+
+  // ── Selection ──────────────────────────────────────────────────
+  const selectNode = (node: NetworkNode) => { setSelectedNode(node); setSelectedLink(null); };
+  const selectLink = (link: NetworkLink) => { setSelectedLink(link); setSelectedNode(null); };
+
+  // ── External state ─────────────────────────────────────────────
   const external = useMemo<ExternalState>(() => {
     const wan = links.find((l) => l.source === 'internet' || l.target === 'internet');
     if (!wan) return 'reachable';
@@ -199,9 +234,6 @@ export function NetworkMap() {
     totalTx >= 10
       ? totalTx.toLocaleString(undefined, { maximumFractionDigits: 0 })
       : totalTx.toLocaleString(undefined, { maximumFractionDigits: 1 });
-
-  const selectNode = (node: NetworkNode) => { setSelectedNode(node); setSelectedLink(null); };
-  const selectLink = (link: NetworkLink) => { setSelectedLink(link); setSelectedNode(null); };
 
   return (
     <Card className="h-full">
@@ -225,7 +257,7 @@ export function NetworkMap() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
 
         <div
-          ref={ref}
+          ref={containerRef}
           className="relative w-full overflow-hidden"
           style={{ height: 480, cursor: isPanning.current ? 'grabbing' : 'grab' }}
           onPointerDown={onPointerDown}
@@ -234,105 +266,271 @@ export function NetworkMap() {
           onPointerCancel={onPointerUp}
           onWheel={onWheel}
         >
-          <svg
-            viewBox={`0 0 ${width} ${height}`}
-            className="absolute inset-0 h-full w-full"
-            style={{
-              transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-              transformOrigin: 'center center',
-              transition: isPanning.current ? 'none' : 'transform 0.15s ease-out',
-            }}
-          >
-            <defs>
-              <style>{`
-                @keyframes net-cable-pulse {
-                  0%, 100% { opacity: 1; }
-                  50% { opacity: 0.4; }
-                }
-                @keyframes homelab-signal-warn {
-                  0% { stroke-dashoffset: 0; }
-                  32% { stroke-dashoffset: -45; }
-                  72% { stroke-dashoffset: -45; }
-                  100% { stroke-dashoffset: -100; }
-                }
-                .net-base { transition: stroke 600ms ease, stroke-opacity 600ms ease; }
-                .net-glow { pointer-events: none; }
-                .net-cable-pulse { animation: net-cable-pulse 4.5s ease-in-out infinite; }
-                .net-signal {
-                  stroke-linecap: round;
-                  transition: stroke 600ms ease, opacity 600ms ease;
-                }
-                .net-signal-warning { animation: homelab-signal-warn 5.5s ease-in-out infinite alternate; opacity: 0.75; }
-                .net-packet { pointer-events: none; }
-                .group-box { pointer-events: none; }
-                .collapse-btn { cursor: pointer; }
-                @media (prefers-reduced-motion: reduce) {
-                  .net-packet { display: none; }
-                  .net-signal { animation: none !important; opacity: 0; }
-                  .net-cable-pulse { animation: none !important; }
-                }
-              `}</style>
-            </defs>
+          {/* ═══════════════════════════════════════════════════════════
+              SINGLE TRANSFORM CONTAINER
+              Both the SVG (cables, groups, traffic) and the HTML node
+              divs live inside this container. The pan/zoom transform
+              applies uniformly to everything, ensuring nodes and cables
+              stay in sync.
+              ═══════════════════════════════════════════════════════════ */}
+          {layout && (
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+              }}
+            >
+              <div
+                style={{
+                  transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                  transformOrigin: '0 0',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'relative',
+                    width: layoutW,
+                    height: layoutH,
+                    left: -layoutW / 2,
+                    top: -layoutH / 2,
+                  }}
+                >
+                  {/* ── SVG layer (cables, groups, traffic) ──────── */}
+                  <svg
+                    width={layoutW}
+                    height={layoutH}
+                    style={{ position: 'absolute', top: 0, left: 0 }}
+                  >
+                    <defs>
+                      <style>{`
+                        @keyframes net-cable-pulse {
+                          0%, 100% { opacity: 1; }
+                          50% { opacity: 0.4; }
+                        }
+                        @keyframes homelab-signal-warn {
+                          0% { stroke-dashoffset: 0; }
+                          32% { stroke-dashoffset: -45; }
+                          72% { stroke-dashoffset: -45; }
+                          100% { stroke-dashoffset: -100; }
+                        }
+                        .net-base { transition: stroke 600ms ease, stroke-opacity 600ms ease; }
+                        .net-glow { pointer-events: none; }
+                        .net-cable-pulse { animation: net-cable-pulse 4.5s ease-in-out infinite; }
+                        .net-signal {
+                          stroke-linecap: round;
+                          transition: stroke 600ms ease, opacity 600ms ease;
+                        }
+                        .net-signal-warning { animation: homelab-signal-warn 5.5s ease-in-out infinite alternate; opacity: 0.75; }
+                        .net-packet { pointer-events: none; }
+                        .group-box { pointer-events: none; }
+                        @media (prefers-reduced-motion: reduce) {
+                          .net-packet { display: none; }
+                          .net-signal { animation: none !important; opacity: 0; }
+                          .net-cable-pulse { animation: none !important; }
+                        }
+                      `}</style>
+                    </defs>
 
-            {/* Group bounding boxes */}
-            {groups.map((g) => {
-              const parent = nodeById.get(g.id);
-              if (!parent || !visibleNodeIds.has(g.id)) return null;
-              const hasChildren = nodes.some((n) => n.parentId === g.id && visibleNodeIds.has(n.id));
-              if (!hasChildren) return null;
-              const isCollapsed = collapsedGroups.has(g.id);
-              return (
-                <g key={`group-${g.id}`} className="group-box">
-                  <rect
-                    x={g.x}
-                    y={g.y}
-                    width={g.width}
-                    height={g.height}
-                    rx={8}
-                    fill="rgba(255,255,255,0.02)"
-                    stroke="rgba(255,255,255,0.06)"
-                    strokeWidth={1}
-                    strokeDasharray={isCollapsed ? '4 2' : 'none'}
-                  />
-                </g>
-              );
-            })}
+                    {/* Group bounding boxes */}
+                    {groups.map((g) => {
+                      const parentNode = nodeById.get(g.id);
+                      if (!parentNode || !visibleNodeIds.has(g.id)) return null;
+                      const hasChildren = nodes.some((n) => n.parentId === g.id && visibleNodeIds.has(n.id));
+                      if (!hasChildren) return null;
+                      const isCollapsed = collapsedGroups.has(g.id);
+                      return (
+                        <g key={`group-${g.id}`} className="group-box">
+                          <rect
+                            x={g.x}
+                            y={g.y}
+                            width={g.width}
+                            height={g.height}
+                            rx={8}
+                            fill="rgba(255,255,255,0.02)"
+                            stroke="rgba(255,255,255,0.06)"
+                            strokeWidth={1}
+                            strokeDasharray={isCollapsed ? '4 2' : 'none'}
+                          />
+                        </g>
+                      );
+                    })}
 
-            {/* Links */}
-            {visibleLinks.map((link, i) => {
-              const cab = cables.get(link.id);
-              if (!cab) return null;
-              return (
-                <LinkLayer
-                  key={link.id}
-                  link={link}
-                  cable={cab}
-                  index={i}
-                  hovered={hoveredLink?.id === link.id}
-                  onHover={() => setHoveredLink(link)}
-                  onUnhover={() => setHoveredLink(null)}
-                  onClick={() => selectLink(link)}
-                />
-              );
-            })}
+                    {/* Cables */}
+                    {visibleLinks.map((link, i) => {
+                      const cab = cables.get(link.id);
+                      if (!cab) return null;
+                      return (
+                        <LinkLayer
+                          key={link.id}
+                          link={link}
+                          cable={cab}
+                          index={i}
+                          hovered={hoveredLink?.id === link.id}
+                          onHover={() => setHoveredLink(link)}
+                          onUnhover={() => setHoveredLink(null)}
+                          onClick={() => selectLink(link)}
+                        />
+                      );
+                    })}
 
-            {/* Traffic packets */}
-            {layout && <TrafficLayer events={trafficEvents} layout={layout} endpointMap={endpointMap} />}
-          </svg>
+                    {/* Traffic packets */}
+                    <TrafficLayer events={trafficEvents} layout={layout} endpointMap={endpointMap} />
+                  </svg>
+
+                  {/* ── HTML node layer ─────────────────────────── */}
+                  {metrics && visibleNodes.map((originalNode, i) => {
+                    const p = finalPositions.get(originalNode.id);
+                    if (!p) return null;
+                    const nodeStatus = (originalNode.status || 'online') as keyof typeof NODE_STATUS_RING;
+                    const isInteractive = hoveredNode?.id === originalNode.id || selectedNode?.id === originalNode.id;
+                    const isInternet = originalNode.type === 'internet';
+                    const box = isInternet ? Math.round(metrics.nodeSize * 1.125) : Math.round(metrics.nodeSize * 0.75);
+                    const hasCollapsedChildren = collapsedGroups.has(originalNode.id);
+                    const childCount = originalNode.childCount ?? nodes.filter((n) => n.parentId === originalNode.id).length;
+                    const IconComponent = INFRA_ICON_COMPONENTS[originalNode.type];
+
+                    return (
+                      <div
+                        key={originalNode.id}
+                        className="absolute"
+                        style={{ left: p.x, top: p.y, transform: 'translate(-50%, -50%)' }}
+                      >
+                        <motion.button
+                          type="button"
+                          initial={{ opacity: 0, scale: 0.7 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.4, delay: Math.min(i * 0.035, 0.7), ease: [0.16, 1, 0.3, 1] }}
+                          className="flex cursor-pointer flex-col items-center border-none bg-transparent p-0 outline-none"
+                          style={{ maxWidth: Math.round(metrics.labelMaxWidth + 16) }}
+                          onMouseEnter={() => setHoveredNode(originalNode)}
+                          onMouseLeave={() => setHoveredNode((h) => (h?.id === originalNode.id ? null : h))}
+                          onClick={() => selectNode(originalNode)}
+                          aria-label={`${originalNode.label} — ${NODE_STATUS_LABEL[originalNode.status]}. Click for details`}
+                        >
+                          <div
+                            className="flex flex-col items-center gap-0.5 rounded-lg transition-all duration-200"
+                            style={isInteractive
+                              ? { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)' }
+                              : { boxShadow: 'none', background: 'rgba(0,0,0,0.25)' }}
+                          >
+                            {isInternet ? (
+                              <div className="relative flex flex-col items-center">
+                                <motion.div
+                                  className="absolute inset-0 rounded-full border"
+                                  style={{ borderColor: `${NODE_STATUS_RING[nodeStatus]}66` }}
+                                  animate={{ scale: [1, 1.5], opacity: [0.7, 0] }}
+                                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
+                                />
+                                <div
+                                  className="relative flex items-center justify-center rounded-full border-2 bg-[#0F1522] shadow-card"
+                                  style={{
+                                    width: box,
+                                    height: box,
+                                    borderColor: NODE_STATUS_RING[nodeStatus],
+                                    boxShadow: `0 0 24px ${NODE_STATUS_RING[nodeStatus]}44`,
+                                  }}
+                                >
+                                  <Globe className="h-[45%] w-[45%]" style={{ color: NODE_STATUS_RING[nodeStatus] }} />
+                                  <span
+                                    className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B]"
+                                    style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div
+                                  className="relative flex items-center justify-center rounded-xl border bg-[#141414] shadow-card"
+                                  style={{
+                                    width: box,
+                                    height: box,
+                                    fontSize: metrics.iconSize,
+                                    borderColor: `${NODE_STATUS_RING[nodeStatus]}55`,
+                                    boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}44`,
+                                  }}
+                                >
+                                  <span>{IconComponent ? <IconComponent size={metrics.iconSize} /> : NETWORK_NODE_ICONS_FRONTEND[originalNode.type] ?? '📦'}</span>
+                                  <span
+                                    className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B]"
+                                    style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
+                                  />
+                                  {hasCollapsedChildren && (
+                                    <button
+                                      type="button"
+                                      className="collapse-btn absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-[#0B0B0B] bg-[#222] text-[8px] text-text-primary"
+                                      onClick={(e) => { e.stopPropagation(); toggleCollapse(originalNode.id); }}
+                                      title="Expand"
+                                    >
+                                      <ChevronRight className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
+                                  {childCount > 0 && !hasCollapsedChildren && (
+                                    <span className="absolute -bottom-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full border border-[#0B0B0B] bg-[#333] px-1 text-[8px] font-semibold text-text-primary">
+                                      {childCount}
+                                    </span>
+                                  )}
+                                </div>
+                                {metrics.labelVisible && (
+                                  <div
+                                    className="rounded-md border border-surface-border bg-black/60 px-1.5 py-0.5 backdrop-blur-sm"
+                                    style={{ maxWidth: Math.round(metrics.labelMaxWidth + 12) }}
+                                  >
+                                    <span
+                                      className="block truncate text-center font-semibold"
+                                      style={{
+                                        fontSize: metrics.labelSize,
+                                        lineHeight: 1.15,
+                                        color: 'var(--color-text-primary)',
+                                        opacity: 1,
+                                      }}
+                                      title={originalNode.label}
+                                    >
+                                      {originalNode.label}
+                                    </span>
+                                  </div>
+                                )}
+                                {metrics.ipVisible && originalNode.ip && (
+                                  <span className="font-mono text-text-muted" style={{ fontSize: metrics.ipSize }}>
+                                    {originalNode.ip}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </motion.button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════
+              VIEWPORT-FIXED OVERLAYS
+              Tooltips and detail panels live OUTSIDE the transform
+              container. Tooltips use layoutToScreen() for positioning.
+              ═══════════════════════════════════════════════════════════ */}
 
           {/* Hover tooltip — node */}
           {hoveredNode && (
-            <div
-              className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
-              style={{
-                left: finalPositions.get(hoveredNode.id)?.x ?? 0,
-                top: (finalPositions.get(hoveredNode.id)?.y ?? 0) + 8,
-              }}
-            >
-              <div className="w-[min(220px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
-                <NodeTooltip node={hoveredNode} nodeById={nodeById} />
-              </div>
-            </div>
+            (() => {
+              const p = finalPositions.get(hoveredNode.id);
+              if (!p) return null;
+              const screen = layoutToScreen(p.x, p.y);
+              return (
+                <div
+                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
+                  style={{ left: screen.x, top: screen.y }}
+                >
+                  <div className="w-[min(220px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
+                    <NodeTooltip node={hoveredNode} nodeById={nodeById} />
+                  </div>
+                </div>
+              );
+            })()
           )}
 
           {/* Hover tooltip — link */}
@@ -342,6 +540,7 @@ export function NetworkMap() {
               if (!cab) return null;
               const mx = (cab.x1 + cab.x2) / 2;
               const my = (cab.y1 + cab.y2) / 2;
+              const screen = layoutToScreen(mx, my);
               const srcNode = nodeById.get(hoveredLink.source);
               const tgtNode = nodeById.get(hoveredLink.target);
               const srcLabel = srcNode?.label ?? hoveredLink.source;
@@ -350,7 +549,7 @@ export function NetworkMap() {
               return (
                 <div
                   className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
-                  style={{ left: mx, top: my }}
+                  style={{ left: screen.x, top: screen.y }}
                 >
                   <div className="w-[min(240px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
                     <div className="text-[11px] font-semibold text-text-primary">
@@ -384,10 +583,10 @@ export function NetworkMap() {
             })()
           )}
 
-          {/* Detail panel (click) */}
+          {/* Device details panel (click on node) */}
           {selectedNode && (
             <div
-              className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-72"
+              className="absolute bottom-3 right-3 z-20 w-72 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm"
               onPointerDown={(e) => e.stopPropagation()}
             >
               <div className="mb-2 flex items-center justify-between">
@@ -406,10 +605,10 @@ export function NetworkMap() {
             </div>
           )}
 
-          {/* Link detail panel (click on cable) */}
+          {/* Connection details panel (click on cable) */}
           {selectedLink && (
             <div
-              className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-72"
+              className="absolute bottom-3 right-3 z-20 w-72 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm"
               onPointerDown={(e) => e.stopPropagation()}
             >
               <div className="mb-2 flex items-center justify-between">
@@ -461,139 +660,14 @@ export function NetworkMap() {
             </div>
           )}
 
-          {/* Node layer */}
-          {layout &&
-            metrics &&
-            visibleNodes.map((originalNode, i) => {
-              const p = finalPositions.get(originalNode.id);
-              if (!p) return null;
-              const nodeStatus = (originalNode.status || 'online') as keyof typeof NODE_STATUS_RING;
-              const isInteractive = hoveredNode?.id === originalNode.id || selectedNode?.id === originalNode.id;
-              const isInternet = originalNode.type === 'internet';
-              const box = isInternet ? Math.round(metrics.nodeSize * 1.125) : Math.round(metrics.nodeSize * 0.75);
-              const hasCollapsedChildren = collapsedGroups.has(originalNode.id);
-              const childCount = originalNode.childCount ?? nodes.filter((n) => n.parentId === originalNode.id).length;
-              const IconComponent = INFRA_ICON_COMPONENTS[originalNode.type];
-
-              return (
-                <div
-                  key={originalNode.id}
-                  className="absolute"
-                  style={{ left: p.x, top: p.y, transform: 'translate(-50%, -50%)' }}
-                >
-                  <motion.button
-                    type="button"
-                    initial={{ opacity: 0, scale: 0.7 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.4, delay: Math.min(i * 0.035, 0.7), ease: [0.16, 1, 0.3, 1] }}
-                    className="flex cursor-pointer flex-col items-center border-none bg-transparent p-0 outline-none"
-                    style={{ maxWidth: Math.round(metrics.labelMaxWidth + 16) }}
-                    onMouseEnter={() => setHoveredNode(originalNode)}
-                    onMouseLeave={() => setHoveredNode((h) => (h?.id === originalNode.id ? null : h))}
-                    onClick={() => selectNode(originalNode)}
-                    aria-label={`${originalNode.label} — ${NODE_STATUS_LABEL[originalNode.status]}. Click for details`}
-                  >
-                    <div
-                      className="flex flex-col items-center gap-0.5 rounded-lg transition-all duration-200"
-                      style={isInteractive
-                        ? { boxShadow: `0 0 0 2px ${NODE_STATUS_RING[nodeStatus]}55`, background: 'rgba(0,0,0,0.25)' }
-                        : { boxShadow: 'none', background: 'rgba(0,0,0,0.25)' }}
-                    >
-                      {isInternet ? (
-                        <div className="relative flex flex-col items-center">
-                          <motion.div
-                            className="absolute inset-0 rounded-full border"
-                            style={{ borderColor: `${NODE_STATUS_RING[nodeStatus]}66` }}
-                            animate={{ scale: [1, 1.5], opacity: [0.7, 0] }}
-                            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
-                          />
-                          <div
-                            className="relative flex items-center justify-center rounded-full border-2 bg-[#0F1522] shadow-card"
-                            style={{
-                              width: box,
-                              height: box,
-                              borderColor: NODE_STATUS_RING[nodeStatus],
-                              boxShadow: `0 0 24px ${NODE_STATUS_RING[nodeStatus]}44`,
-                            }}
-                          >
-                            <Globe className="h-[45%] w-[45%]" style={{ color: NODE_STATUS_RING[nodeStatus] }} />
-                            <span
-                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B]"
-                              style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div
-                            className="relative flex items-center justify-center rounded-xl border bg-[#141414] shadow-card"
-                            style={{
-                              width: box,
-                              height: box,
-                              fontSize: metrics.iconSize,
-                              borderColor: `${NODE_STATUS_RING[nodeStatus]}55`,
-                              boxShadow: `0 0 16px ${NODE_STATUS_RING[nodeStatus]}44`,
-                            }}
-                          >
-                            <span>{IconComponent ? <IconComponent size={metrics.iconSize} /> : NETWORK_NODE_ICONS_FRONTEND[originalNode.type] ?? '📦'}</span>
-                            <span
-                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0B0B]"
-                              style={{ backgroundColor: NODE_STATUS_RING[nodeStatus] }}
-                            />
-                            {hasCollapsedChildren && (
-                              <button
-                                type="button"
-                                className="collapse-btn absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-[#0B0B0B] bg-[#222] text-[8px] text-text-primary"
-                                onClick={(e) => { e.stopPropagation(); toggleCollapse(originalNode.id); }}
-                                title="Expand"
-                              >
-                                <ChevronRight className="h-2.5 w-2.5" />
-                              </button>
-                            )}
-                            {childCount > 0 && !hasCollapsedChildren && (
-                              <span className="absolute -bottom-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full border border-[#0B0B0B] bg-[#333] px-1 text-[8px] font-semibold text-text-primary">
-                                {childCount}
-                              </span>
-                            )}
-                          </div>
-                          {metrics.labelVisible && (
-                            <div
-                              className="rounded-md border border-surface-border bg-black/60 px-1.5 py-0.5 backdrop-blur-sm"
-                              style={{ maxWidth: Math.round(metrics.labelMaxWidth + 12) }}
-                            >
-                              <span
-                                className="block truncate text-center font-semibold"
-                                style={{
-                                  fontSize: metrics.labelSize,
-                                  lineHeight: 1.15,
-                                  color: 'var(--color-text-primary)',
-                                  opacity: 1,
-                                }}
-                                title={originalNode.label}
-                              >
-                                {originalNode.label}
-                              </span>
-                            </div>
-                          )}
-                          {metrics.ipVisible && originalNode.ip && (
-                            <span className="font-mono text-text-muted" style={{ fontSize: metrics.ipSize }}>
-                              {originalNode.ip}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </motion.button>
-                </div>
-              );
-            })}
-
+          {/* Loading */}
           {isLoading && nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-xs text-text-muted">Loading topology…</span>
             </div>
           )}
 
+          {/* Error */}
           {!isLoading && error && nodes.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
               <WifiOff className="h-8 w-8 text-warn/60" />
@@ -611,6 +685,7 @@ export function NetworkMap() {
             </div>
           )}
 
+          {/* Empty */}
           {!isLoading && !error && nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-xs text-text-muted">No topology data available</span>
@@ -627,7 +702,7 @@ export function NetworkMap() {
           <button onClick={handleZoomIn} className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-overlay/10 hover:text-text-primary cursor-pointer" title="Zoom in">
             <ZoomIn className="h-3.5 w-3.5" />
           </button>
-          <button onClick={handleZoomReset} className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-overlay/10 hover:text-text-primary cursor-pointer" title="Reset view">
+          <button onClick={handleFitView} className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-overlay/10 hover:text-text-primary cursor-pointer" title="Fit to view">
             <Maximize className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -852,7 +927,7 @@ function LinkLayer({
           <path d={outCurve} fill="none" stroke={outColor} strokeWidth="2.5" pathLength={100} strokeDasharray="5 95" className="net-signal net-signal-warning" style={{ filter: `drop-shadow(0 0 3px ${outColor})` }} />
         </>
       )}
-      {/* Invisible wide hit-path for hover/click (observational only) */}
+      {/* Invisible wide hit-path for hover/click — observational only */}
       <path
         d={inCurve}
         fill="none"

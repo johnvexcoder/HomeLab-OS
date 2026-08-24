@@ -100,12 +100,10 @@ export function rowSpanOf(_nodeSize: number): number {
 export function computeTopologyLayout(
   nodes: NetworkNode[],
   links: NetworkLink[],
-  _width: number,
-  _height: number,
 ): TopologyLayout {
   const empty = (): TopologyLayout => ({
-    width: _width,
-    height: _height,
+    width: 1,
+    height: 1,
     metrics: {
       nodeSize: NODE_SIZE,
       iconSize: 22,
