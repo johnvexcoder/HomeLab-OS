@@ -265,6 +265,8 @@ function migrate(database: Database.Database): void {
 }
 
 /** Persist a batch of snapshots in one transaction. */
+let lastPruneAt = 0;
+
 export function insertMetrics(snapshots: MetricSnapshot[]): void {
   const database = getDb();
   const stmt = database.prepare(`
@@ -284,6 +286,19 @@ export function insertMetrics(snapshots: MetricSnapshot[]): void {
     }
   });
   tx(snapshots);
+
+  // Periodic TTL pruning (once every hour) to prevent unbounded DB growth
+  const now = Date.now();
+  if (now - lastPruneAt > 3600_000) {
+    lastPruneAt = now;
+    try {
+      const retentionMs = Math.max(24, config.historyRetentionHours) * 3600 * 1000;
+      const cutoff = now - retentionMs;
+      database.prepare(`DELETE FROM metrics WHERE ts < ?`).run(cutoff);
+    } catch {
+      // ignore pruning errors during recovery/backup
+    }
+  }
 }
 
 export function queryMetrics(

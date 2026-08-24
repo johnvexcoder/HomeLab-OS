@@ -1,6 +1,7 @@
 import type { MetricSnapshot, Notification, ServerSpec } from '../types';
 import { NOTIFICATION_TEMPLATES, TEMPLATE_SERVERS, CONTAINER_NAMES } from '../mock-data/notifications';
 import { pick, randomInt } from './random';
+import { config } from '../config';
 
 let seq = 1;
 
@@ -18,7 +19,7 @@ export class NotificationGenerator {
   private readonly ambient: boolean;
 
   constructor(options?: { ambient?: boolean }) {
-    this.ambient = options?.ambient ?? true;
+    this.ambient = options?.ambient ?? config.mockMode;
   }
 
   generate(snapshots: MetricSnapshot[], now: number): Notification[] {
