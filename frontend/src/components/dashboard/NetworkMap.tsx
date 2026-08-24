@@ -110,25 +110,26 @@ export function NetworkMap() {
     return m;
   }, [nodes, servers]);
 
-  // ── Layout computation ─────────────────────────────────────────
+  // ── Responsive Smart Layout computation ─────────────────────────
+  const boardWidth = containerSize.width || 1000;
+  const boardHeight = containerSize.height || 500;
+
   const layout: TopologyLayout = useMemo(
-    () => computeTopologyLayout(nodes, links),
-    [nodes, links],
+    () => computeTopologyLayout(nodes, links, boardWidth, boardHeight),
+    [nodes, links, boardWidth, boardHeight],
   );
 
   const { width: layoutW, height: layoutH, nodes: finalPositions, cables } = layout;
 
-  // ── Automatic centering scale ──────────────────────────────────
+  // ── Automatic centering fit zoom (1.0 default for exact board fit) ──
   const zoom = useMemo(() => {
-    if (containerSize.width === 0 || containerSize.height === 0 || layoutW === 0 || layoutH === 0) {
+    if (boardWidth === 0 || boardHeight === 0 || layoutW === 0 || layoutH === 0) {
       return 1;
     }
-    const padX = 60;
-    const padY = 50;
-    const scaleX = (containerSize.width - padX * 2) / layoutW;
-    const scaleY = (containerSize.height - padY * 2) / layoutH;
-    return Math.min(Math.max(Math.min(scaleX, scaleY), 0.25), 1.15);
-  }, [containerSize, layoutW, layoutH]);
+    const scaleX = boardWidth / layoutW;
+    const scaleY = boardHeight / layoutH;
+    return Math.min(Math.max(Math.min(scaleX, scaleY), 0.3), 1.0);
+  }, [boardWidth, boardHeight, layoutW, layoutH]);
 
   const totalTx = useMemo(() => links.reduce((a, l) => a + l.throughputMbps, 0), [links]);
 
@@ -149,7 +150,7 @@ export function NetworkMap() {
         }
       />
 
-      <div className="relative overflow-hidden rounded-xl border border-surface-border bg-[#090C15]">
+      <div className="relative overflow-hidden rounded-xl border border-surface-border bg-[#000000]">
         <div className="grid-backdrop absolute inset-0" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/40" />
 

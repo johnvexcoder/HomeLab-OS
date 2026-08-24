@@ -1,10 +1,13 @@
 /**
- * Hierarchical Topology Layout Engine for Network Map
+ * Responsive Smart Graph Layout Engine for Network Topology Map
  *
- * Computes node positions, cable paths, and sizing metrics for a clean,
- * production NOC infrastructure map layout.
+ * Computes node positions, cable paths, and sizing metrics that automatically
+ * adapt to container dimensions and aspect ratio (Desktop, Laptop, Tablet, Smartphone).
  *
- * Flow: Internet → Gateway/Firewall → Hypervisor/Hosts → VMs/LXCs/Docker → Containers
+ * Wide viewports (Desktop/Laptop): Left-to-right horizontal NOC flow.
+ * Narrow viewports (Smartphone/Tablet): Top-to-bottom vertical flow.
+ *
+ * Guarantees zero node clipping, zero cable clipping, and balanced board utilization.
  */
 
 import type { NetworkLink, NetworkNode } from '@/types';
@@ -14,6 +17,7 @@ export interface LayoutMetrics {
   nodeHeight: number;
   iconSize: number;
   fontSize: number;
+  isVertical: boolean;
 }
 
 export interface LayoutedNode {
@@ -71,22 +75,27 @@ function getDefaultDepth(type: NetworkNode['type']): number {
   }
 }
 
-const COLUMN_SPACING = 240; // horizontal gap between columns
-const ROW_SPACING = 100;    // vertical gap between items in same column
-const PADDING_X = 80;
-const PADDING_Y = 80;
-const NODE_WIDTH = 140;
-const NODE_HEIGHT = 60;
-
 export function computeTopologyLayout(
   nodes: NetworkNode[],
   links: NetworkLink[],
+  containerWidth: number = 1000,
+  containerHeight: number = 500,
 ): TopologyLayout {
+  const w = Math.max(280, containerWidth);
+  const h = Math.max(280, containerHeight);
+
+  // Responsive mode: Vertical flow if tall/narrow viewport (Smartphones/Tablets)
+  const isVertical = w < 640 || h > w * 1.15;
+
+  // Responsive node sizing
+  const nodeWidth = clamp(isVertical ? Math.min(w * 0.42, 130) : Math.min(w * 0.22, 140), 95, 145);
+  const nodeHeight = clamp(isVertical ? 48 : 54, 42, 60);
+
   if (nodes.length === 0) {
     return {
-      width: 1,
-      height: 1,
-      metrics: { nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT, iconSize: 20, fontSize: 11 },
+      width: w,
+      height: h,
+      metrics: { nodeWidth, nodeHeight, iconSize: 18, fontSize: 11, isVertical },
       nodes: new Map(),
       cables: new Map(),
     };
@@ -106,7 +115,7 @@ export function computeTopologyLayout(
     }
   }
 
-  // Also infer parent-child links from links if parentId wasn't explicit
+  // Infer parent-child connections from links
   for (const link of links) {
     if (!nodeMap.has(link.source) || !nodeMap.has(link.target)) continue;
     const src = nodeMap.get(link.source)!;
@@ -127,7 +136,6 @@ export function computeTopologyLayout(
   const depths = new Map<string, number>();
   const calculateDepth = (node: NetworkNode): number => {
     if (depths.has(node.id)) return depths.get(node.id)!;
-    
     let d = getDefaultDepth(node.type);
     const pId = parentMap.get(node.id);
     if (pId && nodeMap.has(pId)) {
@@ -140,67 +148,70 @@ export function computeTopologyLayout(
 
   for (const n of nodes) calculateDepth(n);
 
-  // Group nodes by depth column
-  const columns = new Map<number, NetworkNode[]>();
+  // Group nodes by depth level
+  const levels = new Map<number, NetworkNode[]>();
   for (const n of nodes) {
     const d = depths.get(n.id) ?? 0;
-    if (!columns.has(d)) columns.set(d, []);
-    columns.get(d)!.push(n);
+    if (!levels.has(d)) levels.set(d, []);
+    levels.get(d)!.push(n);
   }
 
-  // Sort depth columns
-  const sortedDepths = [...columns.keys()].sort((a, b) => a - b);
+  const sortedDepths = [...levels.keys()].sort((a, b) => a - b);
+  const numLevels = Math.max(1, sortedDepths.length);
 
-  // Assign X and Y coordinates
+  const padX = clamp(w * 0.08, 24, 60);
+  const padY = clamp(h * 0.08, 24, 60);
+
   const positions = new Map<string, LayoutedNode>();
-  
-  // Find maximum column height to center shorter columns vertically
-  let maxColHeight = 0;
-  for (const d of sortedDepths) {
-    const colNodes = columns.get(d) ?? [];
-    const colH = colNodes.length * ROW_SPACING;
-    if (colH > maxColHeight) maxColHeight = colH;
-  }
-  maxColHeight = Math.max(maxColHeight, ROW_SPACING * 3);
 
-  // Layout each column
-  sortedDepths.forEach((d, colIndex) => {
-    const colNodes = columns.get(d) ?? [];
-    const count = colNodes.length;
-    const totalColH = (count - 1) * ROW_SPACING;
-    const startY = PADDING_Y + (maxColHeight - totalColH) / 2;
+  if (!isVertical) {
+    // ── Horizontal Layout (Desktop / Laptop / Wide Board) ──────────────
+    const usableW = w - padX * 2 - nodeWidth;
+    const colGap = numLevels > 1 ? usableW / (numLevels - 1) : 0;
 
-    colNodes.forEach((n, idx) => {
-      const x = PADDING_X + colIndex * COLUMN_SPACING;
-      const y = startY + idx * ROW_SPACING;
-      positions.set(n.id, {
-        id: n.id,
-        x: round1(x),
-        y: round1(y),
-        depth: d,
+    sortedDepths.forEach((d, colIndex) => {
+      const colNodes = levels.get(d) ?? [];
+      const count = colNodes.length;
+      const x = padX + nodeWidth / 2 + colIndex * colGap;
+
+      const usableH = h - padY * 2 - nodeHeight;
+      const rowGap = count > 1 ? usableH / (count - 1) : 0;
+      const startY = count > 1 ? padY + nodeHeight / 2 : h / 2;
+
+      colNodes.forEach((n, idx) => {
+        const y = count > 1 ? startY + idx * rowGap : startY;
+        positions.set(n.id, {
+          id: n.id,
+          x: round1(clamp(x, nodeWidth / 2 + 12, w - nodeWidth / 2 - 12)),
+          y: round1(clamp(y, nodeHeight / 2 + 12, h - nodeHeight / 2 - 12)),
+          depth: d,
+        });
       });
     });
-  });
+  } else {
+    // ── Vertical Layout (Smartphone / Tablet / Tall Board) ─────────────
+    const usableH = h - padY * 2 - nodeHeight;
+    const rowGap = numLevels > 1 ? usableH / (numLevels - 1) : 0;
 
-  // Calculate total layout width and height
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const p of positions.values()) {
-    minX = Math.min(minX, p.x - NODE_WIDTH / 2);
-    maxX = Math.max(maxX, p.x + NODE_WIDTH / 2);
-    minY = Math.min(minY, p.y - NODE_HEIGHT / 2);
-    maxY = Math.max(maxY, p.y + NODE_HEIGHT / 2);
-  }
+    sortedDepths.forEach((d, rowIndex) => {
+      const rowNodes = levels.get(d) ?? [];
+      const count = rowNodes.length;
+      const y = padY + nodeHeight / 2 + rowIndex * rowGap;
 
-  const layoutW = Math.max(100, maxX - minX + PADDING_X * 2);
-  const layoutH = Math.max(100, maxY - minY + PADDING_Y * 2);
+      const usableW = w - padX * 2 - nodeWidth;
+      const colGap = count > 1 ? usableW / (count - 1) : 0;
+      const startX = count > 1 ? padX + nodeWidth / 2 : w / 2;
 
-  // Center alignment offset
-  const offsetX = PADDING_X - minX;
-  const offsetY = PADDING_Y - minY;
-
-  for (const p of positions.values()) {
-    p.x = round1(p.x + offsetX);
-    p.y = round1(p.y + offsetY);
+      rowNodes.forEach((n, idx) => {
+        const x = count > 1 ? startX + idx * colGap : startX;
+        positions.set(n.id, {
+          id: n.id,
+          x: round1(clamp(x, nodeWidth / 2 + 12, w - nodeWidth / 2 - 12)),
+          y: round1(clamp(y, nodeHeight / 2 + 12, h - nodeHeight / 2 - 12)),
+          depth: d,
+        });
+      });
+    });
   }
 
   // Calculate cable paths
@@ -210,13 +221,23 @@ export function computeTopologyLayout(
     const b = positions.get(link.target);
     if (!a || !b) continue;
 
-    const dx = Math.abs(b.x - a.x);
-    const hx = clamp(dx * 0.45, 40, 140);
+    let dIn = '';
+    let dOut = '';
 
-    const dIn = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
-    const dOut = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
+    if (!isVertical) {
+      // Smooth horizontal Bezier curves
+      const dx = Math.abs(b.x - a.x);
+      const hx = clamp(dx * 0.45, 30, 120);
+      dIn = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
+      dOut = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
+    } else {
+      // Smooth vertical Bezier curves for narrow mobile viewports
+      const dy = Math.abs(b.y - a.y);
+      const hy = clamp(dy * 0.45, 25, 100);
+      dIn = `M ${a.x} ${a.y} C ${a.x} ${round1(a.y + hy)}, ${b.x} ${round1(b.y - hy)}, ${b.x} ${b.y}`;
+      dOut = `M ${a.x} ${a.y} C ${a.x} ${round1(a.y + hy)}, ${b.x} ${round1(b.y - hy)}, ${b.x} ${b.y}`;
+    }
 
-    // Midpoint for cable tooltips / click
     const mx = round1((a.x + b.x) / 2);
     const my = round1((a.y + b.y) / 2);
 
@@ -233,9 +254,9 @@ export function computeTopologyLayout(
   }
 
   return {
-    width: layoutW,
-    height: layoutH,
-    metrics: { nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT, iconSize: 20, fontSize: 11 },
+    width: w,
+    height: h,
+    metrics: { nodeWidth, nodeHeight, iconSize: 18, fontSize: 11, isVertical },
     nodes: positions,
     cables,
   };
