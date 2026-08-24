@@ -39,7 +39,7 @@ class NotifyDispatcher {
   /** When each resource entered its current state (ms epoch), for duration calc. */
   private stateSince = new Map<string, number>();
   private queue: Promise<void> = Promise.resolve();
-  private minIntervalMs = 2_000;
+  private minIntervalMs = 100;
   private lastSendAt = 0;
 
   /** Rate-limited queue: ensures messages are sent sequentially with a minimum gap. */
