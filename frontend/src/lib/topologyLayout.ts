@@ -1,46 +1,25 @@
 /**
- * Hierarchical Topology Layout Engine
+ * Hierarchical Topology Layout Engine for Network Map
  *
- * Computes node positions, group bounding boxes, cable geometry, and
- * sizing metrics for a left-to-right infrastructure diagram.
+ * Computes node positions, cable paths, and sizing metrics for a clean,
+ * production NOC infrastructure map layout.
  *
- * Hierarchy (BFS from Internet):
- *   Internet → Gateway → Switch → Physical Hosts → VMs/LXCs → Docker → Containers
- *
- * Key design: the layout EXPANDS to fit content rather than compressing
- * content to fit the viewport. The SVG viewBox adapts to the layout size.
+ * Flow: Internet → Gateway/Firewall → Hypervisor/Hosts → VMs/LXCs/Docker → Containers
  */
 
 import type { NetworkLink, NetworkNode } from '@/types';
 
 export interface LayoutMetrics {
-  nodeSize: number;
+  nodeWidth: number;
+  nodeHeight: number;
   iconSize: number;
-  labelSize: number;
-  ipSize: number;
-  labelMaxWidth: number;
-  split: number;
-  labelVisible: boolean;
-  ipVisible: boolean;
+  fontSize: number;
 }
 
 export interface LayoutedNode {
   id: string;
   x: number;
   y: number;
-  depth: number;
-  siblingIndex: number;
-  siblings: number;
-  truncated: boolean;
-}
-
-export interface GroupBounds {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
   depth: number;
 }
 
@@ -51,9 +30,8 @@ export interface CableLayout {
   y1: number;
   x2: number;
   y2: number;
-  hx: number;
-  cIn: [number, number, number, number];
-  cOut: [number, number, number, number];
+  mx: number;
+  my: number;
 }
 
 export interface TopologyLayout {
@@ -62,7 +40,6 @@ export interface TopologyLayout {
   metrics: LayoutMetrics;
   nodes: Map<string, LayoutedNode>;
   cables: Map<string, CableLayout>;
-  groups: GroupBounds[];
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -73,294 +50,175 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-function estTextWidth(text: string, fontSize: number): number {
-  return text.length * fontSize * 0.55;
+/** Standard depth levels based on device role/type */
+function getDefaultDepth(type: NetworkNode['type']): number {
+  switch (type) {
+    case 'internet': return 0;
+    case 'gateway':
+    case 'firewall': return 1;
+    case 'hypervisor':
+    case 'physical':
+    case 'switch':
+    case 'bridge':
+    case 'nas':
+    case 'storage': return 2;
+    case 'vm':
+    case 'lxc':
+    case 'docker': return 3;
+    case 'container':
+    case 'podman':
+    case 'kubernetes': default: return 4;
+  }
 }
 
-/** Fixed spacing constants — these determine the layout density */
-const COLUMN_GAP = 220;       // horizontal gap between hierarchy levels
-const ROW_GAP = 120;          // vertical gap between siblings
-const SUBTREE_GAP = 140;      // gap between different parent subtrees
-const PADDING = 60;           // outer padding
-const NODE_SIZE = 48;         // fixed node box size
-const LABEL_BLOCK = 28;       // space below node for label + IP
-const GROUP_PAD = 20;         // padding inside group bounding box
-const GROUP_HEADER = 18;      // extra height for group label
-
-function labelSizeFor(): number { return 11; }
-function ipSizeFor(): number { return 9; }
-
-export function labelVisible(_nodeSize: number): boolean { return true; }
-export function ipVisible(_nodeSize: number): boolean { return true; }
-
-export function rowSpanOf(_nodeSize: number): number {
-  return NODE_SIZE + LABEL_BLOCK;
-}
+const COLUMN_SPACING = 240; // horizontal gap between columns
+const ROW_SPACING = 100;    // vertical gap between items in same column
+const PADDING_X = 80;
+const PADDING_Y = 80;
+const NODE_WIDTH = 140;
+const NODE_HEIGHT = 60;
 
 export function computeTopologyLayout(
   nodes: NetworkNode[],
   links: NetworkLink[],
 ): TopologyLayout {
-  const empty = (): TopologyLayout => ({
-    width: 1,
-    height: 1,
-    metrics: {
-      nodeSize: NODE_SIZE,
-      iconSize: 22,
-      labelSize: 11,
-      ipSize: 9,
-      labelMaxWidth: 120,
-      split: 7,
-      labelVisible: true,
-      ipVisible: true,
-    },
-    nodes: new Map(),
-    cables: new Map(),
-    groups: [],
+  if (nodes.length === 0) {
+    return {
+      width: 1,
+      height: 1,
+      metrics: { nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT, iconSize: 20, fontSize: 11 },
+      nodes: new Map(),
+      cables: new Map(),
+    };
+  }
+
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+  // Build children map & parent map
+  const childrenMap = new Map<string, string[]>();
+  const parentMap = new Map<string, string>();
+
+  for (const n of nodes) {
+    if (n.parentId && nodeMap.has(n.parentId) && n.parentId !== n.id) {
+      parentMap.set(n.id, n.parentId);
+      if (!childrenMap.has(n.parentId)) childrenMap.set(n.parentId, []);
+      childrenMap.get(n.parentId)!.push(n.id);
+    }
+  }
+
+  // Also infer parent-child links from links if parentId wasn't explicit
+  for (const link of links) {
+    if (!nodeMap.has(link.source) || !nodeMap.has(link.target)) continue;
+    const src = nodeMap.get(link.source)!;
+    const tgt = nodeMap.get(link.target)!;
+    const srcDefault = getDefaultDepth(src.type);
+    const tgtDefault = getDefaultDepth(tgt.type);
+
+    if (srcDefault < tgtDefault && !parentMap.has(tgt.id)) {
+      parentMap.set(tgt.id, src.id);
+      if (!childrenMap.has(src.id)) childrenMap.set(src.id, []);
+      if (!childrenMap.get(src.id)!.includes(tgt.id)) {
+        childrenMap.get(src.id)!.push(tgt.id);
+      }
+    }
+  }
+
+  // Calculate depths for each node
+  const depths = new Map<string, number>();
+  const calculateDepth = (node: NetworkNode): number => {
+    if (depths.has(node.id)) return depths.get(node.id)!;
+    
+    let d = getDefaultDepth(node.type);
+    const pId = parentMap.get(node.id);
+    if (pId && nodeMap.has(pId)) {
+      const pDepth = calculateDepth(nodeMap.get(pId)!);
+      d = Math.max(d, pDepth + 1);
+    }
+    depths.set(node.id, d);
+    return d;
+  };
+
+  for (const n of nodes) calculateDepth(n);
+
+  // Group nodes by depth column
+  const columns = new Map<number, NetworkNode[]>();
+  for (const n of nodes) {
+    const d = depths.get(n.id) ?? 0;
+    if (!columns.has(d)) columns.set(d, []);
+    columns.get(d)!.push(n);
+  }
+
+  // Sort depth columns
+  const sortedDepths = [...columns.keys()].sort((a, b) => a - b);
+
+  // Assign X and Y coordinates
+  const positions = new Map<string, LayoutedNode>();
+  
+  // Find maximum column height to center shorter columns vertically
+  let maxColHeight = 0;
+  for (const d of sortedDepths) {
+    const colNodes = columns.get(d) ?? [];
+    const colH = colNodes.length * ROW_SPACING;
+    if (colH > maxColHeight) maxColHeight = colH;
+  }
+  maxColHeight = Math.max(maxColHeight, ROW_SPACING * 3);
+
+  // Layout each column
+  sortedDepths.forEach((d, colIndex) => {
+    const colNodes = columns.get(d) ?? [];
+    const count = colNodes.length;
+    const totalColH = (count - 1) * ROW_SPACING;
+    const startY = PADDING_Y + (maxColHeight - totalColH) / 2;
+
+    colNodes.forEach((n, idx) => {
+      const x = PADDING_X + colIndex * COLUMN_SPACING;
+      const y = startY + idx * ROW_SPACING;
+      positions.set(n.id, {
+        id: n.id,
+        x: round1(x),
+        y: round1(y),
+        depth: d,
+      });
+    });
   });
 
-  if (nodes.length === 0) return empty();
-
-  // ---- 1. Build adjacency and BFS hierarchy from Internet root ----
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
-  const adj = new Map<string, string[]>();
-  for (const link of links) {
-    if (!nodeById.has(link.source) || !nodeById.has(link.target)) continue;
-    if (link.source === link.target) continue;
-    if (!adj.has(link.source)) adj.set(link.source, []);
-    if (!adj.has(link.target)) adj.set(link.target, []);
-    adj.get(link.source)!.push(link.target);
-    adj.get(link.target)!.push(link.source);
-  }
-
-  const parent = new Map<string, string>();
-  const depth = new Map<string, number>();
-  const children = new Map<string, string[]>();
-  const seen = new Set<string>();
-  const roots: string[] = [];
-
-  const bfsFrom = (start: string, depthBase: number) => {
-    seen.add(start);
-    depth.set(start, depthBase);
-    parent.set(start, start);
-    const queue: string[] = [start];
-    while (queue.length > 0) {
-      const cur = queue.shift()!;
-      for (const nb of adj.get(cur) ?? []) {
-        if (seen.has(nb)) continue;
-        seen.add(nb);
-        parent.set(nb, cur);
-        depth.set(nb, (depth.get(cur) ?? 0) + 1);
-        if (!children.has(cur)) children.set(cur, []);
-        children.get(cur)!.push(nb);
-        queue.push(nb);
-      }
-    }
-  };
-
-  const preferred = nodes.find((n) => n.type === 'internet');
-  if (preferred) {
-    roots.push(preferred.id);
-    bfsFrom(preferred.id, 0);
-  }
-  for (const n of nodes) {
-    if (!seen.has(n.id)) {
-      roots.push(n.id);
-      bfsFrom(n.id, 0);
-    }
-  }
-
-  // ---- 2. Compute subtree sizes (leaf-count weighted) ----
-  const leafCount = new Map<string, number>();
-  const countLeaves = (id: string): number => {
-    const kids = children.get(id) ?? [];
-    if (kids.length === 0) {
-      leafCount.set(id, 1);
-      return 1;
-    }
-    let total = 0;
-    for (const kid of kids) total += countLeaves(kid);
-    leafCount.set(id, total);
-    return total;
-  };
-  for (const id of seen) countLeaves(id);
-
-  // ---- 3. Compute max depth for column spacing ----
-  let maxDepth = 0;
-  for (const d of depth.values()) if (d > maxDepth) maxDepth = d;
-
-  // ---- 4. Assign X positions (column-based) ----
-  const columnX = (d: number): number => PADDING + d * COLUMN_GAP;
-
-  // ---- 5. Assign Y positions (leaf-weighted interval splitting) ----
-  const rowSpan = ROW_GAP;
-  const positions = new Map<string, LayoutedNode>();
-
-  const assignY = (id: string, top: number, bottom: number, d: number): void => {
-    const kids = children.get(id) ?? [];
-    const totalLeaves = leafCount.get(id) ?? 1;
-
-    positions.set(id, {
-      id,
-      x: columnX(d),
-      y: round1((top + bottom) / 2),
-      depth: d,
-      siblingIndex: -1,
-      siblings: 1,
-      truncated: false,
-    });
-
-    if (kids.length === 0) return;
-
-    // Compute gap between children
-    const totalGap = Math.max(0, kids.length - 1) * (rowSpan * 0.5);
-    const available = Math.max(0, (bottom - top) - totalGap);
-
-    let cursor = top;
-    for (let i = 0; i < kids.length; i++) {
-      if (i > 0) cursor += rowSpan * 0.5;
-      const kidLeaves = leafCount.get(kids[i]) ?? 1;
-      const span = (available * kidLeaves) / totalLeaves;
-      assignY(kids[i], cursor, cursor + span, d + 1);
-      cursor += span;
-    }
-  };
-
-  // Find root subtrees and assign vertical space
-  const rootTotalLeaves = roots.reduce((a, r) => a + (leafCount.get(r) ?? 1), 0);
-  const totalHeight = Math.max(
-    rootTotalLeaves * rowSpan + Math.max(0, roots.length - 1) * SUBTREE_GAP,
-    rowSpan * 3,
-  );
-
-  let cursorY = PADDING;
-  for (let i = 0; i < roots.length; i++) {
-    if (i > 0) cursorY += SUBTREE_GAP;
-    const rootLeaves = leafCount.get(roots[i]) ?? 1;
-    const span = (totalHeight * rootLeaves) / rootTotalLeaves;
-    assignY(roots[i], cursorY, cursorY + span, depth.get(roots[i]) ?? 0);
-    cursorY += span;
-  }
-
-  // ---- 6. Set sibling indices ----
-  for (const [, kids] of children) {
-    for (let i = 0; i < kids.length; i++) {
-      const p = positions.get(kids[i]);
-      if (p) {
-        p.siblingIndex = i;
-        p.siblings = kids.length;
-      }
-    }
-  }
-
-  // ---- 7. Compute bounding box ----
+  // Calculate total layout width and height
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  const halfNode = NODE_SIZE / 2;
   for (const p of positions.values()) {
-    minX = Math.min(minX, p.x - halfNode);
-    maxX = Math.max(maxX, p.x + halfNode);
-    minY = Math.min(minY, p.y - rowSpan / 2);
-    maxY = Math.max(maxY, p.y + rowSpan / 2);
+    minX = Math.min(minX, p.x - NODE_WIDTH / 2);
+    maxX = Math.max(maxX, p.x + NODE_WIDTH / 2);
+    minY = Math.min(minY, p.y - NODE_HEIGHT / 2);
+    maxY = Math.max(maxY, p.y + NODE_HEIGHT / 2);
   }
 
-  const layoutW = Math.max(1, maxX - minX + PADDING * 2);
-  const layoutH = Math.max(1, maxY - minY + PADDING * 2);
-  const offsetX = PADDING - minX;
-  const offsetY = PADDING - minY;
+  const layoutW = Math.max(100, maxX - minX + PADDING_X * 2);
+  const layoutH = Math.max(100, maxY - minY + PADDING_Y * 2);
 
-  // Shift all positions
+  // Center alignment offset
+  const offsetX = PADDING_X - minX;
+  const offsetY = PADDING_Y - minY;
+
   for (const p of positions.values()) {
     p.x = round1(p.x + offsetX);
     p.y = round1(p.y + offsetY);
   }
 
-  // ---- 8. Group bounding boxes ----
-  const groups: GroupBounds[] = [];
-  const groupEntries: Array<{ id: string; depth: number; childIds: Set<string> }> = [];
-  for (const [pid, kids] of children) {
-    if (kids.length === 0) continue;
-    const allDesc = new Set<string>();
-    const collect = (nid: string) => {
-      allDesc.add(nid);
-      for (const k of children.get(nid) ?? []) collect(k);
-    };
-    for (const k of kids) collect(k);
-    groupEntries.push({ id: pid, depth: depth.get(pid) ?? 0, childIds: allDesc });
-  }
-  groupEntries.sort((a, b) => b.depth - a.depth);
-
-  for (const entry of groupEntries) {
-    const nodesInGroup = [...entry.childIds].map((id) => positions.get(id)).filter(Boolean) as LayoutedNode[];
-    if (nodesInGroup.length === 0) continue;
-
-    let gMinX = Infinity, gMaxX = -Infinity, gMinY = Infinity, gMaxY = -Infinity;
-    for (const n of nodesInGroup) {
-      gMinX = Math.min(gMinX, n.x - halfNode);
-      gMaxX = Math.max(gMaxX, n.x + halfNode);
-      gMinY = Math.min(gMinY, n.y - rowSpan / 2);
-      gMaxY = Math.max(gMaxY, n.y + rowSpan / 2);
-    }
-
-    const parentNode = nodeById.get(entry.id);
-    groups.push({
-      id: entry.id,
-      label: parentNode?.label ?? entry.id,
-      x: round1(gMinX - GROUP_PAD),
-      y: round1(gMinY - GROUP_PAD - GROUP_HEADER),
-      width: round1(gMaxX - gMinX + GROUP_PAD * 2),
-      height: round1(gMaxY - gMinY + GROUP_PAD * 2 + GROUP_HEADER),
-      depth: entry.depth,
-    });
-  }
-  groups.sort((a, b) => a.depth - b.depth);
-
-  // ---- 9. Metrics ----
-  const metrics: LayoutMetrics = {
-    nodeSize: NODE_SIZE,
-    iconSize: 22,
-    labelSize: labelSizeFor(),
-    ipSize: ipSizeFor(),
-    labelMaxWidth: 120,
-    split: 7,
-    labelVisible: true,
-    ipVisible: true,
-  };
-
-  for (const p of positions.values()) {
-    const node = nodeById.get(p.id);
-    if (node && estTextWidth(node.label, metrics.labelSize) > metrics.labelMaxWidth) {
-      p.truncated = true;
-    }
-  }
-
-  // ---- 10. Cables (cubic Bezier with per-branch fan-out, twin arcs) ----
+  // Calculate cable paths
   const cables = new Map<string, CableLayout>();
   for (const link of links) {
     const a = positions.get(link.source);
     const b = positions.get(link.target);
     if (!a || !b) continue;
 
-    const hx = clamp(Math.abs(a.x - b.x) * 0.4, 30, 120);
-    const split = metrics.split;
+    const dx = Math.abs(b.x - a.x);
+    const hx = clamp(dx * 0.45, 40, 140);
 
-    const parentOf = (id: string): string | undefined => {
-      const par = parent.get(id);
-      return par === id ? undefined : par;
-    };
-    const fanAt = (side: LayoutedNode): number => {
-      const par = parentOf(side.id);
-      if (par === undefined) return 0;
-      const kids = children.get(par) ?? [];
-      const idx = kids.indexOf(side.id);
-      if (idx < 0) return 0;
-      const n = Math.max(1, kids.length);
-      return clamp((idx - (n - 1) / 2) * 18, -40, 40);
-    };
-    const srcFan = fanAt(a);
-    const dstFan = fanAt(b);
+    const dIn = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
+    const dOut = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
 
-    const dIn = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${round1(a.y + srcFan - split)}, ${round1(b.x - hx)} ${round1(b.y + dstFan - split)}, ${b.x} ${b.y}`;
-    const dOut = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${round1(a.y + srcFan + split)}, ${round1(b.x - hx)} ${round1(b.y + dstFan + split)}, ${b.x} ${b.y}`;
+    // Midpoint for cable tooltips / click
+    const mx = round1((a.x + b.x) / 2);
+    const my = round1((a.y + b.y) / 2);
 
     cables.set(link.id, {
       dIn,
@@ -369,11 +227,16 @@ export function computeTopologyLayout(
       y1: a.y,
       x2: b.x,
       y2: b.y,
-      hx,
-      cIn: [round1(a.x + hx), round1(a.y + srcFan - split), round1(b.x - hx), round1(b.y + dstFan - split)],
-      cOut: [round1(a.x + hx), round1(a.y + srcFan + split), round1(b.x - hx), round1(b.y + dstFan + split)],
+      mx,
+      my,
     });
   }
 
-  return { width: layoutW, height: layoutH, metrics, nodes: positions, cables, groups };
+  return {
+    width: layoutW,
+    height: layoutH,
+    metrics: { nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT, iconSize: 20, fontSize: 11 },
+    nodes: positions,
+    cables,
+  };
 }
