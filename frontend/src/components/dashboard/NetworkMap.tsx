@@ -67,15 +67,13 @@ export function NetworkMap() {
 
   const [hoveredNode, setHoveredNode] = useState<NetworkNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
+  const [hoveredLink, setHoveredLink] = useState<NetworkLink | null>(null);
+  const [selectedLink, setSelectedLink] = useState<NetworkLink | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
-
-  // Node dragging state — stores user-positioned node overrides
-  const [userPositions, setUserPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
-  const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
 
   const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.25, 3)), []);
   const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.25, 0.2)), []);
@@ -85,6 +83,9 @@ export function NetworkMap() {
     if (e.button !== 0) return;
     isPanning.current = true;
     panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    setSelectedNode(null);
+    setSelectedLink(null);
+    setHoveredLink(null);
     e.currentTarget.setPointerCapture(e.pointerId);
   }, [pan]);
 
@@ -96,27 +97,6 @@ export function NetworkMap() {
   }, []);
 
   const onPointerUp = useCallback(() => { isPanning.current = false; }, []);
-
-  const handleNodePointerDown = useCallback((e: React.PointerEvent, nodeId: string, origX: number, origY: number) => {
-    e.stopPropagation();
-    dragRef.current = { id: nodeId, startX: e.clientX, startY: e.clientY, origX, origY };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
-
-  const handleNodePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragRef.current) return;
-    const dx = (e.clientX - dragRef.current.startX) / zoom;
-    const dy = (e.clientY - dragRef.current.startY) / zoom;
-    const newX = dragRef.current.origX + dx;
-    const newY = dragRef.current.origY + dy;
-    setUserPositions((prev) => {
-      const next = new Map(prev);
-      next.set(dragRef.current!.id, { x: newX, y: newY });
-      return next;
-    });
-  }, [zoom]);
-
-  const handleNodePointerUp = useCallback(() => { dragRef.current = null; }, []);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -196,16 +176,8 @@ export function NetworkMap() {
     groups: [],
   };
 
-  // Merge auto-layout positions with user-dragged overrides
-  const finalPositions = useMemo(() => {
-    if (userPositions.size === 0) return layoutNodes;
-    const result = new Map(layoutNodes);
-    for (const [id, pos] of userPositions) {
-      const base = result.get(id);
-      if (base) result.set(id, { ...base, x: pos.x, y: pos.y });
-    }
-    return result;
-  }, [layoutNodes, userPositions]);
+  // Layout positions are the only positions (read-only topology)
+  const finalPositions = layoutNodes;
 
   const external = useMemo<ExternalState>(() => {
     const wan = links.find((l) => l.source === 'internet' || l.target === 'internet');
@@ -228,7 +200,8 @@ export function NetworkMap() {
       ? totalTx.toLocaleString(undefined, { maximumFractionDigits: 0 })
       : totalTx.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
-  const selectNode = (node: NetworkNode) => { setSelectedNode(node); };
+  const selectNode = (node: NetworkNode) => { setSelectedNode(node); setSelectedLink(null); };
+  const selectLink = (link: NetworkLink) => { setSelectedLink(link); setSelectedNode(null); };
 
   return (
     <Card className="h-full">
@@ -335,6 +308,10 @@ export function NetworkMap() {
                   link={link}
                   cable={cab}
                   index={i}
+                  hovered={hoveredLink?.id === link.id}
+                  onHover={() => setHoveredLink(link)}
+                  onUnhover={() => setHoveredLink(null)}
+                  onClick={() => selectLink(link)}
                 />
               );
             })}
@@ -343,7 +320,7 @@ export function NetworkMap() {
             {layout && <TrafficLayer events={trafficEvents} layout={layout} endpointMap={endpointMap} />}
           </svg>
 
-          {/* Hover tooltip */}
+          {/* Hover tooltip — node */}
           {hoveredNode && (
             <div
               className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
@@ -358,9 +335,61 @@ export function NetworkMap() {
             </div>
           )}
 
+          {/* Hover tooltip — link */}
+          {hoveredLink && (
+            (() => {
+              const cab = cables.get(hoveredLink.id);
+              if (!cab) return null;
+              const mx = (cab.x1 + cab.x2) / 2;
+              const my = (cab.y1 + cab.y2) / 2;
+              const srcNode = nodeById.get(hoveredLink.source);
+              const tgtNode = nodeById.get(hoveredLink.target);
+              const srcLabel = srcNode?.label ?? hoveredLink.source;
+              const tgtLabel = tgtNode?.label ?? hoveredLink.target;
+              const st = normalizeStatus(hoveredLink.status);
+              return (
+                <div
+                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
+                  style={{ left: mx, top: my }}
+                >
+                  <div className="w-[min(240px,calc(100vw-3rem))] rounded-lg border border-surface-border bg-black/85 p-2.5 shadow-xl backdrop-blur-sm">
+                    <div className="text-[11px] font-semibold text-text-primary">
+                      {srcLabel} → {tgtLabel}
+                    </div>
+                    <div className="mt-1 space-y-0.5 text-[10px] text-text-secondary">
+                      <div className="flex items-center justify-between">
+                        <span>Status</span>
+                        <span style={{ color: LINK_COLOR[st] }}>{st.charAt(0).toUpperCase() + st.slice(1)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Throughput</span>
+                        <span className="text-text-primary">{hoveredLink.throughputMbps.toFixed(1)} Mbps</span>
+                      </div>
+                      {hoveredLink.latencyMs > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>Latency</span>
+                          <span className="text-text-primary">{hoveredLink.latencyMs.toFixed(1)} ms</span>
+                        </div>
+                      )}
+                      {hoveredLink.packetLoss > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>Packet loss</span>
+                          <span className="text-text-primary">{(hoveredLink.packetLoss * 100).toFixed(1)}%</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
+          )}
+
           {/* Detail panel (click) */}
           {selectedNode && (
-            <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-72">
+            <div
+              className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-72"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-text-primary">
                   Device details
@@ -374,6 +403,61 @@ export function NetworkMap() {
                 </button>
               </div>
               <NodeDetail node={selectedNode} nodeById={nodeById} nodes={nodes} links={links} collapsedGroups={collapsedGroups} toggleCollapse={toggleCollapse} />
+            </div>
+          )}
+
+          {/* Link detail panel (click on cable) */}
+          {selectedLink && (
+            <div
+              className="absolute inset-x-3 bottom-3 z-20 rounded-xl border border-surface-border bg-black/85 p-3 shadow-xl backdrop-blur-sm sm:inset-x-auto sm:right-3 sm:w-72"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-text-primary">
+                  Connection details
+                </span>
+                <button
+                  onClick={() => { setSelectedLink(null); }}
+                  className="text-text-muted transition-colors hover:text-text-primary cursor-pointer"
+                  aria-label="Close details"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="space-y-1.5 text-[11px] text-text-secondary">
+                <div className="flex items-center justify-between">
+                  <span>Source</span>
+                  <span className="text-text-primary">{nodeById.get(selectedLink.source)?.label ?? selectedLink.source}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Target</span>
+                  <span className="text-text-primary">{nodeById.get(selectedLink.target)?.label ?? selectedLink.target}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Status</span>
+                  <span style={{ color: LINK_COLOR[normalizeStatus(selectedLink.status)] }}>
+                    {normalizeStatus(selectedLink.status).charAt(0).toUpperCase() + normalizeStatus(selectedLink.status).slice(1)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Throughput</span>
+                  <span className="text-text-primary">{selectedLink.throughputMbps.toFixed(1)} Mbps</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Latency</span>
+                  <span className="text-text-primary">{selectedLink.latencyMs.toFixed(1)} ms</span>
+                </div>
+                {selectedLink.jitterMs > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span>Jitter</span>
+                    <span className="text-text-primary">{selectedLink.jitterMs.toFixed(1)} ms</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span>Packet loss</span>
+                  <span className="text-text-primary">{(selectedLink.packetLoss * 100).toFixed(1)}%</span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -396,10 +480,6 @@ export function NetworkMap() {
                   key={originalNode.id}
                   className="absolute"
                   style={{ left: p.x, top: p.y, transform: 'translate(-50%, -50%)' }}
-                  onPointerDown={(e) => handleNodePointerDown(e, originalNode.id, p.x, p.y)}
-                  onPointerMove={handleNodePointerMove}
-                  onPointerUp={handleNodePointerUp}
-                  onPointerCancel={handleNodePointerUp}
                 >
                   <motion.button
                     type="button"
@@ -734,10 +814,15 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 function LinkLayer({
   link, cable, index,
+  hovered, onHover, onUnhover, onClick,
 }: {
   link: NetworkLink;
   cable: { dIn: string; dOut: string };
   index: number;
+  hovered?: boolean;
+  onHover?: () => void;
+  onUnhover?: () => void;
+  onClick?: () => void;
 }) {
   const inCurve = cable.dIn;
   const outCurve = cable.dOut;
@@ -767,6 +852,18 @@ function LinkLayer({
           <path d={outCurve} fill="none" stroke={outColor} strokeWidth="2.5" pathLength={100} strokeDasharray="5 95" className="net-signal net-signal-warning" style={{ filter: `drop-shadow(0 0 3px ${outColor})` }} />
         </>
       )}
+      {/* Invisible wide hit-path for hover/click (observational only) */}
+      <path
+        d={inCurve}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={16}
+        strokeLinecap="round"
+        style={{ cursor: 'pointer' }}
+        onMouseEnter={onHover}
+        onMouseLeave={onUnhover}
+        onClick={onClick}
+      />
     </g>
   );
 }
