@@ -412,8 +412,10 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?:
   const serverId = hasContainers ? `docker-${agent.host_name}` : `agent-${agent.host_id}`;
 
   // Don't show Docker bridge IPs (172.17.x.x etc.) — they're not routable on the LAN.
-  // The real host IP will be recovered by enrichServerWithAgent or parent_ip matching.
-  const agentIp = isDockerBridgeIp(agent.ip) ? '' : agent.ip;
+  // Fall back to parent_ip which is at least on the correct subnet.
+  const agentIp = (isDockerBridgeIp(agent.ip) && agent.parent_ip && isValidIp(agent.parent_ip))
+    ? agent.parent_ip
+    : agent.ip;
 
   return {
     spec: {
@@ -568,11 +570,18 @@ export function reconcileServers(
       ? agentParentIp
       : agentIp;
 
+    // When parent_ip exactly matches a Proxmox node, that IS the parent by definition.
+    // Otherwise fall back to subnet matching (skip same-IP to avoid self-matching).
     if (effectiveIp && isValidIp(effectiveIp)) {
       for (const server of proxmoxServers) {
         if (!server.spec.ip) continue;
         if (server.spec.role !== 'hypervisor') continue;
-        if (sameSubnet(effectiveIp, server.spec.ip) && effectiveIp !== server.spec.ip) {
+        if (effectiveIp === server.spec.ip) {
+          parentTempC = server.tempC || 0;
+          parentNodeId = server.spec.id;
+          break;
+        }
+        if (sameSubnet(effectiveIp, server.spec.ip)) {
           parentTempC = server.tempC || 0;
           parentNodeId = server.spec.id;
           break;
