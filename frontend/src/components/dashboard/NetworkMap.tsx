@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -9,13 +9,8 @@ import {
   Cpu,
   Thermometer,
   HardDrive,
-  Activity,
   ArrowUpRight,
-  Server,
-  Box,
   Layers,
-  Clock,
-  ShieldAlert,
 } from 'lucide-react';
 import { useNetwork } from '@/hooks/useQueries';
 import { useTelemetryStore, selectServers } from '@/store/telemetry';
@@ -25,10 +20,14 @@ import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import type { NetworkNode, NetworkLink, ServerRuntime } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { cn, formatMbps } from '@/lib/utils';
-import { computeTopologyLayout, type TopologyLayout } from '@/lib/topologyLayout';
+import { computeTopologyLayout, type TopologyLayout, type CableLayout } from '@/lib/topologyLayout';
 
 const IN_COLOR = '#22D3EE';
 const OUT_COLOR = 'var(--accent)';
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v));
+}
 
 const STATUS_COLOR = {
   online: '#10B981',
@@ -94,10 +93,6 @@ export function NetworkMap() {
   const [hoveredLink, setHoveredLink] = useState<NetworkLink | null>(null);
   const [selectedLink, setSelectedLink] = useState<NetworkLink | null>(null);
 
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const isPanning = useRef(false);
-  const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
-
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
   // Lookup full telemetry ServerRuntime for a node
@@ -123,53 +118,17 @@ export function NetworkMap() {
 
   const { width: layoutW, height: layoutH, nodes: finalPositions, cables } = layout;
 
-  // ── Automatic presentation fit zoom ────────────────────────────
+  // ── Automatic centering scale ──────────────────────────────────
   const zoom = useMemo(() => {
     if (containerSize.width === 0 || containerSize.height === 0 || layoutW === 0 || layoutH === 0) {
       return 1;
     }
-    const pad = 64;
-    const scaleX = (containerSize.width - pad) / layoutW;
-    const scaleY = (containerSize.height - pad) / layoutH;
-    return Math.min(Math.max(Math.min(scaleX, scaleY), 0.25), 1.25);
+    const padX = 60;
+    const padY = 50;
+    const scaleX = (containerSize.width - padX * 2) / layoutW;
+    const scaleY = (containerSize.height - padY * 2) / layoutH;
+    return Math.min(Math.max(Math.min(scaleX, scaleY), 0.25), 1.15);
   }, [containerSize, layoutW, layoutH]);
-
-  // Auto-center pan on node or data changes
-  useEffect(() => {
-    setPan({ x: 0, y: 0 });
-  }, [nodes.length, links.length]);
-
-  // ── Layout-to-screen coordinate converter (for tooltips) ────────
-  const layoutToScreen = useCallback(
-    (lx: number, ly: number) => {
-      const cx = containerSize.width / 2;
-      const cy = containerSize.height / 2;
-      return {
-        x: cx + (lx - layoutW / 2) * zoom + pan.x,
-        y: cy + (ly - layoutH / 2) * zoom + pan.y,
-      };
-    },
-    [containerSize, layoutW, layoutH, zoom, pan],
-  );
-
-  // ── Drag pan handlers ──────────────────────────────────────────
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    isPanning.current = true;
-    panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }, [pan]);
-
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isPanning.current) return;
-    const dx = e.clientX - panStart.current.x;
-    const dy = e.clientY - panStart.current.y;
-    setPan({ x: panStart.current.panX + dx, y: panStart.current.panY + dy });
-  }, []);
-
-  const onPointerUp = useCallback(() => {
-    isPanning.current = false;
-  }, []);
 
   const totalTx = useMemo(() => links.reduce((a, l) => a + l.throughputMbps, 0), [links]);
 
@@ -197,15 +156,10 @@ export function NetworkMap() {
         <div
           ref={containerRef}
           className="relative w-full overflow-hidden"
-          style={{ height: 500, cursor: isPanning.current ? 'grabbing' : 'grab' }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          style={{ height: 500 }}
         >
           {/* ═══════════════════════════════════════════════════════════
-              UNIFIED CANVAS TRANSFORM CONTAINER
-              Nodes and cables scale and center together seamlessly.
+              PERFECTLY CENTERED TOPOLOGY CANVAS
               ═══════════════════════════════════════════════════════════ */}
           {nodes.length > 0 && (
             <div
@@ -213,157 +167,155 @@ export function NetworkMap() {
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
-                transform: 'translate(-50%, -50%)',
+                transform: `translate(-50%, -50%) scale(${zoom})`,
+                transformOrigin: 'center center',
               }}
             >
               <div
                 style={{
-                  transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-                  transformOrigin: '0 0',
+                  position: 'relative',
+                  width: layoutW,
+                  height: layoutH,
                 }}
               >
-                <div
-                  style={{
-                    position: 'relative',
-                    width: layoutW,
-                    height: layoutH,
-                    left: -layoutW / 2,
-                    top: -layoutH / 2,
-                  }}
+                {/* ── SVG Layer (Cables & Light Pulses) ─────────────── */}
+                <svg
+                  width={layoutW}
+                  height={layoutH}
+                  style={{ position: 'absolute', top: 0, left: 0 }}
                 >
-                  {/* ── SVG Layer (Cables) ─────────────────────────── */}
-                  <svg
-                    width={layoutW}
-                    height={layoutH}
-                    style={{ position: 'absolute', top: 0, left: 0 }}
-                  >
-                    <defs>
-                      <style>{`
-                        @keyframes net-cable-pulse {
-                          0%, 100% { opacity: 1; }
-                          50% { opacity: 0.35; }
-                        }
-                        .net-base { transition: stroke 400ms ease, stroke-opacity 400ms ease; }
-                        .net-cable-pulse { animation: net-cable-pulse 4s ease-in-out infinite; }
-                        @media (prefers-reduced-motion: reduce) {
-                          .net-cable-pulse { animation: none !important; }
-                        }
-                      `}</style>
-                    </defs>
+                  <defs>
+                    <style>{`
+                      @keyframes net-cable-pulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0.35; }
+                      }
+                      .net-base { transition: stroke 400ms ease, stroke-opacity 400ms ease; }
+                      .net-cable-pulse { animation: net-cable-pulse 4s ease-in-out infinite; }
+                    `}</style>
+                  </defs>
 
-                    {/* Connection Cables */}
-                    {links.map((link) => {
-                      const cab = cables.get(link.id);
-                      if (!cab) return null;
-                      const isHovered = hoveredLink?.id === link.id;
-                      const isSelected = selectedLink?.id === link.id;
-
-                      return (
-                        <CableLayer
-                          key={link.id}
-                          link={link}
-                          cable={cab}
-                          hovered={isHovered}
-                          selected={isSelected}
-                          onHover={() => setHoveredLink(link)}
-                          onUnhover={() => setHoveredLink((h) => (h?.id === link.id ? null : h))}
-                          onClick={() => {
-                            setSelectedLink(link);
-                            setSelectedNode(null);
-                          }}
-                        />
-                      );
-                    })}
-                  </svg>
-
-                  {/* ── HTML Layer (Device Cards) ──────────────────── */}
-                  {nodes.map((node) => {
-                    const p = finalPositions.get(node.id);
-                    if (!p) return null;
-
-                    const isHovered = hoveredNode?.id === node.id;
-                    const isSelected = selectedNode?.id === node.id;
-                    const statusColor = STATUS_COLOR[node.status] ?? STATUS_COLOR.online;
-                    const IconComponent = INFRA_ICON_COMPONENTS[node.type];
-                    const server = serverByNodeId.get(node.id);
+                  {/* Connection Cables */}
+                  {links.map((link) => {
+                    const cab = cables.get(link.id);
+                    if (!cab) return null;
+                    const isHovered = hoveredLink?.id === link.id;
+                    const isSelected = selectedLink?.id === link.id;
 
                     return (
-                      <div
-                        key={node.id}
-                        className="absolute"
-                        style={{ left: p.x, top: p.y, transform: 'translate(-50%, -50%)' }}
-                      >
-                        <motion.button
-                          type="button"
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.3, ease: 'easeOut' }}
-                          className={cn(
-                            'group flex cursor-pointer items-center gap-2.5 rounded-xl border bg-[#111625]/90 px-3 py-2 text-left shadow-lg backdrop-blur-md transition-all duration-200 select-none outline-none',
-                            isHovered || isSelected
-                              ? 'border-accent ring-2 ring-accent/30 shadow-accent/20 translate-y-[-2px]'
-                              : 'border-surface-border hover:border-surface-border/80 hover:bg-[#161C2E]',
-                          )}
-                          style={{
-                            boxShadow: isHovered || isSelected ? `0 0 20px ${statusColor}33` : undefined,
-                          }}
-                          onMouseEnter={() => setHoveredNode(node)}
-                          onMouseLeave={() => setHoveredNode((h) => (h?.id === node.id ? null : h))}
-                          onClick={() => {
-                            setSelectedNode(node);
-                            setSelectedLink(null);
-                          }}
-                        >
-                          {/* Node Icon Box */}
-                          <div
-                            className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-black/40"
-                            style={{ borderColor: `${statusColor}44` }}
-                          >
-                            {IconComponent ? (
-                              <IconComponent size={20} />
-                            ) : (
-                              <span className="text-base">{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>
-                            )}
-                            {/* Status Indicator Dot */}
-                            <span
-                              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#090C15]"
-                              style={{ backgroundColor: statusColor }}
-                            />
-                          </div>
-
-                          {/* Node Text Label & IP */}
-                          <div className="min-w-0 flex-1 pr-1">
-                            <div className="truncate text-xs font-semibold text-text-primary group-hover:text-accent">
-                              {node.label}
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-muted">
-                              <span className="truncate font-mono">{node.ip ?? (server?.spec.ip || node.type)}</span>
-                            </div>
-                          </div>
-                        </motion.button>
-                      </div>
+                      <CableLayer
+                        key={link.id}
+                        link={link}
+                        cable={cab}
+                        hovered={isHovered}
+                        selected={isSelected}
+                        onHover={() => setHoveredLink(link)}
+                        onUnhover={() => setHoveredLink((h) => (h?.id === link.id ? null : h))}
+                        onClick={() => {
+                          setSelectedLink(link);
+                          setSelectedNode(null);
+                        }}
+                      />
                     );
                   })}
-                </div>
+
+                  {/* Animated Moving Light Packets (Back & Forth) */}
+                  <MovingLightPackets links={links} cables={cables} />
+                </svg>
+
+                {/* ── HTML Layer (Device Cards) ──────────────────── */}
+                {nodes.map((node) => {
+                  const p = finalPositions.get(node.id);
+                  if (!p) return null;
+
+                  const isHovered = hoveredNode?.id === node.id;
+                  const isSelected = selectedNode?.id === node.id;
+                  const statusColor = STATUS_COLOR[node.status] ?? STATUS_COLOR.online;
+                  const IconComponent = INFRA_ICON_COMPONENTS[node.type];
+                  const server = serverByNodeId.get(node.id);
+
+                  return (
+                    <div
+                      key={node.id}
+                      className="absolute"
+                      style={{ left: p.x, top: p.y, transform: 'translate(-50%, -50%)' }}
+                    >
+                      <motion.button
+                        type="button"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                        className={cn(
+                          'group flex cursor-pointer items-center gap-2.5 rounded-xl border bg-[#111625]/90 px-3 py-2 text-left shadow-lg backdrop-blur-md transition-all duration-200 select-none outline-none',
+                          isHovered || isSelected
+                            ? 'border-accent ring-2 ring-accent/30 shadow-accent/20 translate-y-[-2px]'
+                            : 'border-surface-border hover:border-surface-border/80 hover:bg-[#161C2E]',
+                        )}
+                        style={{
+                          boxShadow: isHovered || isSelected ? `0 0 20px ${statusColor}33` : undefined,
+                        }}
+                        onMouseEnter={() => setHoveredNode(node)}
+                        onMouseLeave={() => setHoveredNode((h) => (h?.id === node.id ? null : h))}
+                        onClick={() => {
+                          setSelectedNode(node);
+                          setSelectedLink(null);
+                        }}
+                      >
+                        {/* Node Icon Box */}
+                        <div
+                          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-black/40"
+                          style={{ borderColor: `${statusColor}44` }}
+                        >
+                          {IconComponent ? (
+                            <IconComponent size={20} />
+                          ) : (
+                            <span className="text-base">{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>
+                          )}
+                          {/* Status Indicator Dot */}
+                          <span
+                            className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#090C15]"
+                            style={{ backgroundColor: statusColor }}
+                          />
+                        </div>
+
+                        {/* Node Text Label & IP */}
+                        <div className="min-w-0 flex-1 pr-1">
+                          <div className="truncate text-xs font-semibold text-text-primary group-hover:text-accent">
+                            {node.label}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-muted">
+                            <span className="truncate font-mono">{node.ip ?? (server?.spec.ip || node.type)}</span>
+                          </div>
+                        </div>
+                      </motion.button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* ═══════════════════════════════════════════════════════════
-              VIEWPORT OVERLAYS (TOOLTIPS & SIDE PANELS)
+              BASIC HOVER TOOLTIP (NEAR HOVERED DEVICE / CABLE)
               ═══════════════════════════════════════════════════════════ */}
 
-          {/* Hover Tooltip — Device Node */}
+          {/* Device Hover Basic Tooltip */}
           {hoveredNode && !selectedNode && !selectedLink && (
             (() => {
               const p = finalPositions.get(hoveredNode.id);
               if (!p) return null;
-              const screen = layoutToScreen(p.x, p.y);
+
+              // Convert centered layout pos to container px
+              const cx = containerSize.width / 2;
+              const cy = containerSize.height / 2;
+              const screenX = cx + (p.x - layoutW / 2) * zoom;
+              const screenY = cy + (p.y - layoutH / 2) * zoom;
+
               const server = serverByNodeId.get(hoveredNode.id);
               return (
                 <div
-                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
-                  style={{ left: screen.x, top: screen.y }}
+                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[125%]"
+                  style={{ left: screenX, top: screenY }}
                 >
                   <div className="w-56 rounded-xl border border-surface-border bg-black/90 p-3 shadow-2xl backdrop-blur-md">
                     <NodeHoverTooltip node={hoveredNode} server={server} />
@@ -373,18 +325,23 @@ export function NetworkMap() {
             })()
           )}
 
-          {/* Hover Tooltip — Network Cable */}
+          {/* Cable Hover Basic Tooltip */}
           {hoveredLink && !hoveredNode && !selectedNode && !selectedLink && (
             (() => {
               const cab = cables.get(hoveredLink.id);
               if (!cab) return null;
-              const screen = layoutToScreen(cab.mx, cab.my);
+
+              const cx = containerSize.width / 2;
+              const cy = containerSize.height / 2;
+              const screenX = cx + (cab.mx - layoutW / 2) * zoom;
+              const screenY = cy + (cab.my - layoutH / 2) * zoom;
+
               const srcNode = nodeById.get(hoveredLink.source);
               const tgtNode = nodeById.get(hoveredLink.target);
               return (
                 <div
-                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[120%]"
-                  style={{ left: screen.x, top: screen.y }}
+                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[125%]"
+                  style={{ left: screenX, top: screenY }}
                 >
                   <div className="w-60 rounded-xl border border-surface-border bg-black/90 p-3 shadow-2xl backdrop-blur-md">
                     <CableHoverTooltip link={hoveredLink} srcNode={srcNode} tgtNode={tgtNode} />
@@ -394,19 +351,22 @@ export function NetworkMap() {
             })()
           )}
 
-          {/* Click Detail Panel — Device Side Panel */}
+          {/* ═══════════════════════════════════════════════════════════
+              CLICK DETAILS CARD — ALWAYS AT LOWER RIGHT SIDE
+              ═══════════════════════════════════════════════════════════ */}
+
+          {/* Selected Device Complete Details Panel */}
           {selectedNode && (
             <AnimatePresence>
               <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-black/90 p-4 shadow-2xl backdrop-blur-md"
-                onPointerDown={(e) => e.stopPropagation()}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-[#0E1322]/95 p-4 shadow-2xl backdrop-blur-md"
               >
                 <div className="mb-3 flex items-center justify-between border-b border-surface-border pb-2.5">
                   <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
-                    Device Details
+                    Complete Device Details
                   </span>
                   <button
                     onClick={() => setSelectedNode(null)}
@@ -425,15 +385,14 @@ export function NetworkMap() {
             </AnimatePresence>
           )}
 
-          {/* Click Detail Panel — Connection Side Panel */}
+          {/* Selected Connection Complete Details Panel */}
           {selectedLink && (
             <AnimatePresence>
               <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-black/90 p-4 shadow-2xl backdrop-blur-md"
-                onPointerDown={(e) => e.stopPropagation()}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-[#0E1322]/95 p-4 shadow-2xl backdrop-blur-md"
               >
                 <div className="mb-3 flex items-center justify-between border-b border-surface-border pb-2.5">
                   <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
@@ -512,7 +471,66 @@ export function NetworkMap() {
   );
 }
 
-// ─── Sub-components & Panels ───────────────────────────────────────
+// ─── Moving Light Packets Effect (Back & Forth Flow) ────────────────
+
+function MovingLightPackets({
+  links,
+  cables,
+}: {
+  links: NetworkLink[];
+  cables: Map<string, CableLayout>;
+}) {
+  return (
+    <g className="pointer-events-none">
+      {links.map((link) => {
+        const cab = cables.get(link.id);
+        if (!cab) return null;
+        const st = normalizeStatus(link.status);
+        if (st === 'critical') return null; // No flow if link is down
+
+        const isWarning = st === 'warning';
+        const colorIn = isWarning ? '#F59E0B' : IN_COLOR;
+        const colorOut = isWarning ? '#F59E0B' : OUT_COLOR;
+
+        // Speed is proportional to link throughput
+        const dur1 = `${clamp(3.5 - link.throughputMbps / 500, 1.2, 4.5).toFixed(1)}s`;
+        const dur2 = `${clamp(4.0 - link.throughputMbps / 500, 1.5, 5.0).toFixed(1)}s`;
+
+        return (
+          <g key={`light-flow-${link.id}`}>
+            {/* Forward light packet (Source → Target) */}
+            <g style={{ filter: `drop-shadow(0 0 5px ${colorIn})` }}>
+              <circle r={3} fill={colorIn}>
+                <animateMotion
+                  path={cab.dIn}
+                  dur={dur1}
+                  repeatCount="indefinite"
+                  calcMode="linear"
+                />
+              </circle>
+            </g>
+
+            {/* Backward light packet (Target → Source) */}
+            <g style={{ filter: `drop-shadow(0 0 5px ${colorOut})` }}>
+              <circle r={2.5} fill={colorOut}>
+                <animateMotion
+                  path={cab.dIn}
+                  dur={dur2}
+                  keyPoints="1;0"
+                  keyTimes="0;1"
+                  repeatCount="indefinite"
+                  calcMode="linear"
+                />
+              </circle>
+            </g>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+// ─── Tooltips & Side Panels ─────────────────────────────────────────
 
 function NodeHoverTooltip({ node, server }: { node: NetworkNode; server?: ServerRuntime }) {
   const statusColor = STATUS_COLOR[node.status] ?? STATUS_COLOR.online;

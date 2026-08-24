@@ -302,12 +302,21 @@ function matchAgentToInfrastructure(
           unmatchedGuests.push(guest);
         }
 
-        // Match subnet heuristic when there are unmatched candidates
-        // Agents are processed sequentially, so each agent claims the first available guest
-        if (unmatchedGuests.length > 0) {
-          const parent = findParentNode(unmatchedGuests[0].nodeId, proxmoxServers);
+        // Subnet heuristic: only match if the guest name is compatible
+        // (prevents mis-matching unrelated agent like docker02 to debian01)
+        const compatibleGuest = unmatchedGuests.find((g) => {
+          const gName = norm(g.name);
+          if (!gName) return true;
+          if (gName === agentName) return true;
+          if (gName.includes(agentName) || agentName.includes(gName)) return true;
+          if (gName === `vm${g.vmid}` || gName === `vmid${g.vmid}`) return true;
+          return false;
+        });
+
+        if (compatibleGuest) {
+          const parent = findParentNode(compatibleGuest.nodeId, proxmoxServers);
           if (parent) {
-            return { kind: 'guest', parentServer: parent, guest: unmatchedGuests[0], confidence: 'low', signal: 'subnet' };
+            return { kind: 'guest', parentServer: parent, guest: compatibleGuest, confidence: 'low', signal: 'subnet' };
           }
         }
       }
