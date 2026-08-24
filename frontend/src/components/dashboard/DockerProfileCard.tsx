@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { StatusDot } from '@/components/ui/Status';
 import { useDockerHosts } from '@/hooks/useQueries';
+import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import { Container, Power, Server, ArrowDown, ArrowUp, ArrowUpRight } from 'lucide-react';
 
 export function DockerProfileCards() {
@@ -28,14 +29,14 @@ export function DockerProfileCards() {
           <Card hover className="flex h-full flex-col p-4 sm:p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated text-2xl">
-                  🐳
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated">
+                  {INFRA_ICON_COMPONENTS.docker && <INFRA_ICON_COMPONENTS.docker size={24} />}
                 </div>
                 <div>
                   <h3 className="font-display text-base font-bold text-text-primary">{profile.hostName}</h3>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     <span className="whitespace-nowrap rounded-md border border-surface-border bg-surface-input px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-text-muted">
-                      Container Host
+                      Container Lists
                     </span>
                     <span className="whitespace-nowrap rounded-md border border-surface-border bg-surface-input px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-text-muted">
                       <Server className="mr-0.5 inline h-2.5 w-2.5" />

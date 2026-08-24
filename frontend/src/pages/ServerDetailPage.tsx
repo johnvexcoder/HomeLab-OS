@@ -28,6 +28,7 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { ProgressRing } from '@/components/ui/Progress';
 import { Skeleton, StatusDot } from '@/components/ui/Status';
 import { ROLE_META, REACH_META, CAPABILITY_META, getSecondaryRole } from '@/lib/constants';
+import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import { formatUptime, formatBytes, pct, cn } from '@/lib/utils';
 
 const CHART_METRICS: Array<{ key: MetricKey; label: string; icon: typeof Cpu; color: string }> = [
@@ -82,6 +83,7 @@ export default function ServerDetailPage() {
   const cluster = s.clusterId ? clusters.find((c) => c.id === s.clusterId) : undefined;
   const secondaryRole = getSecondaryRole(server as any, clusters);
   const activeDef = CHART_METRICS.find((m) => m.key === activeMetric) ?? CHART_METRICS[0];
+  const HeaderIcon = INFRA_ICON_COMPONENTS[s.role];
 
   return (
     <div className="flex flex-col gap-6">
@@ -101,8 +103,8 @@ export default function ServerDetailPage() {
         className="card grid grid-cols-1 gap-6 p-6 md:grid-cols-[1fr_auto]"
       >
         <div className="flex items-start gap-4">
-          <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated text-3xl">
-            {s.logo}
+          <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-surface-border bg-surface-elevated">
+            {HeaderIcon ? <HeaderIcon size={32} /> : <ServerIcon size={32} className="text-text-secondary" />}
             <span
               className={cn(
                 'absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-surface-elevated',
