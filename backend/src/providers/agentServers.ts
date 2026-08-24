@@ -18,6 +18,16 @@ function safeJson<T>(raw: string, fallback: T): T {
   try { return JSON.parse(raw) as T; } catch { return fallback; }
 }
 
+/** Detect Docker bridge / internal container IPs that aren't routable on the LAN. */
+function isDockerBridgeIp(ip: string): boolean {
+  if (!ip) return false;
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((p) => !Number.isFinite(p))) return false;
+  if (parts[0] === 172 && parts[1] >= 17 && parts[1] <= 31) return true;
+  if (parts[0] === 10 && parts[1] <= 1) return true;
+  return false;
+}
+
 /**
  * Read all online agents and reconcile with Proxmox infrastructure.
  * Returns canonical servers + claimed guest IDs for dedup.
@@ -45,11 +55,12 @@ export function getAgentDockerHostProfiles(
 }> {
   const db = getDb();
   const rows = db.prepare(
-    `SELECT host_name, ip, containers_json, net_down_mbps, net_up_mbps, status, last_report_at, vm_id
+    `SELECT host_name, ip, parent_ip, containers_json, net_down_mbps, net_up_mbps, status, last_report_at, vm_id
      FROM agents WHERE containers_json != '[]' AND containers_json != '' AND last_report_at IS NOT NULL`,
   ).all() as Array<{
     host_name: string;
     ip: string;
+    parent_ip: string;
     containers_json: string;
     net_down_mbps: number;
     net_up_mbps: number;
@@ -88,9 +99,13 @@ export function getAgentDockerHostProfiles(
     );
     if (containers.length === 0) continue;
 
+    // If agent reports a Docker bridge IP (172.17.x.x), show parent_ip instead
+    // since that's at least on the correct LAN subnet.
+    const hostIp = isDockerBridgeIp(row.ip) ? (row.parent_ip || row.ip) : row.ip;
+
     profiles.push({
       hostName: row.host_name,
-      hostIp: row.ip,
+      hostIp,
       netDownMbps: row.net_down_mbps,
       netUpMbps: row.net_up_mbps,
       containers,

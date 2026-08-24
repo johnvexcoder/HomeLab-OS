@@ -118,6 +118,22 @@ function isValidIp(ip: string): boolean {
   return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip) && ip !== '0.0.0.0' && ip !== '127.0.0.1';
 }
 
+/**
+ * Detect Docker bridge / internal container IPs that aren't routable on the LAN.
+ * Common ranges: 172.17.0.0/16 (default bridge), 10.x.x.x (custom networks).
+ */
+function isDockerBridgeIp(ip: string): boolean {
+  if (!isValidIp(ip)) return false;
+  const parts = ip.split('.').map(Number);
+  // 172.17-31.x.x = Docker default bridge range
+  if (parts[0] === 172 && parts[1] >= 17 && parts[1] <= 31) return true;
+  // 10.x.x.x = common custom Docker networks (only /8, skip if it's a routable LAN)
+  // We only flag 10.x when it looks like a container IP (often 10.0.x.x or 10.1.x.x)
+  if (parts[0] === 10 && parts[1] <= 1) return true;
+  // 192.168.x.1 with high host parts are sometimes Docker bridge (192.168.x.1 = gateway)
+  return false;
+}
+
 function findParentNode(nodeId: string | undefined, proxmoxServers: ServerRuntime[]): ServerRuntime | undefined {
   if (!nodeId) return proxmoxServers[0];
   return proxmoxServers.find((s) => s.spec.id === nodeId);
@@ -291,7 +307,8 @@ function enrichServerWithAgent(
     server.spec.hostname = agent.host_name;
     server.spec.name = agent.host_name;
   }
-  if (agent.ip) server.spec.ip = agent.ip;
+  // Don't overwrite a valid LAN IP with a Docker bridge IP (172.17.x.x etc.)
+  if (agent.ip && !isDockerBridgeIp(agent.ip)) server.spec.ip = agent.ip;
 
   // ── Role: agent host_type is authoritative ──
   if (agent.host_type === 'vm' || agent.host_type === 'lxc') {
@@ -389,9 +406,18 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?:
     return arr;
   };
 
+  // When agent has Docker containers, use docker-${host_name} as ID so it
+  // aligns with the Container Lists card link pattern (/servers/docker-${hostName}).
+  const hasContainers = containers.length > 0;
+  const serverId = hasContainers ? `docker-${agent.host_name}` : `agent-${agent.host_id}`;
+
+  // Don't show Docker bridge IPs (172.17.x.x etc.) — they're not routable on the LAN.
+  // The real host IP will be recovered by enrichServerWithAgent or parent_ip matching.
+  const agentIp = isDockerBridgeIp(agent.ip) ? '' : agent.ip;
+
   return {
     spec: {
-      id: `agent-${agent.host_id}`,
+      id: serverId,
       serverId: agent.id,
       hostname: agent.host_name,
       name: agent.host_name,
@@ -403,7 +429,7 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?:
         : 'server',
       capabilities: ['monitoring'],
       clusterId: parentNodeId || null,
-      ip: agent.ip,
+      ip: agentIp,
       location: agent.virt_type ? `VM (${agent.virt_type})` : 'Agent',
       cpuModel: `${agent.host_type} (${agent.cpu_cores || '?'} cores)`,
       cpuCores: agent.cpu_cores || 1,
@@ -534,11 +560,19 @@ export function reconcileServers(
     let parentTempC = 0;
     let parentNodeId: string | undefined;
     const agentIp = agent.ip?.trim();
-    if (agentIp && isValidIp(agentIp)) {
+    const agentParentIp = agent.parent_ip?.trim();
+
+    // When agent IP is a Docker bridge (172.17.x.x), use parent_ip for subnet matching.
+    // The parent_ip is the Proxmox host that the agent detected as its gateway/node.
+    const effectiveIp = (agentIp && isDockerBridgeIp(agentIp) && agentParentIp && isValidIp(agentParentIp))
+      ? agentParentIp
+      : agentIp;
+
+    if (effectiveIp && isValidIp(effectiveIp)) {
       for (const server of proxmoxServers) {
         if (!server.spec.ip) continue;
         if (server.spec.role !== 'hypervisor') continue;
-        if (sameSubnet(agentIp, server.spec.ip) && agentIp !== server.spec.ip) {
+        if (sameSubnet(effectiveIp, server.spec.ip) && effectiveIp !== server.spec.ip) {
           parentTempC = server.tempC || 0;
           parentNodeId = server.spec.id;
           break;
@@ -547,10 +581,10 @@ export function reconcileServers(
     }
 
     // Claim any unmatched Proxmox guests on the same subnet to avoid stale cards
-    if (agentIp && isValidIp(agentIp)) {
+    if (effectiveIp && isValidIp(effectiveIp)) {
       for (const server of proxmoxServers) {
         if (!server.spec.ip) continue;
-        if (!sameSubnet(agentIp, server.spec.ip)) continue;
+        if (!sameSubnet(effectiveIp, server.spec.ip)) continue;
         for (const [, guest] of proxmoxGuests) {
           if (guest.nodeId !== server.spec.id) continue;
           if (!guest.running) continue;
@@ -560,7 +594,9 @@ export function reconcileServers(
       }
     }
 
-    const id = `agent-${agent.host_id}`;
+    const containers = safeJson<{ id: string; name: string; running: boolean; image: string; ports?: string[] }[]>(agent.containers_json, []);
+    const hasContainers = containers.length > 0;
+    const id = hasContainers ? `docker-${agent.host_name}` : `agent-${agent.host_id}`;
     const existing = proxmoxServers.some((s) => s.spec.id === id) || extraServers.some((s) => s.spec.id === id);
     if (!existing) {
       extraServers.push(buildAgentRuntime(agent, parentNodeId, parentTempC));
