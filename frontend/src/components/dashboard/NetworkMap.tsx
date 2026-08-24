@@ -471,7 +471,7 @@ export function NetworkMap() {
   );
 }
 
-// ─── Moving Light Packets Effect (Back & Forth Flow) ────────────────
+// ─── Moving Light Packets Effect (Fast, Unsynced Multi-Stream Data Flow) ───
 
 function MovingLightPackets({
   links,
@@ -482,47 +482,62 @@ function MovingLightPackets({
 }) {
   return (
     <g className="pointer-events-none">
-      {links.map((link) => {
+      {links.map((link, idx) => {
         const cab = cables.get(link.id);
         if (!cab) return null;
         const st = normalizeStatus(link.status);
         if (st === 'critical') return null; // No flow if link is down
 
         const isWarning = st === 'warning';
-        const colorIn = isWarning ? '#F59E0B' : IN_COLOR;
-        const colorOut = isWarning ? '#F59E0B' : OUT_COLOR;
+        const colorIn = isWarning ? '#F59E0B' : '#00F0FF';
+        const colorOut = isWarning ? '#F59E0B' : '#3B82F6';
 
-        // Speed is proportional to link throughput
-        const dur1 = `${clamp(3.5 - link.throughputMbps / 500, 1.2, 4.5).toFixed(1)}s`;
-        const dur2 = `${clamp(4.0 - link.throughputMbps / 500, 1.5, 5.0).toFixed(1)}s`;
+        // High-speed unsynced packet streams (staggered delays & durations)
+        const packetsForward = [
+          { begin: `${(idx * 0.23) % 0.7}s`, dur: `${(0.8 + (idx * 0.17) % 0.6).toFixed(2)}s`, size: 4 },
+          { begin: `${((idx * 0.31) + 0.4) % 0.9}s`, dur: `${(0.9 + (idx * 0.13) % 0.5).toFixed(2)}s`, size: 3 },
+          { begin: `${((idx * 0.19) + 0.8) % 1.1}s`, dur: `${(0.7 + (idx * 0.21) % 0.7).toFixed(2)}s`, size: 3.5 },
+        ];
+
+        const packetsBackward = [
+          { begin: `${((idx * 0.27) + 0.2) % 0.8}s`, dur: `${(0.85 + (idx * 0.19) % 0.6).toFixed(2)}s`, size: 3.5 },
+          { begin: `${((idx * 0.15) + 0.6) % 1.0}s`, dur: `${(1.0 + (idx * 0.11) % 0.5).toFixed(2)}s`, size: 2.8 },
+          { begin: `${((idx * 0.33) + 0.9) % 1.2}s`, dur: `${(0.75 + (idx * 0.23) % 0.65).toFixed(2)}s`, size: 3 },
+        ];
 
         return (
           <g key={`light-flow-${link.id}`}>
-            {/* Forward light packet (Source → Target) */}
-            <g style={{ filter: `drop-shadow(0 0 5px ${colorIn})` }}>
-              <circle r={3} fill={colorIn}>
-                <animateMotion
-                  path={cab.dIn}
-                  dur={dur1}
-                  repeatCount="indefinite"
-                  calcMode="linear"
-                />
-              </circle>
-            </g>
+            {/* Forward multi-packet stream (Source → Target) */}
+            {packetsForward.map((p, i) => (
+              <g key={`fwd-${link.id}-${i}`} style={{ filter: `drop-shadow(0 0 8px ${colorIn})` }}>
+                <circle r={p.size} fill={colorIn}>
+                  <animateMotion
+                    path={cab.dIn}
+                    begin={p.begin}
+                    dur={p.dur}
+                    repeatCount="indefinite"
+                    calcMode="linear"
+                  />
+                </circle>
+              </g>
+            ))}
 
-            {/* Backward light packet (Target → Source) */}
-            <g style={{ filter: `drop-shadow(0 0 5px ${colorOut})` }}>
-              <circle r={2.5} fill={colorOut}>
-                <animateMotion
-                  path={cab.dIn}
-                  dur={dur2}
-                  keyPoints="1;0"
-                  keyTimes="0;1"
-                  repeatCount="indefinite"
-                  calcMode="linear"
-                />
-              </circle>
-            </g>
+            {/* Backward multi-packet stream (Target → Source) */}
+            {packetsBackward.map((p, i) => (
+              <g key={`bwd-${link.id}-${i}`} style={{ filter: `drop-shadow(0 0 8px ${colorOut})` }}>
+                <circle r={p.size} fill={colorOut}>
+                  <animateMotion
+                    path={cab.dIn}
+                    begin={p.begin}
+                    dur={p.dur}
+                    keyPoints="1;0"
+                    keyTimes="0;1"
+                    repeatCount="indefinite"
+                    calcMode="linear"
+                  />
+                </circle>
+              </g>
+            ))}
           </g>
         );
       })}
