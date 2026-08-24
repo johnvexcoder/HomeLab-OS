@@ -26,7 +26,7 @@ export function getAgentServers(
   existingIds: Set<string>,
   proxmoxServers: ServerRuntime[],
   proxmoxGuests: Map<string, { vmid: string; name: string; running: boolean; nodeId: string }>,
-): { runtimes: ServerRuntime[]; claimedGuestIds: Set<string> } {
+): { runtimes: ServerRuntime[]; claimedGuestIds: Set<string>; enrichedGuestIds: Set<string> } {
   return getReconciledServers(existingIds, proxmoxServers, proxmoxGuests);
 }
 

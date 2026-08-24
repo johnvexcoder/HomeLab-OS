@@ -80,6 +80,9 @@ interface ReconciliationResult {
   servers: ServerRuntime[];
   /** Guest IDs claimed by agents (remove stale Proxmox guest cards) */
   claimedGuestIds: Set<string>;
+  /** Proxmox guest IDs that were enriched by a matching agent.
+   *  Any guest NOT in this set should be hidden (no agent = not managed). */
+  enrichedGuestIds: Set<string>;
   /** Agents that failed parent validation */
   parentViolations: Array<{ agentId: string; hostName: string; agentIp: string; nodeIp: string }>;
   /** Agents matched to guests with "VM Running, Agent Offline" */
@@ -471,6 +474,7 @@ export function reconcileServers(
 
   const now = Date.now();
   const claimedGuestIds = new Set<string>();
+  const enrichedGuestIds = new Set<string>();
   const parentViolations: ReconciliationResult['parentViolations'] = [];
   const offlineAgents: ReconciliationResult['offlineAgents'] = [];
   const extraServers: ServerRuntime[] = [];
@@ -508,6 +512,7 @@ export function reconcileServers(
 
       if (guestServer) {
         claimedVmids.add(match.guest.vmid);
+        enrichedGuestIds.add(guestServerId);
         // NOTE: Do NOT add to claimedGuestIds — this guest IS the enriched server.
         // claimedGuestIds is only for removing UNMATCHED stale Proxmox guest cards.
 
@@ -612,6 +617,7 @@ export function reconcileServers(
   return {
     servers: extraServers,
     claimedGuestIds,
+    enrichedGuestIds,
     parentViolations,
     offlineAgents,
   };
@@ -625,7 +631,7 @@ export function getReconciledServers(
   existingIds: Set<string>,
   proxmoxServers: ServerRuntime[],
   proxmoxGuests: Map<string, ProxmoxGuest>,
-): { runtimes: ServerRuntime[]; claimedGuestIds: Set<string> } {
+): { runtimes: ServerRuntime[]; claimedGuestIds: Set<string>; enrichedGuestIds: Set<string> } {
   const result = reconcileServers(proxmoxServers, proxmoxGuests);
 
   // Log parent violations as incidents
@@ -638,5 +644,5 @@ export function getReconciledServers(
   // Filter out extra servers that overlap with existing IDs
   const runtimes = result.servers.filter((s) => !existingIds.has(s.spec.id));
 
-  return { runtimes, claimedGuestIds: result.claimedGuestIds };
+  return { runtimes, claimedGuestIds: result.claimedGuestIds, enrichedGuestIds: result.enrichedGuestIds };
 }

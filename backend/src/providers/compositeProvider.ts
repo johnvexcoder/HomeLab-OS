@@ -108,7 +108,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
 
     // Merge agent-reported servers using the identity reconciliation engine
     const guestMap = this.getGuestMap();
-    const { runtimes: agentServers, claimedGuestIds } = getAgentServers(primaryIds, primary, guestMap);
+    const { runtimes: agentServers, claimedGuestIds, enrichedGuestIds } = getAgentServers(primaryIds, primary, guestMap);
     for (const s of agentServers) {
       result.push(s);
     }
@@ -119,6 +119,17 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         if (claimedGuestIds.has(result[i].spec.id)) {
           result.splice(i, 1);
         }
+      }
+    }
+
+    // ── Remove agent-less Proxmox guests ──
+    // Proxmox guests have IDs like "pve-pve0-g100". Only keep guests that
+    // were enriched by a matching agent. VMs without agents (e.g. debian01,
+    // debian02) should not appear on the dashboard.
+    for (let i = result.length - 1; i >= 0; i--) {
+      const id = result[i].spec.id;
+      if (/^.*-g\d+$/.test(id) && !enrichedGuestIds.has(id)) {
+        result.splice(i, 1);
       }
     }
 
@@ -311,6 +322,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const recon = reconcileServers(this.primary.getServers(), guestMap);
     const agentServers = recon.servers;
     const claimedGuestIds = recon.claimedGuestIds;
+    const enrichedGuestIds = recon.enrichedGuestIds;
 
     // Remove claimed guest nodes from the network map
     if (claimedGuestIds.size > 0) {
@@ -323,6 +335,24 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         if (claimedGuestIds.has(links[i].source) || claimedGuestIds.has(links[i].target)) {
           links.splice(i, 1);
         }
+      }
+    }
+
+    // ── Remove agent-less Proxmox guests from network map ──
+    // Proxmox guests have IDs like "pve-pve0-g100". Only keep guests that
+    // were enriched by a matching agent. VMs without agents (debian01,
+    // debian02) should not appear on the topology.
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const nid = nodes[i].id;
+      if (/^.*-g\d+$/.test(nid) && !enrichedGuestIds.has(nid)) {
+        nodes.splice(i, 1);
+      }
+    }
+    // Remove links connected to removed guest nodes
+    const remainingNodeIds = new Set(nodes.map((n) => n.id));
+    for (let i = links.length - 1; i >= 0; i--) {
+      if (!remainingNodeIds.has(links[i].source) || !remainingNodeIds.has(links[i].target)) {
+        links.splice(i, 1);
       }
     }
     for (const s of agentServers) {
