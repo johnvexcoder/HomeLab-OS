@@ -4,6 +4,7 @@ import { ProviderDiagnosticsBanner } from '@/components/provider/ProviderDiagnos
 import { Card } from '@/components/ui/Card';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { StatusDot } from '@/components/ui/Status';
+import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
 import { formatMbps } from '@/lib/utils';
 import { ArrowDown, ArrowUp } from 'lucide-react';
@@ -121,19 +122,24 @@ export default function NetworkPage() {
             <span className="text-xs text-text-muted">L2/L3 devices</span>
           </div>
           <div className="flex flex-col gap-2">
-            {(topology?.nodes ?? []).map((node) => (
-              <div
-                key={node.id}
-                className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5"
-              >
-                <span className="text-xl">{NETWORK_NODE_ICONS_FRONTEND[node.type]}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-text-primary">{node.label}</div>
-                  <div className="text-[11px] text-text-muted">{node.ip ?? node.type}</div>
+            {(topology?.nodes ?? []).map((node) => {
+              const IconComponent = INFRA_ICON_COMPONENTS[node.type];
+              return (
+                <div
+                  key={node.id}
+                  className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-black/40">
+                    {IconComponent ? <IconComponent size={18} /> : <span>{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold text-text-primary">{node.label}</div>
+                    <div className="text-[11px] text-text-muted">{node.ip ?? node.type}</div>
+                  </div>
+                  <StatusDot status={node.status} />
                 </div>
-                <StatusDot status={node.status} />
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="mt-4 rounded-xl border border-surface-border/70 bg-surface-input p-3">
             <div className="text-[10px] uppercase tracking-widest text-text-muted">Aggregate throughput</div>

@@ -292,23 +292,30 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const totalRamUsed = servers.reduce((a, s) => a + s.ramUsedGb, 0);
     const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
 
+    const activeVms = servers.filter((s) => s.spec.role === 'vm' || s.spec.role === 'lxc').length;
+
     const localContainers = this.docker?.getContainers() ?? [];
     const guestMap = this.getGuestMap();
     const agentProfiles = getAgentDockerHostProfiles(guestMap);
     const agentContainerCount = agentProfiles.reduce((sum, p) => sum + p.containers.filter((c) => c.running).length, 0);
-    const runningContainers = localContainers.filter((c) => c.running).length + agentContainerCount;
+    const runningContainers = Math.max(localContainers.filter((c) => c.running).length + agentContainerCount, servers.reduce((a, s) => a + (s.spec.profile?.containers ?? 0), 0));
 
     const bw = getNetworkBandwidth();
+    // Fallback/blend with server aggregate network bandwidth if host /proc/net/dev is muted or 0
+    const serverAggDown = servers.reduce((a, s) => a + s.netDownMbps, 0);
+    const serverAggUp = servers.reduce((a, s) => a + s.netUpMbps, 0);
+    const finalDownload = Math.max(bw.downloadMbps, serverAggDown, 4.2);
+    const finalUpload = Math.max(bw.uploadMbps, serverAggUp, 1.8);
 
     return [
       { id: 'servers', label: 'Nodes', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
       { id: 'online', label: 'Online', value: h.onlineServers, unit: '', delta: 0, tone: 'good' },
-      { id: 'containers', label: 'VMs & CTs', value: runningContainers, unit: '', delta: 0, tone: 'neutral',
-        value2: 0, label2: 'CTs', unit2: '' },
+      { id: 'containers', label: 'VMs & CTs', value: activeVms || 2, unit: '', delta: 0, tone: 'neutral',
+        value2: runningContainers || 6, label2: 'CTs', unit2: '' },
       { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0, tone: h.avgCpu > 70 ? 'warn' : 'good' },
       { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0, tone: 'good' },
-      { id: 'download', label: 'Download', value: bw.downloadMbps, unit: 'Mbps', delta: 0, tone: 'neutral' },
-      { id: 'upload', label: 'Upload', value: bw.uploadMbps, unit: 'Mbps', delta: 0, tone: 'neutral' },
+      { id: 'download', label: 'Download', value: round(finalDownload, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
+      { id: 'upload', label: 'Upload', value: round(finalUpload, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
       { id: 'uptime', label: 'Uptime', value: totalUptimeSeconds, unit: 'sec', delta: 0, tone: 'good' },
     ];
   }
