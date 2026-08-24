@@ -65,11 +65,14 @@ async function bootstrap(): Promise<void> {
     if (config.docker.enabled) {
       const docker = new DockerMetricsProvider();
       docker.onContainerStateChange = (name, image, event) => {
+        // A stop event alone is not crash evidence → report OFFLINE, never CRASHED.
         const severity: 'critical' | 'success' = event === 'stopped' ? 'critical' : 'success';
-        const title = event === 'stopped' ? 'Container Crashed' : 'Container Restarted';
+        const title = event === 'stopped'
+          ? 'SERVICE ALERT'
+          : 'SERVICE RECOVERED';
         const message = event === 'stopped'
-          ? `Docker container "${name}" has stopped unexpectedly.\nImage: ${image}`
-          : `Docker container "${name}" is back online.\nImage: ${image}`;
+          ? `Status: OFFLINE\nResource: Container\nName: ${name}\nImage: ${image}\n\nDetected At:\n${new Date().toLocaleString('sv-SE')}\n\nPrevious Status:\nRUNNING\n\nCurrent Status:\nOFFLINE`
+          : `Status: RESTARTED\nResource: Container\nName: ${name}\nImage: ${image}\n\nRestart Detected At:\n${new Date().toLocaleString('sv-SE')}\n\nPrevious Status:\nOFFLINE\n\nCurrent Status:\nONLINE`;
 
         const n: Notification = {
           id: `ntf-docker-${event}-${name}-${crypto.randomUUID()}`,

@@ -380,7 +380,8 @@ export async function sendAlertEmail(subject: string, body: string): Promise<boo
 
 /** Dispatch a notification to all enabled channels (Telegram + Email). */
 export async function dispatchToChannels(title: string, message: string, severity: string): Promise<void> {
-  const emoji = severity === 'critical' ? '🔴' : severity === 'warning' ? '🟡' : severity === 'success' ? '🟢' : 'ℹ️';
+  // Strict emoji rule: only 🟢 / 🟡 / 🔴 — NO other emojis.
+  const emoji = severity === 'critical' ? '🔴' : severity === 'warning' ? '🟡' : '🟢';
   const telegramText = `${emoji} <b>${title}</b>\n\n${message}`;
 
   const htmlBody = [
