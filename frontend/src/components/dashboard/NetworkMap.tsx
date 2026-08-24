@@ -49,9 +49,15 @@ function useElementSize<T extends HTMLElement>() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      setSize({ width: r.width, height: r.height });
+    }
     const ro = new ResizeObserver((entries) => {
-      const r = entries[0]?.contentRect;
-      if (r) setSize({ width: r.width, height: r.height });
+      const entry = entries[0]?.contentRect;
+      if (entry && entry.width > 0 && entry.height > 0) {
+        setSize({ width: entry.width, height: entry.height });
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -148,21 +154,22 @@ export function NetworkMap() {
 
   // ── Fit-to-view zoom ───────────────────────────────────────────
   const fitZoom = useMemo(() => {
-    if (!layout || containerSize.width === 0 || containerSize.height === 0) return 1;
+    if (!layout || containerSize.width === 0 || containerSize.height === 0 || layoutW === 0 || layoutH === 0) return 1;
     const pad = 48;
     const scaleX = (containerSize.width - pad * 2) / layoutW;
     const scaleY = (containerSize.height - pad * 2) / layoutH;
     return clamp(Math.min(scaleX, scaleY), 0.15, 2);
   }, [layout, containerSize, layoutW, layoutH]);
 
-  // Auto-fit on first layout
+  // Auto-fit on first layout once container size is measured
   const initRef = useRef(false);
   useEffect(() => {
-    if (layout && !initRef.current) {
+    if (layout && containerSize.width > 0 && containerSize.height > 0 && !initRef.current) {
       setZoom(fitZoom);
+      setPan({ x: 0, y: 0 });
       initRef.current = true;
     }
-  }, [layout, fitZoom]);
+  }, [layout, containerSize.width, containerSize.height, fitZoom]);
 
   // Reset init flag when topology changes significantly
   useEffect(() => {
