@@ -131,10 +131,10 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
       const throughput = linkThroughput(links, node.id, path[1]) || 1;
       const intensity = clamp(throughput / 1000, 0.15, 1);
 
-      const hopMs = 140 + seeded(node.id, 1) * 80;
+      const hopMs = 80 + seeded(node.id, 1) * 40;
       const dur = Math.round(path.length * hopMs);
-      const cycleMs = Math.round(clamp(2000 - intensity * 1200, 500, 2000));
-      const count = Math.max(2, Math.round(intensity * 5));
+      const cycleMs = Math.round(clamp(800 - intensity * 600, 200, 800));
+      const count = Math.max(2, Math.round(intensity * 8));
 
       events.push({
         id: `${node.id}::out`,
@@ -165,9 +165,9 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
     if (!a || !b) continue;
 
     const intensity = clamp((link.throughputMbps || 0) / 1000, 0.1, 1);
-    const hopMs = Math.round(clamp(320 - intensity * 180, 140, 320));
-    const cycleMs = Math.round(clamp(2400 - intensity * 1400, 600, 2400));
-    const count = Math.max(1, Math.round(intensity * 3));
+    const hopMs = Math.round(clamp(120 - intensity * 60, 60, 120));
+    const cycleMs = Math.round(clamp(800 - intensity * 600, 200, 800));
+    const count = Math.max(1, Math.round(intensity * 5));
 
     events.push(
       {

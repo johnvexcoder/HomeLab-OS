@@ -20,7 +20,8 @@ import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import type { NetworkNode, NetworkLink, ServerRuntime } from '@/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { cn, formatMbps } from '@/lib/utils';
-import { computeTopologyLayout, type TopologyLayout, type CableLayout } from '@/lib/topologyLayout';
+import { computeTopologyLayout, type TopologyLayout, type CableLayout, type LayoutedNode } from '@/lib/topologyLayout';
+import { generateTraffic, type TrafficEvent } from '@/lib/trafficEngine';
 
 const IN_COLOR = '#22D3EE';
 const OUT_COLOR = 'var(--accent)';
@@ -221,7 +222,7 @@ export function NetworkMap() {
                   })}
 
                   {/* Animated Moving Light Packets (Back & Forth) */}
-                  <MovingLightPackets links={links} cables={cables} />
+                  <MovingLightPackets nodes={nodes} links={links} positions={finalPositions} isVertical={layout.metrics.isVertical} />
                 </svg>
 
                 {/* ── HTML Layer (Device Cards) ──────────────────── */}
@@ -319,10 +320,13 @@ export function NetworkMap() {
               const screenX = cx + (p.x - layoutW / 2) * zoom;
               const screenY = cy + (p.y - layoutH / 2) * zoom;
 
+              const isNearTop = screenY < 120;
+              const transformClass = isNearTop ? '-translate-x-1/2 translate-y-[25%]' : '-translate-x-1/2 -translate-y-[125%]';
+
               const server = serverByNodeId.get(hoveredNode.id);
               return (
                 <div
-                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[125%]"
+                  className={`pointer-events-none absolute z-20 ${transformClass}`}
                   style={{ left: screenX, top: screenY }}
                 >
                   <div className="w-56 rounded-xl border border-surface-border bg-black/90 p-3 shadow-2xl backdrop-blur-md">
@@ -344,11 +348,14 @@ export function NetworkMap() {
               const screenX = cx + (cab.mx - layoutW / 2) * zoom;
               const screenY = cy + (cab.my - layoutH / 2) * zoom;
 
+              const isNearTop = screenY < 120;
+              const transformClass = isNearTop ? '-translate-x-1/2 translate-y-[25%]' : '-translate-x-1/2 -translate-y-[125%]';
+
               const srcNode = nodeById.get(hoveredLink.source);
               const tgtNode = nodeById.get(hoveredLink.target);
               return (
                 <div
-                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[125%]"
+                  className={`pointer-events-none absolute z-20 ${transformClass}`}
                   style={{ left: screenX, top: screenY }}
                 >
                   <div className="w-60 rounded-xl border border-surface-border bg-black/90 p-3 shadow-2xl backdrop-blur-md">
@@ -481,71 +488,70 @@ export function NetworkMap() {
 
 // ─── Moving Light Packets Effect (Fast, Unsynced Multi-Stream Data Flow) ───
 
+function buildRoutePath(nodeIds: string[], positions: Map<string, LayoutedNode>, isVertical: boolean): string {
+  let d = '';
+  for (let i = 0; i < nodeIds.length - 1; i++) {
+    const a = positions.get(nodeIds[i]);
+    const b = positions.get(nodeIds[i+1]);
+    if (!a || !b) continue;
+    
+    if (i === 0) d += `M ${a.x} ${a.y} `;
+    
+    if (!isVertical) {
+      const dx = Math.abs(b.x - a.x);
+      const hx = Math.max(Math.min(dx * 0.45, 110), 25);
+      d += `C ${Math.round(a.x + (b.x > a.x ? hx : -hx))} ${a.y}, ${Math.round(b.x - (b.x > a.x ? hx : -hx))} ${b.y}, ${b.x} ${b.y} `;
+    } else {
+      const dy = Math.abs(b.y - a.y);
+      const hy = Math.max(Math.min(dy * 0.45, 80), 20);
+      d += `C ${a.x} ${Math.round(a.y + (b.y > a.y ? hy : -hy))}, ${b.x} ${Math.round(b.y - (b.y > a.y ? hy : -hy))}, ${b.x} ${b.y} `;
+    }
+  }
+  return d;
+}
+
 function MovingLightPackets({
+  nodes,
   links,
-  cables,
+  positions,
+  isVertical,
 }: {
+  nodes: NetworkNode[];
   links: NetworkLink[];
-  cables: Map<string, CableLayout>;
+  positions: Map<string, LayoutedNode>;
+  isVertical: boolean;
 }) {
+  const events = useMemo(() => generateTraffic(nodes, links), [nodes, links]);
+
   return (
     <g className="pointer-events-none">
-      {links.map((link, idx) => {
-        const cab = cables.get(link.id);
-        if (!cab) return null;
-        const st = normalizeStatus(link.status);
-        if (st === 'critical') return null; // No flow if link is down
+      {events.map((evt, idx) => {
+        const dPath = buildRoutePath(evt.path, positions, isVertical);
+        if (!dPath) return null;
 
-        const isWarning = st === 'warning';
-        const colorIn = isWarning ? '#F59E0B' : '#00F0FF';
-        const colorOut = isWarning ? '#F59E0B' : '#3B82F6';
-
-        // High-speed unsynced packet streams (staggered delays & durations)
-        const packetsForward = [
-          { begin: `${(idx * 0.23) % 0.7}s`, dur: `${(0.8 + (idx * 0.17) % 0.6).toFixed(2)}s`, size: 4 },
-          { begin: `${((idx * 0.31) + 0.4) % 0.9}s`, dur: `${(0.9 + (idx * 0.13) % 0.5).toFixed(2)}s`, size: 3 },
-          { begin: `${((idx * 0.19) + 0.8) % 1.1}s`, dur: `${(0.7 + (idx * 0.21) % 0.7).toFixed(2)}s`, size: 3.5 },
-        ];
-
-        const packetsBackward = [
-          { begin: `${((idx * 0.27) + 0.2) % 0.8}s`, dur: `${(0.85 + (idx * 0.19) % 0.6).toFixed(2)}s`, size: 3.5 },
-          { begin: `${((idx * 0.15) + 0.6) % 1.0}s`, dur: `${(1.0 + (idx * 0.11) % 0.5).toFixed(2)}s`, size: 2.8 },
-          { begin: `${((idx * 0.33) + 0.9) % 1.2}s`, dur: `${(0.75 + (idx * 0.23) % 0.65).toFixed(2)}s`, size: 3 },
-        ];
-
+        const isOutbound = evt.direction === 'outbound';
+        const color = isOutbound ? '#3B82F6' : '#00F0FF';
+        
         return (
-          <g key={`light-flow-${link.id}`}>
-            {/* Forward multi-packet stream (Source → Target) */}
-            {packetsForward.map((p, i) => (
-              <g key={`fwd-${link.id}-${i}`} style={{ filter: `drop-shadow(0 0 8px ${colorIn})` }}>
-                <circle r={p.size} fill={colorIn}>
-                  <animateMotion
-                    path={cab.dIn}
-                    begin={p.begin}
-                    dur={p.dur}
-                    repeatCount="indefinite"
-                    calcMode="linear"
-                  />
-                </circle>
-              </g>
-            ))}
-
-            {/* Backward multi-packet stream (Target → Source) */}
-            {packetsBackward.map((p, i) => (
-              <g key={`bwd-${link.id}-${i}`} style={{ filter: `drop-shadow(0 0 8px ${colorOut})` }}>
-                <circle r={p.size} fill={colorOut}>
-                  <animateMotion
-                    path={cab.dIn}
-                    begin={p.begin}
-                    dur={p.dur}
-                    keyPoints="1;0"
-                    keyTimes="0;1"
-                    repeatCount="indefinite"
-                    calcMode="linear"
-                  />
-                </circle>
-              </g>
-            ))}
+          <g key={evt.id}>
+            {Array.from({ length: evt.count }).map((_, i) => {
+              const stagger = (i / evt.count) * (evt.dur / 1000);
+              const beginStr = `${evt.begin / 1000 + stagger}s`;
+              
+              return (
+                <g key={`${evt.id}-${i}`} style={{ filter: `drop-shadow(0 0 8px ${color})` }}>
+                  <circle r={3} fill={color}>
+                    <animateMotion
+                      path={dPath}
+                      begin={beginStr}
+                      dur={`${evt.dur / 1000}s`}
+                      repeatCount="indefinite"
+                      calcMode="linear"
+                    />
+                  </circle>
+                </g>
+              );
+            })}
           </g>
         );
       })}

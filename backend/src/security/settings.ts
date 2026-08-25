@@ -150,13 +150,25 @@ export function getAllSettings(): SettingsMap {
 export function seedDefaultSettings(): void {
   const db = getDb();
   const hasAny = db.prepare('SELECT COUNT(*) AS c FROM settings').get() as { c: number };
-  if (hasAny.c > 0) return;
-  const stmt = db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-  const tx = db.transaction(() => {
-    for (const [key, value] of Object.entries(DEFAULTS)) stmt.run(key, value, Date.now());
-    for (const def of FEATURES) stmt.run(`feature.${def.id}`, String(def.defaultEnabled), Date.now());
-  });
-  tx();
+  if (hasAny.c === 0) {
+    const stmt = db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+    const tx = db.transaction(() => {
+      for (const [key, value] of Object.entries(DEFAULTS)) stmt.run(key, value, Date.now());
+      for (const def of FEATURES) stmt.run(`feature.${def.id}`, String(def.defaultEnabled), Date.now());
+    });
+    tx();
+  }
+
+  // Provision SMTP from environment variables on every boot if SMTP_HOST is provided
+  if (process.env.SMTP_HOST) {
+    setSetting('security.smtpHost', process.env.SMTP_HOST);
+    setSetting('security.smtpPort', process.env.SMTP_PORT ?? '587');
+    setSetting('security.smtpSecure', process.env.SMTP_SECURE ?? 'false');
+    setSetting('security.smtpUser', process.env.SMTP_USER ?? '');
+    setSetting('security.smtpPassword', process.env.SMTP_PASSWORD ?? '');
+    setSetting('security.smtpFrom', process.env.SMTP_FROM ?? '');
+    setSetting('feature.email_notifications', 'true');
+  }
 }
 
 /** Feature flag status for public/UI consumption (no secrets). */

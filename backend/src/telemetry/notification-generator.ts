@@ -15,6 +15,7 @@ export class NotificationGenerator {
   private lastTempWarnAt: Record<string, number> = {};
   private lastDiskWarnAt: Record<string, number> = {};
   private lastDiskCritAt: Record<string, number> = {};
+  private lastState: Record<string, string> = {};
   private lastRandomAt = 0;
   private readonly ambient: boolean;
 
@@ -27,6 +28,45 @@ export class NotificationGenerator {
     const MIN = 60_000;
 
     for (const snap of snapshots) {
+      // Status change detection (Offline / Online / Restarted)
+      const prevState = this.lastState[snap.serverId];
+      if (prevState && prevState !== snap.status) {
+        if (snap.status === 'offline') {
+          out.push({
+            id: `ntf-${now}-${seq++}`,
+            title: 'Server Offline',
+            message: `Host ${snap.serverId} has gone offline or become unreachable.`,
+            severity: 'critical',
+            timestamp: now,
+            read: false,
+            serverId: snap.serverId,
+          });
+        } else if (snap.status === 'online') {
+          if (snap.uptimeSeconds < 300) {
+            out.push({
+              id: `ntf-${now}-${seq++}`,
+              title: 'Server Restarted',
+              message: `Host ${snap.serverId} has recently restarted and is now online (uptime: ${Math.round(snap.uptimeSeconds / 60)} min).`,
+              severity: 'info',
+              timestamp: now,
+              read: false,
+              serverId: snap.serverId,
+            });
+          } else {
+            out.push({
+              id: `ntf-${now}-${seq++}`,
+              title: 'Server Online',
+              message: `Host ${snap.serverId} is back online and accessible.`,
+              severity: 'success',
+              timestamp: now,
+              read: false,
+              serverId: snap.serverId,
+            });
+          }
+        }
+      }
+      this.lastState[snap.serverId] = snap.status;
+
       // High CPU — only re-fire every ~6 minutes per server
       if (snap.cpu > 88 && now - (this.lastHighCpuAt[snap.serverId] ?? 0) > 6 * MIN) {
         this.lastHighCpuAt[snap.serverId] = now;
