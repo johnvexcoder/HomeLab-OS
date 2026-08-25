@@ -139,14 +139,14 @@ function extractFlatMetrics(body: Record<string, unknown>): Record<string, unkno
         break;
       }
       case 'sensors': {
-        metrics.tempC = (d.cpuTempC as number) ?? null;
+        if (d.cpuTempC !== undefined) metrics.tempC = (d.cpuTempC as number) ?? null;
         break;
       }
       case 'docker': {
-        metrics.containerCount = (d.containerCount as number) ?? 0;
-        metrics.runningCount = (d.runningCount as number) ?? 0;
-        metrics.unhealthyCount = (d.unhealthyCount as number) ?? 0;
-        metrics.containersJson = JSON.stringify(d.containers ?? []);
+        if (d.containerCount !== undefined) metrics.containerCount = (d.containerCount as number) ?? 0;
+        if (d.runningCount !== undefined) metrics.runningCount = (d.runningCount as number) ?? 0;
+        if (d.unhealthyCount !== undefined) metrics.unhealthyCount = (d.unhealthyCount as number) ?? 0;
+        if (d.containers !== undefined) metrics.containersJson = JSON.stringify(d.containers ?? []);
         break;
       }
       case 'proxmox': {
@@ -226,7 +226,7 @@ export function createAgentRouter(): Router {
       const netDownMbps = flat.netDownMbps !== undefined ? Number(flat.netDownMbps) : Number(agent.net_down_mbps ?? 0);
       const netUpMbps = flat.netUpMbps !== undefined ? Number(flat.netUpMbps) : Number(agent.net_up_mbps ?? 0);
       const uptimeSeconds = flat.uptimeSeconds !== undefined ? Number(flat.uptimeSeconds) : (hostInfo?.uptimeSeconds !== undefined ? Number(hostInfo.uptimeSeconds) : Number(agent.uptime_seconds ?? 0));
-      const tempC = flat.tempC !== undefined ? Number(flat.tempC) : (agent.temp_c != null ? Number(agent.temp_c) : null);
+      const tempC = flat.tempC !== undefined ? (flat.tempC !== null ? Number(flat.tempC) : null) : (agent.temp_c != null ? Number(agent.temp_c) : null);
       const load1 = flat.load1 !== undefined ? Number(flat.load1) : Number(agent.load_1 ?? 0);
 
       const containerCount = flat.containerCount !== undefined ? Number(flat.containerCount) : Number(agent.container_count ?? 0);

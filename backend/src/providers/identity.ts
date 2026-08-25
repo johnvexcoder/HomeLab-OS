@@ -441,13 +441,16 @@ function enrichServerWithAgent(
 /**
  * Build a standalone ServerRuntime for an unmatched agent.
  */
-function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?: number): ServerRuntime {
+export function buildAgentRuntime(agent: AgentRow, agentIsStale: boolean, parentNodeId?: string, parentTempC?: number): ServerRuntime {
   const containers = safeJson<{ id: string; name: string; running: boolean; image: string; ports?: string[] }[]>(agent.containers_json, []);
 
   const cpuPct = clamp(agent.cpu_usage, 0, 100);
   const ramPct = agent.ram_total_gb > 0 ? (agent.ram_used_gb / agent.ram_total_gb) * 100 : 0;
   const diskPct = agent.disk_total_gb > 0 ? (agent.disk_used_gb / agent.disk_total_gb) * 100 : 0;
   const health = clamp(100 - (cpuPct > 85 ? 15 : 0) - (ramPct > 90 ? 15 : 0) - (diskPct > 92 ? 10 : 0), 0, 100);
+
+  const status = agentIsStale ? 'offline' : (cpuPct > 90 || ramPct > 95 ? 'degraded' : 'online');
+  const reachability = agentIsStale ? 'unreachable' : 'accessible';
 
   const agentTemp = (agent.temp_c != null && agent.temp_c > 0) ? agent.temp_c : 0;
   const tempC = agentTemp > 0 ? agentTemp : (parentTempC ?? 0);
@@ -507,30 +510,30 @@ function buildAgentRuntime(agent: AgentRow, parentNodeId?: string, parentTempC?:
         reliability: 1,
       },
     },
-    status: cpuPct > 90 || ramPct > 95 ? 'degraded' : 'online',
-    reachability: 'accessible',
+    status,
+    reachability,
     health: round(health),
-    load: round(agent.load_1, 2),
-    uptimeSeconds: agent.uptime_seconds || 0,
-    cpu: round(cpuPct),
-    ramUsedGb: round(agent.ram_used_gb, 1),
-    diskUsedGb: round(agent.disk_used_gb, 1),
-    tempC: round(tempC, 1),
-    netUpMbps: round(agent.net_up_mbps, 1),
-    netDownMbps: round(agent.net_down_mbps, 1),
-    processes: agent.process_count ?? 0,
+    load: agentIsStale ? 0 : round(agent.load_1, 2),
+    uptimeSeconds: agentIsStale ? 0 : (agent.uptime_seconds || 0),
+    cpu: agentIsStale ? 0 : round(cpuPct),
+    ramUsedGb: agentIsStale ? 0 : round(agent.ram_used_gb, 1),
+    diskUsedGb: agentIsStale ? 0 : round(agent.disk_used_gb, 1),
+    tempC: agentIsStale ? 0 : round(tempC, 1),
+    netUpMbps: agentIsStale ? 0 : round(agent.net_up_mbps, 1),
+    netDownMbps: agentIsStale ? 0 : round(agent.net_down_mbps, 1),
+    processes: agentIsStale ? 0 : (agent.process_count ?? 0),
     lastSeen: agent.last_report_at ?? Date.now(),
     sensors: [],
     history: {
-      cpu: ph('cpu', round(cpuPct)),
-      ram: ph('ram', round(ramPct)),
-      disk: ph('disk', round(diskPct)),
-      temp: ph('temp', round(tempC, 1)),
-      netUp: ph('netUp', round(agent.net_up_mbps)),
-      netDown: ph('netDown', round(agent.net_down_mbps)),
-      load: ph('load', round(agent.load_1, 2)),
+      cpu: ph('cpu', agentIsStale ? 0 : round(cpuPct)),
+      ram: ph('ram', agentIsStale ? 0 : round(ramPct)),
+      disk: ph('disk', agentIsStale ? 0 : round(diskPct)),
+      temp: ph('temp', agentIsStale ? 0 : round(tempC, 1)),
+      netUp: ph('netUp', agentIsStale ? 0 : round(agent.net_up_mbps)),
+      netDown: ph('netDown', agentIsStale ? 0 : round(agent.net_down_mbps)),
+      load: ph('load', agentIsStale ? 0 : round(agent.load_1, 2)),
     },
-    containers,
+    containers: agentIsStale ? containers.map(c => ({ ...c, running: false })) : containers,
   };
 }
 
@@ -661,7 +664,7 @@ export function reconcileServers(
     const id = hasContainers ? `docker-${agent.host_name}` : `agent-${agent.host_id}`;
     const existing = proxmoxServers.some((s) => s.spec.id === id) || extraServers.some((s) => s.spec.id === id);
     if (!existing) {
-      extraServers.push(buildAgentRuntime(agent, parentNodeId, parentTempC));
+      extraServers.push(buildAgentRuntime(agent, agentIsStale, parentNodeId, parentTempC));
     }
   }
 

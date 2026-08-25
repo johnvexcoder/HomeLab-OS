@@ -114,12 +114,9 @@ async function bootstrap(): Promise<void> {
         onTick: () => {},
       } as any;
       broadcaster = metrics as any;
-    } else if (liveProviders.length === 1) {
-      metrics = liveProviders[0] as any;
-      broadcaster = liveProviders[0] as any;
     } else {
-      // Use CompositeProvider if multiple providers are active
-      metrics = new (CompositeProvider as any)(...liveProviders) as any;
+      // Always use CompositeProvider to ensure agent reconciliation runs
+      metrics = new (CompositeProvider as any)(liveProviders[0], liveProviders[1]) as any;
       broadcaster = metrics as any;
     }
   }
