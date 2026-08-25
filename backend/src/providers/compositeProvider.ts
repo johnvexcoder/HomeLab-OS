@@ -137,6 +137,36 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     // enrich it with local /proc metrics so it shows real data
     this.selfEnrichIfUnenriched(result);
 
+    // ── Cascade Offline Status ──
+    // If a hypervisor or parent is offline, mark all children as offline.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const offlineIds = new Set<string>();
+      for (const s of result) {
+        if (s.status === 'offline') offlineIds.add(s.spec.id);
+      }
+      for (const s of result) {
+        if (s.status !== 'offline' && s.spec.parentId && offlineIds.has(s.spec.parentId)) {
+          s.status = 'offline';
+          s.reachability = 'unreachable';
+          s.cpu = 0;
+          s.netUpMbps = 0;
+          s.netDownMbps = 0;
+          changed = true;
+        }
+      }
+    }
+
+    // Force containers offline if their parent host is offline
+    for (const s of result) {
+      if (s.status === 'offline' && s.containers) {
+        for (const c of s.containers) {
+          c.running = false;
+        }
+      }
+    }
+
     return result;
   }
 
