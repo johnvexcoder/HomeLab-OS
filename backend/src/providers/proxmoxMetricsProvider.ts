@@ -580,7 +580,7 @@ export class ProxmoxMetricsProvider {
 
     // Inherit temperature from the parent Proxmox node (VMs don't have physical sensors)
     const parentNode = spec.parentId ? this.runtimes.get(spec.parentId) : undefined;
-    const tempC = null; // Guest temp is unavailable unless provided by an Agent, do not inherit host temp.
+    const tempC = parentNode?.tempC ?? 0;
 
     const prev = this.guestRuntimes.get(spec.id);
     const push = (key: keyof ServerRuntime['history'], val: number): number[] => {
@@ -600,7 +600,7 @@ export class ProxmoxMetricsProvider {
       cpu: round(cpuPct, 1),
       ramUsedGb: round(toFinite(guest.mem) / 1e9, 1),
       diskUsedGb: round(toFinite(guest.disk) / 1e9, 1),
-      tempC: tempC !== null ? round(tempC, 1) : 0,
+      tempC: round(tempC, 1),
       netUpMbps: 0,
       netDownMbps: 0,
       processes: 0,
@@ -610,7 +610,7 @@ export class ProxmoxMetricsProvider {
         cpu: push('cpu', round(cpuPct, 1)),
         ram: push('ram', round(ramPct, 1)),
         disk: push('disk', round(diskPct, 1)),
-        temp: push('temp', tempC !== null ? round(tempC, 1) : 0),
+        temp: push('temp', round(tempC, 1)),
         netUp: push('netUp', 0),
         netDown: push('netDown', 0),
         load: push('load', 0),

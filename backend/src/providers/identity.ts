@@ -390,12 +390,15 @@ function enrichServerWithAgent(
   if (agent.last_report_at) server.lastSeen = agent.last_report_at;
   server.processes = agent.process_count ?? 0;
 
-  // ── Temperature: agent sensors if available ──
+  // ── Temperature: agent sensors if available, else inherit from parent ──
   const agentHasTemp = agent.temp_c != null && agent.temp_c > 0;
   let tempSource: string | undefined = undefined;
   if (agentHasTemp) {
     server.tempC = round(agent.temp_c!, 1);
     tempSource = 'agent';
+  } else if (parentNode && parentNode.tempC > 0) {
+    server.tempC = round(parentNode.tempC, 1);
+    tempSource = parentNode.spec.hostname;
   }
   // else: keep the existing server.tempC (from Proxmox) — do NOT overwrite with 0
   if (tempSource) {
@@ -659,6 +662,48 @@ export function reconcileServers(
     const existing = proxmoxServers.some((s) => s.spec.id === id) || extraServers.some((s) => s.spec.id === id);
     if (!existing) {
       extraServers.push(buildAgentRuntime(agent, parentNodeId, parentTempC));
+    }
+  }
+
+  // ── Phase 1.5: Second-pass temperature inheritance ──
+  // Agents are processed in alphabetical order, so a guest (e.g. docker02) may
+  // be enriched before its parent host (e.g. pve0) — meaning the parent's tempC
+  // was still 0 during the first pass. Re-scan all servers that ended up with
+  // tempC=0 and try to inherit from their now-enriched parent Proxmox node.
+  for (const server of proxmoxServers) {
+    if (server.tempC > 0) continue;
+    if (!server.spec.parentId) continue;
+    const parent = proxmoxServers.find((s) => s.spec.id === server.spec.parentId);
+    if (parent && parent.tempC > 0) {
+      server.tempC = round(parent.tempC, 1);
+      server.spec.profile.baseTemp = server.tempC;
+      (server.spec as any)._tempSource = parent.spec.hostname;
+    }
+  }
+  // Also fix standalone agent servers whose parent wasn't enriched yet.
+  for (const server of extraServers) {
+    if (server.tempC > 0) continue;
+
+    // 1. Try clusterId parent
+    if (server.spec.clusterId) {
+      const parent = proxmoxServers.find((s) => s.spec.id === server.spec.clusterId);
+      if (parent && parent.tempC > 0) {
+        server.tempC = round(parent.tempC, 1);
+        server.spec.profile.baseTemp = server.tempC;
+        (server.spec as any)._tempSource = parent.spec.hostname;
+        continue;
+      }
+    }
+
+    // 2. Fallback: if server has no temperature, find any hypervisor node with tempC > 0
+    const fallbackParent = proxmoxServers.find((s) => s.spec.role === 'hypervisor' && s.tempC > 0) ?? proxmoxServers.find((s) => s.tempC > 0);
+    if (fallbackParent) {
+      server.tempC = round(fallbackParent.tempC, 1);
+      server.spec.profile.baseTemp = server.tempC;
+      (server.spec as any)._tempSource = fallbackParent.spec.hostname;
+      if (!server.spec.clusterId) {
+        server.spec.clusterId = fallbackParent.spec.id;
+      }
     }
   }
 

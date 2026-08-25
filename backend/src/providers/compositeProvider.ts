@@ -217,7 +217,28 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     }
 
     // ── Temperature inheritance pass ──
-    // REMOVED: VMs should not masquerade host temperature as their own.
+    // Any server without tempC inherits from the parent Proxmox node on the
+    // same subnet. This ALWAYS runs — independent of ownIp detection — so
+    // that VMs and containers get their host's temperature even when the
+    // backend cannot determine its own IP (e.g. running inside a container).
+    for (const s of servers) {
+      if (s.tempC != null && s.tempC > 0) continue;
+      if (!s.spec.ip) continue;
+      const sp = s.spec.ip.split('.');
+      if (sp.length !== 4) continue;
+      for (const candidate of servers) {
+        if (candidate.spec.role !== 'hypervisor') continue;
+        if (!candidate.spec.ip) continue;
+        if (candidate.tempC <= 0) continue;
+        const cp = candidate.spec.ip.split('.');
+        if (sp[0] === cp[0] && sp[1] === cp[1] && sp[2] === cp[2]) {
+          s.tempC = round(candidate.tempC, 1);
+          s.spec.profile.baseTemp = s.tempC;
+          (s.spec as any)._tempSource = candidate.spec.hostname;
+          break;
+        }
+      }
+    }
   }
 
   getServer(id: string): ServerRuntime | undefined {
