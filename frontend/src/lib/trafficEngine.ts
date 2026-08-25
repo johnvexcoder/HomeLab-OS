@@ -164,7 +164,7 @@ export function generateTraffic(nodes: NetworkNode[], links: NetworkLink[]): Tra
     const b = nodes.find((n) => n.id === link.target);
     if (!a || !b) continue;
 
-    const intensity = clamp(link.throughputMbps / 1000, 0.1, 1);
+    const intensity = clamp((link.throughputMbps || 0) / 1000, 0.1, 1);
     const hopMs = Math.round(clamp(320 - intensity * 180, 140, 320));
     const cycleMs = Math.round(clamp(2400 - intensity * 1400, 600, 2400));
     const count = Math.max(1, Math.round(intensity * 3));

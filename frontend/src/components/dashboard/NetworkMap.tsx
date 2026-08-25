@@ -131,7 +131,7 @@ export function NetworkMap() {
     return Math.min(Math.max(Math.min(scaleX, scaleY), 0.3), 1.0);
   }, [boardWidth, boardHeight, layoutW, layoutH]);
 
-  const totalTx = useMemo(() => links.reduce((a, l) => a + l.throughputMbps, 0), [links]);
+  const totalTx = useMemo(() => links.reduce((a, l) => a + (l.throughputMbps || 0), 0), [links]);
 
   return (
     <Card className="h-full">
