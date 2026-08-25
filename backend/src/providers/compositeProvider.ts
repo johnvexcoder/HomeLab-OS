@@ -150,19 +150,26 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         if (s.status !== 'offline' && s.spec.parentId && offlineIds.has(s.spec.parentId)) {
           s.status = 'offline';
           s.reachability = 'unreachable';
-          s.cpu = 0;
-          s.netUpMbps = 0;
-          s.netDownMbps = 0;
           changed = true;
         }
       }
     }
 
-    // Force containers offline if their parent host is offline
+    // Force containers offline if their parent host is offline, and zero out all metrics for offline hosts
     for (const s of result) {
-      if (s.status === 'offline' && s.containers) {
-        for (const c of s.containers) {
-          c.running = false;
+      if (s.status === 'offline') {
+        s.cpu = 0;
+        s.ramUsedGb = 0;
+        s.diskUsedGb = 0;
+        s.tempC = 0;
+        s.netUpMbps = 0;
+        s.netDownMbps = 0;
+        s.load = 0;
+        s.processes = 0;
+        if (s.containers) {
+          for (const c of s.containers) {
+            c.running = false;
+          }
         }
       }
     }

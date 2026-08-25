@@ -30,7 +30,7 @@ export class NotificationGenerator {
     for (const snap of snapshots) {
       // Status change detection (Offline / Online / Restarted)
       const prevState = this.lastState[snap.serverId];
-      if (prevState && prevState !== snap.status) {
+      if (prevState !== undefined && prevState !== snap.status) {
         if (snap.status === 'offline') {
           out.push({
             id: `ntf-${now}-${seq++}`,

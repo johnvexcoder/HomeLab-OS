@@ -219,15 +219,21 @@ export function createAgentRouter(): Router {
       const hostType = hostInfo?.hostType as string ?? String(body.hostType ?? agent.host_type ?? 'unknown');
       const cpuCores = Number(flat.cpuCores ?? (hostInfo?.arch ? 0 : body.cpuCores)) || Number(agent.cpu_cores) || 0;
       const ramTotalGb = Number(flat.ramTotalGb ?? 0) || Number(agent.ram_total_gb) || 0;
-      const cpuUsage = Number(flat.cpuUsage ?? 0);
-      const ramUsedGb = Number(flat.ramUsedGb ?? 0);
-      const diskUsedGb = Number(flat.diskUsedGb ?? 0);
-      const diskTotalGb = Number(flat.diskTotalGb ?? 0);
-      const netDownMbps = Number(flat.netDownMbps ?? 0);
-      const netUpMbps = Number(flat.netUpMbps ?? 0);
-      const uptimeSeconds = Number(flat.uptimeSeconds ?? hostInfo?.uptimeSeconds ?? 0);
-      const tempC = flat.tempC != null ? Number(flat.tempC) : null;
-      const load1 = Number(flat.load1 ?? 0);
+      const cpuUsage = flat.cpuUsage !== undefined ? Number(flat.cpuUsage) : Number(agent.cpu_usage ?? 0);
+      const ramUsedGb = flat.ramUsedGb !== undefined ? Number(flat.ramUsedGb) : Number(agent.ram_used_gb ?? 0);
+      const diskUsedGb = flat.diskUsedGb !== undefined ? Number(flat.diskUsedGb) : Number(agent.disk_used_gb ?? 0);
+      const diskTotalGb = flat.diskTotalGb !== undefined ? Number(flat.diskTotalGb) : Number(agent.disk_total_gb ?? 0);
+      const netDownMbps = flat.netDownMbps !== undefined ? Number(flat.netDownMbps) : Number(agent.net_down_mbps ?? 0);
+      const netUpMbps = flat.netUpMbps !== undefined ? Number(flat.netUpMbps) : Number(agent.net_up_mbps ?? 0);
+      const uptimeSeconds = flat.uptimeSeconds !== undefined ? Number(flat.uptimeSeconds) : (hostInfo?.uptimeSeconds !== undefined ? Number(hostInfo.uptimeSeconds) : Number(agent.uptime_seconds ?? 0));
+      const tempC = flat.tempC !== undefined ? Number(flat.tempC) : (agent.temp_c != null ? Number(agent.temp_c) : null);
+      const load1 = flat.load1 !== undefined ? Number(flat.load1) : Number(agent.load_1 ?? 0);
+
+      const containerCount = flat.containerCount !== undefined ? Number(flat.containerCount) : Number(agent.container_count ?? 0);
+      const runningCount = flat.runningCount !== undefined ? Number(flat.runningCount) : Number(agent.running_count ?? 0);
+      const unhealthyCount = flat.unhealthyCount !== undefined ? Number(flat.unhealthyCount) : Number(agent.unhealthy_count ?? 0);
+      const processCount = flat.processCount !== undefined ? Number(flat.processCount) : Number(agent.process_count ?? 0);
+      const containersJson = flat.containersJson !== undefined ? String(flat.containersJson) : String(agent.containers_json ?? '[]');
 
       db.prepare(`
         UPDATE agents SET
@@ -235,7 +241,8 @@ export function createAgentRouter(): Router {
           ip = ?, cpu_usage = ?, ram_used_gb = ?, disk_used_gb = ?, disk_total_gb = ?,
           net_down_mbps = ?, net_up_mbps = ?, uptime_seconds = ?,
           temp_c = ?, load_1 = ?, containers_json = ?,
-          plugins_json = ?, capabilities_json = ?,
+          plugins_json = CASE WHEN ? IS NOT NULL THEN ? ELSE plugins_json END,
+          capabilities_json = CASE WHEN ? IS NOT NULL THEN ? ELSE capabilities_json END,
           vm_id = ?, parent_ip = ?, virt_type = ?,
           machine_id = CASE WHEN ? != '' THEN ? ELSE machine_id END,
           mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
@@ -260,9 +267,9 @@ export function createAgentRouter(): Router {
         uptimeSeconds,
         tempC,
         load1,
-        flat.containersJson ? String(flat.containersJson) : '[]',
-        pluginsJson,
-        capabilitiesJson,
+        containersJson,
+        pluginsJson, pluginsJson,
+        capabilitiesJson, capabilitiesJson,
         String(hostInfo?.vmId ?? ''),
         String(hostInfo?.parentIp ?? ''),
         String(hostInfo?.virtType ?? ''),
@@ -274,10 +281,10 @@ export function createAgentRouter(): Router {
         String(hostInfo?.hostType ?? ''),
         String(hostInfo?.hypervisor ?? ''),
         String(hostInfo?.hypervisor ?? ''),
-        Number(flat.containerCount ?? 0),
-        Number(flat.runningCount ?? 0),
-        Number(flat.unhealthyCount ?? 0),
-        Number(flat.processCount ?? 0),
+        containerCount,
+        runningCount,
+        unhealthyCount,
+        processCount,
         now,
         now,
         agent.id,
