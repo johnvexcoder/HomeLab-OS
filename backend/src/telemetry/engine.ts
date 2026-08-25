@@ -254,8 +254,8 @@ export class TelemetryEngine {
       return {
         ...link,
         status,
-        latencyMs: round(link.latencyMs + jitterMs, 1),
-        throughputMbps: Math.round(link.throughputMbps * (0.7 + Math.random() * 0.5)),
+        latencyMs: round((link.latencyMs || 0) + jitterMs, 1),
+        throughputMbps: Math.round((link.throughputMbps || 0) * (0.7 + Math.random() * 0.5)),
       };
     });
 

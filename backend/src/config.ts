@@ -22,6 +22,7 @@ export const config = {
     tokenSecret: process.env.PROXMOX_TOKEN_SECRET ?? '',
     verifyTls: (process.env.PROXMOX_VERIFY_TLS ?? 'false').toLowerCase() === 'true',
     pollIntervalMs: int(process.env.PROXMOX_POLL_INTERVAL_MS, 5000),
+    enabled: !!(process.env.PROXMOX_HOST && process.env.PROXMOX_TOKEN_ID && process.env.PROXMOX_TOKEN_SECRET),
   },
   docker: {
     enabled: (process.env.DOCKER_ENABLED ?? 'false').toLowerCase() === 'true',

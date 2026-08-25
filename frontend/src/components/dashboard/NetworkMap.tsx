@@ -623,19 +623,19 @@ function CableHoverTooltip({ link, srcNode, tgtNode }: { link: NetworkLink; srcN
       <div className="space-y-1 text-[11px] text-text-muted">
         <div className="flex justify-between">
           <span>Throughput</span>
-          <span className="font-mono font-semibold text-text-primary">{formatMbps(link.throughputMbps)}</span>
+          <span className="font-mono font-semibold text-text-primary">{link.throughputMbps != null ? formatMbps(link.throughputMbps) : 'N/A'}</span>
         </div>
         <div className="flex justify-between">
           <span>Latency</span>
-          <span className="font-mono text-text-primary">{link.latencyMs.toFixed(1)} ms</span>
+          <span className="font-mono text-text-primary">{link.latencyMs != null ? `${link.latencyMs.toFixed(1)} ms` : 'N/A'}</span>
         </div>
-        {link.jitterMs > 0 && (
+        {link.jitterMs != null && link.jitterMs > 0 && (
           <div className="flex justify-between">
             <span>Jitter</span>
             <span className="font-mono text-text-primary">{link.jitterMs.toFixed(1)} ms</span>
           </div>
         )}
-        {link.packetLoss > 0 && (
+        {link.packetLoss != null && link.packetLoss > 0 && (
           <div className="flex justify-between">
             <span>Packet Loss</span>
             <span className="font-mono text-text-primary">{(link.packetLoss * 100).toFixed(1)}%</span>
@@ -792,19 +792,19 @@ function CableDetailPanel({ link, srcNode, tgtNode }: { link: NetworkLink; srcNo
         </div>
         <div className="flex items-center justify-between border-b border-surface-border/50 pb-1.5">
           <span className="text-text-muted">Throughput</span>
-          <span className="font-mono font-bold text-text-primary">{formatMbps(link.throughputMbps)}</span>
+          <span className="font-mono font-bold text-text-primary">{link.throughputMbps != null ? formatMbps(link.throughputMbps) : 'N/A'}</span>
         </div>
         <div className="flex items-center justify-between border-b border-surface-border/50 pb-1.5">
           <span className="text-text-muted">Latency</span>
-          <span className="font-mono text-text-primary">{link.latencyMs.toFixed(1)} ms</span>
+          <span className="font-mono text-text-primary">{link.latencyMs != null ? `${link.latencyMs.toFixed(1)} ms` : 'N/A'}</span>
         </div>
         <div className="flex items-center justify-between border-b border-surface-border/50 pb-1.5">
           <span className="text-text-muted">Jitter</span>
-          <span className="font-mono text-text-primary">{link.jitterMs.toFixed(1)} ms</span>
+          <span className="font-mono text-text-primary">{link.jitterMs != null ? `${link.jitterMs.toFixed(1)} ms` : 'N/A'}</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-text-muted">Packet Loss</span>
-          <span className="font-mono text-text-primary">{(link.packetLoss * 100).toFixed(1)}%</span>
+          <span className="font-mono text-text-primary">{link.packetLoss != null ? `${(link.packetLoss * 100).toFixed(1)}%` : 'N/A'}</span>
         </div>
       </dl>
     </div>

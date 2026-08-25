@@ -11,7 +11,7 @@ export function Hosts() {
   const { topology } = useNetwork();
   const links = topology?.links ?? [];
   const nodes = topology?.nodes ?? [];
-  const totalThroughput = links.reduce((a, l) => a + l.throughputMbps, 0);
+  const totalThroughput = links.reduce((a, l) => a + (l.throughputMbps ?? 0), 0);
   const totalDown = Math.round(totalThroughput * 0.6 * 10) / 10;
   const totalUp = Math.round(totalThroughput * 0.4 * 10) / 10;
 

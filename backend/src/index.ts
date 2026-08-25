@@ -56,41 +56,71 @@ async function bootstrap(): Promise<void> {
     metrics = new MockMetricsProvider(simulator.engine);
     broadcaster = simulator;
   } else {
-    const proxmox = new ProxmoxMetricsProvider();
-    await proxmox.start();
-    console.log(`[homelab] proxmox provider active (${config.proxmox.host})`);
-    metrics = proxmox;
-    broadcaster = proxmox;
+    const liveProviders: (MetricsProvider & TelemetryBroadcaster)[] = [];
 
+    // 1. Proxmox Provider (Optional)
+    if (config.proxmox.enabled) {
+      try {
+        const proxmox = new ProxmoxMetricsProvider();
+        await proxmox.start();
+        liveProviders.push(proxmox as any);
+        console.log(`[homelab] proxmox provider active (${config.proxmox.host})`);
+      } catch (err) {
+        console.error('[homelab] Proxmox provider failed to start:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    // 2. Docker Provider (Optional)
     if (config.docker.enabled) {
-      const docker = new DockerMetricsProvider();
-      docker.onContainerStateChange = (name, image, event) => {
-        // A stop event alone is not crash evidence → report OFFLINE, never CRASHED.
-        const severity: 'critical' | 'success' = event === 'stopped' ? 'critical' : 'success';
-        const title = event === 'stopped'
-          ? 'SERVICE ALERT'
-          : 'SERVICE RECOVERED';
-        const message = event === 'stopped'
-          ? `Status: OFFLINE\nResource: Container\nName: ${name}\nImage: ${image}\n\nDetected At:\n${new Date().toLocaleString('sv-SE')}\n\nPrevious Status:\nRUNNING\n\nCurrent Status:\nOFFLINE`
-          : `Status: RESTARTED\nResource: Container\nName: ${name}\nImage: ${image}\n\nRestart Detected At:\n${new Date().toLocaleString('sv-SE')}\n\nPrevious Status:\nOFFLINE\n\nCurrent Status:\nONLINE`;
+      try {
+        const docker = new DockerMetricsProvider();
+        docker.onContainerStateChange = (name, image, event) => {
+          // A stop event alone is not crash evidence → report OFFLINE, never CRASHED.
+          const severity: 'critical' | 'success' = event === 'stopped' ? 'critical' : 'success';
+          const title = event === 'stopped'
+            ? 'SERVICE ALERT'
+            : 'SERVICE RECOVERED';
+          const message = event === 'stopped'
+            ? `Status: OFFLINE\nResource: Container\nName: ${name}\nImage: ${image}\n\nDetected At:\n${new Date().toLocaleString('sv-SE')}\n\nPrevious Status:\nRUNNING\n\nCurrent Status:\nOFFLINE`
+            : `Status: RESTARTED\nResource: Container\nName: ${name}\nImage: ${image}\n\nRestart Detected At:\n${new Date().toLocaleString('sv-SE')}\n\nPrevious Status:\nOFFLINE\n\nCurrent Status:\nONLINE`;
 
-        const n: Notification = {
-          id: `ntf-docker-${event}-${name}-${crypto.randomUUID()}`,
-          title,
-          message,
-          severity,
-          timestamp: Date.now(),
-          read: false,
-          serverId: `docker-${name}`,
+          const n: Notification = {
+            id: `ntf-docker-${event}-${name}-${crypto.randomUUID()}`,
+            title,
+            message,
+            severity,
+            timestamp: Date.now(),
+            read: false,
+            serverId: `docker-${name}`,
+          };
+
+          dispatchNotification(n);
         };
+        await docker.start();
+        liveProviders.push(docker as any);
+        console.log(`[homelab] docker provider active (host: ${config.docker.host})`);
+      } catch (err) {
+        console.error('[homelab] Docker provider failed to start:', err instanceof Error ? err.message : err);
+      }
+    }
 
-        dispatchNotification(n);
-      };
-      await docker.start();
-      console.log(`[homelab] docker provider active (${config.docker.host})`);
-      const composite = new CompositeProvider(proxmox, docker);
-      metrics = composite;
-      broadcaster = composite;
+    // 3. Fallback/Composite logic
+    if (liveProviders.length === 0) {
+      console.warn('[homelab] No LIVE metrics providers configured or started. Running in degraded mode.');
+      // No-op provider as fallback
+      metrics = {
+        collect: async () => ({ snapshots: [], errors: [] }),
+        onNotifications: () => {},
+        onTick: () => {},
+      } as any;
+      broadcaster = metrics as any;
+    } else if (liveProviders.length === 1) {
+      metrics = liveProviders[0] as any;
+      broadcaster = liveProviders[0] as any;
+    } else {
+      // Use CompositeProvider if multiple providers are active
+      metrics = new (CompositeProvider as any)(...liveProviders) as any;
+      broadcaster = metrics as any;
     }
   }
 

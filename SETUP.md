@@ -259,6 +259,8 @@ privilege-separated token (or a token whose user lacks `PVEAuditor`) gets exactl
 
 The backend can read the Docker Engine directly and draw a `docker01 → containers` layer on the Network Map.
 
+> ⚠️ **SECURITY WARNING:** Mounting the Docker socket (`/var/run/docker.sock`) into a container gives that container **full root-level access** to the host machine. Only enable this feature if you trust this dashboard and understand the security implications.
+
 1. Mount the Docker socket into the backend container. In `docker-compose.yml`, under the **backend** service
    (this mounts the socket from the *same host the dashboard runs on* — e.g. `docker01`):
 

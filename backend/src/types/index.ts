@@ -192,10 +192,10 @@ export interface NetworkLink {
   source: string;
   target: string;
   status: 'healthy' | 'warning' | 'critical';
-  latencyMs: number;
-  throughputMbps: number;
-  jitterMs: number;
-  packetLoss: number;
+  latencyMs: number | null;
+  throughputMbps: number | null;
+  jitterMs: number | null;
+  packetLoss: number | null;
 }
 
 export interface QuickStat {

@@ -455,7 +455,7 @@ export class ProxmoxMetricsProvider {
       ip: this.nodeIp(detail.network),
       location: 'Proxmox Cluster',
       cpuModel,
-      cpuCores: node.maxcpu || cpuinfo.cpus || 1,
+      cpuCores: node.maxcpu || cpuinfo.cpus || 0,
       ramTotalGb: round(toFinite(node.maxmem) / 1e9, 1),
       diskTotalGb: round(toFinite(node.maxdisk) / 1e9, 1),
       sensors: this.sensorConfigs(detail.sensors),
@@ -547,7 +547,7 @@ export class ProxmoxMetricsProvider {
       ip: '',
       location: `${nodeSpec.hostname} / VMID ${guest.vmid}`,
       cpuModel: nodeSpec.cpuModel,
-      cpuCores: guest.cpus || 1,
+      cpuCores: guest.cpus || 0,
       ramTotalGb: round(toFinite(guest.maxmem) / 1e9, 1),
       diskTotalGb: round(toFinite(guest.maxdisk) / 1e9, 1),
       sensors: [],
@@ -580,7 +580,7 @@ export class ProxmoxMetricsProvider {
 
     // Inherit temperature from the parent Proxmox node (VMs don't have physical sensors)
     const parentNode = spec.parentId ? this.runtimes.get(spec.parentId) : undefined;
-    const tempC = parentNode?.tempC ?? 0;
+    const tempC = null; // Guest temp is unavailable unless provided by an Agent, do not inherit host temp.
 
     const prev = this.guestRuntimes.get(spec.id);
     const push = (key: keyof ServerRuntime['history'], val: number): number[] => {
@@ -600,7 +600,7 @@ export class ProxmoxMetricsProvider {
       cpu: round(cpuPct, 1),
       ramUsedGb: round(toFinite(guest.mem) / 1e9, 1),
       diskUsedGb: round(toFinite(guest.disk) / 1e9, 1),
-      tempC: round(tempC, 1),
+      tempC: tempC !== null ? round(tempC, 1) : 0,
       netUpMbps: 0,
       netDownMbps: 0,
       processes: 0,
@@ -610,7 +610,7 @@ export class ProxmoxMetricsProvider {
         cpu: push('cpu', round(cpuPct, 1)),
         ram: push('ram', round(ramPct, 1)),
         disk: push('disk', round(diskPct, 1)),
-        temp: push('temp', round(tempC, 1)),
+        temp: push('temp', tempC !== null ? round(tempC, 1) : 0),
         netUp: push('netUp', 0),
         netDown: push('netDown', 0),
         load: push('load', 0),
@@ -803,7 +803,7 @@ export class ProxmoxMetricsProvider {
     const hasHosts = this.runtimes.size > 0;
     if (hasHosts) {
       nodes.push({ id: 'gateway', label: 'Gateway', type: 'gateway', status: 'online', x: 50, y: 50, health: 100 });
-      links.push({ id: 'internet-gateway', source: 'internet', target: 'gateway', status: 'healthy', latencyMs: 12, throughputMbps: 940, jitterMs: 2, packetLoss: 0 });
+      links.push({ id: 'internet-gateway', source: 'internet', target: 'gateway', status: 'healthy', latencyMs: 0, throughputMbps: 0, jitterMs: 0, packetLoss: 0 });
     }
 
     // Physical hosts connect directly to gateway

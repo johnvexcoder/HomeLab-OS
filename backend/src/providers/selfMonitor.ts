@@ -97,6 +97,22 @@ function getDisk(): { used: number; total: number } {
   }
 }
 
+function getRam(): { used: number; total: number } {
+  try {
+    const meminfo = readProcFile('/proc/meminfo');
+    const get = (key: string) => {
+      const m = meminfo.match(new RegExp(`${key}:\\s+(\\d+)`));
+      return m ? parseInt(m[1], 10) * 1024 : 0;
+    };
+    const total = get('MemTotal');
+    const available = get('MemAvailable');
+    if (total > 0 && available > 0) {
+      return { used: (total - available) / (1024 ** 3), total: total / (1024 ** 3) };
+    }
+  } catch {}
+  return { used: (os.totalmem() - os.freemem()) / (1024 ** 3), total: os.totalmem() / (1024 ** 3) };
+}
+
 function countProcesses(): number {
   try {
     return fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d)).length;
@@ -147,8 +163,9 @@ export function collectSelfMetrics(): SelfMonitorData {
   prevNetTx = net.tx;
   prevTs = now;
 
-  const ramTotal = os.totalmem() / (1024 ** 3);
-  const ramUsed = (os.totalmem() - os.freemem()) / (1024 ** 3);
+  const ram = getRam();
+  const ramTotal = ram.total;
+  const ramUsed = ram.used;
 
   return {
     cpuUsage: Math.min(100, Math.max(0, cpuUsage)),

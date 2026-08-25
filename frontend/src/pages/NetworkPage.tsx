@@ -13,7 +13,7 @@ export default function NetworkPage() {
   const { topology } = useNetwork();
 
   const links = topology?.links ?? [];
-  const totalDown = links.reduce((a, l) => a + l.throughputMbps, 0);
+  const totalDown = links.reduce((a, l) => a + (l.throughputMbps ?? 0), 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -61,12 +61,12 @@ export default function NetworkPage() {
                       </span>
                     </td>
                     <td className="py-2.5 pr-4 tabular">
-                      <AnimatedNumber value={l.latencyMs} decimals={1} /> <span className="text-xs text-text-muted">ms</span>
+                      {l.latencyMs != null ? <><AnimatedNumber value={l.latencyMs} decimals={1} /> <span className="text-xs text-text-muted">ms</span></> : <span className="text-xs text-text-muted">N/A</span>}
                     </td>
-                    <td className="py-2.5 pr-4 tabular">{formatMbps(l.throughputMbps)}</td>
-                    <td className="py-2.5 pr-4 tabular">{l.packetLoss.toFixed(1)}%</td>
+                    <td className="py-2.5 pr-4 tabular">{l.throughputMbps != null ? formatMbps(l.throughputMbps) : 'N/A'}</td>
+                    <td className="py-2.5 pr-4 tabular">{l.packetLoss != null ? l.packetLoss.toFixed(1) + '%' : 'N/A'}</td>
                     <td className="py-2.5 tabular">
-                      <AnimatedNumber value={l.jitterMs} decimals={1} /> <span className="text-xs text-text-muted">ms</span>
+                      {l.jitterMs != null ? <><AnimatedNumber value={l.jitterMs} decimals={1} /> <span className="text-xs text-text-muted">ms</span></> : <span className="text-xs text-text-muted">N/A</span>}
                     </td>
                   </tr>
                 ))}
@@ -92,21 +92,21 @@ export default function NetworkPage() {
                   <div>
                     <span className="text-text-muted">Latency</span>
                     <div className="font-mono font-semibold text-text-primary">
-                      <AnimatedNumber value={l.latencyMs} decimals={1} /> ms
+                      {l.latencyMs != null ? <><AnimatedNumber value={l.latencyMs} decimals={1} /> ms</> : 'N/A'}
                     </div>
                   </div>
                   <div>
                     <span className="text-text-muted">Throughput</span>
-                    <div className="font-mono font-semibold text-text-primary">{formatMbps(l.throughputMbps)}</div>
+                    <div className="font-mono font-semibold text-text-primary">{l.throughputMbps != null ? formatMbps(l.throughputMbps) : 'N/A'}</div>
                   </div>
                   <div>
                     <span className="text-text-muted">Packet Loss</span>
-                    <div className="font-mono font-semibold text-text-primary">{l.packetLoss.toFixed(1)}%</div>
+                    <div className="font-mono font-semibold text-text-primary">{l.packetLoss != null ? l.packetLoss.toFixed(1) + '%' : 'N/A'}</div>
                   </div>
                   <div>
                     <span className="text-text-muted">Jitter</span>
                     <div className="font-mono font-semibold text-text-primary">
-                      <AnimatedNumber value={l.jitterMs} decimals={1} /> ms
+                      {l.jitterMs != null ? <><AnimatedNumber value={l.jitterMs} decimals={1} /> ms</> : 'N/A'}
                     </div>
                   </div>
                 </div>

@@ -55,12 +55,12 @@ export const NODE_TO_SERVER: Record<string, string> = {
   switch: 'switch01',
 };
 
-const LINK_BASE: Record<string, { latencyMs: number; throughputMbps: number; jitterMs: number; packetLoss: number }> = {
-  'internet-gateway': { latencyMs: 12, throughputMbps: 940, jitterMs: 2, packetLoss: 0 },
-  'gateway-switch': { latencyMs: 0.3, throughputMbps: 1000, jitterMs: 0.1, packetLoss: 0 },
-  uplink: { latencyMs: 0.4, throughputMbps: 940, jitterMs: 0.2, packetLoss: 0 },
-  virtual: { latencyMs: 0.1, throughputMbps: 2500, jitterMs: 0.05, packetLoss: 0 },
-  peer: { latencyMs: 0.6, throughputMbps: 10000, jitterMs: 0.2, packetLoss: 0 },
+const LINK_BASE: Record<string, { latencyMs: number | null; throughputMbps: number | null; jitterMs: number | null; packetLoss: number | null }> = {
+  'internet-gateway': { latencyMs: 0, throughputMbps: 0, jitterMs: 0, packetLoss: 0 },
+  'gateway-switch': { latencyMs: 0, throughputMbps: 0, jitterMs: 0, packetLoss: 0 },
+  uplink: { latencyMs: 0, throughputMbps: 0, jitterMs: 0, packetLoss: 0 },
+  virtual: { latencyMs: 0, throughputMbps: 0, jitterMs: 0, packetLoss: 0 },
+  peer: { latencyMs: 0, throughputMbps: 0, jitterMs: 0, packetLoss: 0 },
 };
 
 /**

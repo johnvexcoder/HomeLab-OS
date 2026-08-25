@@ -44,11 +44,11 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         serverId: s.spec.id,
         timestamp: Date.now(),
         cpu: s.cpu,
-        cpuCores: s.spec.cpuCores || 1,
+        cpuCores: s.spec.cpuCores || 0,
         ramUsedGb: s.ramUsedGb,
-        ramTotalGb: s.spec.ramTotalGb || 1,
+        ramTotalGb: s.spec.ramTotalGb || 0,
         diskUsedGb: s.diskUsedGb,
-        diskTotalGb: s.spec.diskTotalGb || 1,
+        diskTotalGb: s.spec.diskTotalGb || 0,
         tempC: s.tempC,
         netUpMbps: s.netUpMbps,
         netDownMbps: s.netDownMbps,
@@ -217,28 +217,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     }
 
     // ── Temperature inheritance pass ──
-    // Any server without tempC inherits from the parent Proxmox node on the
-    // same subnet. This ALWAYS runs — independent of ownIp detection — so
-    // that VMs and containers get their host's temperature even when the
-    // backend cannot determine its own IP (e.g. running inside a container).
-    for (const s of servers) {
-      if (s.tempC != null && s.tempC > 0) continue;
-      if (!s.spec.ip) continue;
-      const sp = s.spec.ip.split('.');
-      if (sp.length !== 4) continue;
-      for (const candidate of servers) {
-        if (candidate.spec.role !== 'hypervisor') continue;
-        if (!candidate.spec.ip) continue;
-        if (candidate.tempC <= 0) continue;
-        const cp = candidate.spec.ip.split('.');
-        if (sp[0] === cp[0] && sp[1] === cp[1] && sp[2] === cp[2]) {
-          s.tempC = round(candidate.tempC, 1);
-          s.spec.profile.baseTemp = s.tempC;
-          (s.spec as any)._tempSource = candidate.spec.hostname;
-          break;
-        }
-      }
-    }
+    // REMOVED: VMs should not masquerade host temperature as their own.
   }
 
   getServer(id: string): ServerRuntime | undefined {
@@ -304,14 +283,14 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     // Fallback/blend with server aggregate network bandwidth if host /proc/net/dev is muted or 0
     const serverAggDown = servers.reduce((a, s) => a + s.netDownMbps, 0);
     const serverAggUp = servers.reduce((a, s) => a + s.netUpMbps, 0);
-    const finalDownload = Math.max(bw.downloadMbps, serverAggDown, 4.2);
-    const finalUpload = Math.max(bw.uploadMbps, serverAggUp, 1.8);
+    const finalDownload = Math.max(bw.downloadMbps, serverAggDown, 0);
+    const finalUpload = Math.max(bw.uploadMbps, serverAggUp, 0);
 
     return [
       { id: 'servers', label: 'Nodes', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
       { id: 'online', label: 'Online', value: h.onlineServers, unit: '', delta: 0, tone: 'good' },
-      { id: 'containers', label: 'VMs & CTs', value: activeVms || 2, unit: '', delta: 0, tone: 'neutral',
-        value2: runningContainers || 6, label2: 'CTs', unit2: '' },
+      { id: 'containers', label: 'VMs & CTs', value: activeVms || 0, unit: '', delta: 0, tone: 'neutral',
+        value2: runningContainers || 0, label2: 'CTs', unit2: '' },
       { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0, tone: h.avgCpu > 70 ? 'warn' : 'good' },
       { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0, tone: 'good' },
       { id: 'download', label: 'Download', value: round(finalDownload, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
@@ -513,9 +492,9 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
           source: parentNode.id,
           target: id,
           status: c.running ? 'healthy' : 'warning',
-          latencyMs: 0.1,
+          latencyMs: 0,
           throughputMbps: 0,
-          jitterMs: 0.05,
+          jitterMs: 0,
           packetLoss: 0,
         });
       }

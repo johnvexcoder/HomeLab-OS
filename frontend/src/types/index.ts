@@ -159,11 +159,12 @@ export interface NetworkLink {
   id: string;
   source: string;
   target: string;
-  status: 'healthy' | 'warning' | 'critical';
-  latencyMs: number;
-  throughputMbps: number;
-  jitterMs: number;
-  packetLoss: number;
+  status: 'healthy' | 'warning' | 'critical' | 'unknown';
+  state?: 'observed' | 'inferred' | 'configured' | 'unknown';
+  latencyMs?: number | null;
+  throughputMbps?: number | null;
+  jitterMs?: number | null;
+  packetLoss?: number | null;
 }
 
 export interface NetworkTopology {
