@@ -207,57 +207,65 @@ export function computeTopologyLayout(
   const sortedDepths = [...levels.keys()].sort((a, b) => a - b);
   const numLevels = Math.max(1, sortedDepths.length);
 
-  const padX = clamp(w * 0.06, 20, 50);
-  const padY = clamp(h * 0.06, 20, 50);
+  const padX = 50;
+  const padY = 50;
 
+  let requiredW = w;
+  let requiredH = h;
   const positions = new Map<string, LayoutedNode>();
 
   if (!isVertical) {
     // ── Horizontal Layout (Desktop / Laptop) ──────────────────────────
-    const usableW = w - padX * 2 - nodeWidth;
-    const colGap = numLevels > 1 ? clamp(usableW / (numLevels - 1), 110, 220) : 0;
+    const colGap = 180;
+    const rowGap = 45;
+    
+    const maxNodesInCol = Math.max(1, ...Array.from(levels.values()).map(arr => arr.length));
+    
+    requiredW = Math.max(w, padX * 2 + nodeWidth + (numLevels > 1 ? numLevels - 1 : 0) * colGap);
+    requiredH = Math.max(h, padY * 2 + maxNodesInCol * nodeHeight + (maxNodesInCol > 1 ? maxNodesInCol - 1 : 0) * rowGap);
 
     sortedDepths.forEach((d, colIndex) => {
       const colNodes = levels.get(d) ?? [];
       const count = colNodes.length;
       const x = padX + nodeWidth / 2 + colIndex * colGap;
 
-      const usableH = h - padY * 2 - nodeHeight;
-      const rowGap = count > 1 ? clamp(usableH / (count - 1), 20, 75) : 0;
-      const totalColH = (count - 1) * (nodeHeight + rowGap);
-      const startY = count > 1 ? clamp((h - totalColH) / 2, padY + nodeHeight / 2, h - padY - nodeHeight / 2) : h / 2;
+      const totalColH = count * nodeHeight + (count > 1 ? count - 1 : 0) * rowGap;
+      const startY = (requiredH - totalColH) / 2 + nodeHeight / 2;
 
       colNodes.forEach((n, idx) => {
-        const y = count > 1 ? startY + idx * (nodeHeight + rowGap) : startY;
+        const y = startY + idx * (nodeHeight + rowGap);
         positions.set(n.id, {
           id: n.id,
-          x: round1(clamp(x, nodeWidth / 2 + 12, w - nodeWidth / 2 - 12)),
-          y: round1(clamp(y, nodeHeight / 2 + 12, h - nodeHeight / 2 - 12)),
+          x: round1(x),
+          y: round1(y),
           depth: d,
         });
       });
     });
   } else {
     // ── Vertical Layout (Smartphone / Tablet) ─────────────────────────
-    const usableH = h - padY * 2 - nodeHeight;
-    const rowGap = numLevels > 1 ? clamp(usableH / (numLevels - 1), 48, 85) : 0;
+    const rowGap = 80;
+    const colGap = 35;
+    
+    const maxNodesInRow = Math.max(1, ...Array.from(levels.values()).map(arr => arr.length));
+    
+    requiredH = Math.max(h, padY * 2 + nodeHeight + (numLevels > 1 ? numLevels - 1 : 0) * rowGap);
+    requiredW = Math.max(w, padX * 2 + maxNodesInRow * nodeWidth + (maxNodesInRow > 1 ? maxNodesInRow - 1 : 0) * colGap);
 
     sortedDepths.forEach((d, rowIndex) => {
       const rowNodes = levels.get(d) ?? [];
       const count = rowNodes.length;
       const y = padY + nodeHeight / 2 + rowIndex * (nodeHeight + rowGap);
 
-      const usableW = w - padX * 2 - nodeWidth;
-      const colGap = count > 1 ? clamp(usableW / (count - 1), 12, 45) : 0;
-      const totalRowW = (count - 1) * (nodeWidth + colGap);
-      const startX = count > 1 ? clamp((w - totalRowW) / 2, padX + nodeWidth / 2, w - padX - nodeWidth / 2) : w / 2;
+      const totalRowW = count * nodeWidth + (count > 1 ? count - 1 : 0) * colGap;
+      const startX = (requiredW - totalRowW) / 2 + nodeWidth / 2;
 
       rowNodes.forEach((n, idx) => {
-        const x = count > 1 ? startX + idx * (nodeWidth + colGap) : startX;
+        const x = startX + idx * (nodeWidth + colGap);
         positions.set(n.id, {
           id: n.id,
-          x: round1(clamp(x, nodeWidth / 2 + 10, w - nodeWidth / 2 - 10)),
-          y: round1(clamp(y, nodeHeight / 2 + 10, h - nodeHeight / 2 - 10)),
+          x: round1(x),
+          y: round1(y),
           depth: d,
         });
       });
@@ -304,8 +312,8 @@ export function computeTopologyLayout(
   }
 
   return {
-    width: w,
-    height: h,
+    width: requiredW,
+    height: requiredH,
     metrics: { nodeWidth, nodeHeight, iconSize, fontSize, isVertical, mode, showIpOnNode },
     nodes: positions,
     cables,
