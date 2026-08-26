@@ -4,9 +4,10 @@
  * Separates topology graph positioning from node presentation modes:
  * - FULL (Desktop >= 1024px): Full card (Icon, Name, IP, Status)
  * - COMPACT (Tablet 600px-1023px): Compact card (Icon, Name, IP, Status)
- * - MINIMAL (Smartphone < 600px): Minimal card (Icon, Name, Status — IP hidden from card, accessible via click/hover)
+ * - MINIMAL (Smartphone < 600px): Minimal card (Icon, Name, Status)
  *
- * Prevents node overlapping, guarantees safe boarder margins, and avoids huge stretched nodes.
+ * Guarantees well-proportioned layout that fills the board without
+ * microscopic shrinking, massive empty gaps, or overlapping devices.
  */
 
 import type { NetworkLink, NetworkNode } from '@/types';
@@ -88,15 +89,15 @@ export function getPresentationMode(w: number, h: number): {
   showIpOnNode: boolean;
   isVertical: boolean;
 } {
-  const isVertical = w < 600 || h > w * 1.2;
+  const isVertical = w < 600;
 
   if (w < 600) {
     // Smartphone / Narrow Viewport -> MINIMAL mode
     return {
       mode: 'minimal',
-      nodeWidth: 88,
-      nodeHeight: 44,
-      iconSize: 18,
+      nodeWidth: 96,
+      nodeHeight: 40,
+      iconSize: 16,
       fontSize: 10,
       showIpOnNode: false,
       isVertical: true,
@@ -107,19 +108,19 @@ export function getPresentationMode(w: number, h: number): {
     // Tablet / Medium Viewport -> COMPACT mode
     return {
       mode: 'compact',
-      nodeWidth: 115,
-      nodeHeight: 48,
+      nodeWidth: 120,
+      nodeHeight: 46,
       iconSize: 18,
       fontSize: 11,
       showIpOnNode: true,
-      isVertical,
+      isVertical: false,
     };
   }
 
   // Desktop / Large Viewport -> FULL mode
   return {
     mode: 'full',
-    nodeWidth: 138,
+    nodeWidth: 142,
     nodeHeight: 52,
     iconSize: 20,
     fontSize: 11,
@@ -134,8 +135,8 @@ export function computeTopologyLayout(
   containerWidth: number = 1000,
   containerHeight: number = 500,
 ): TopologyLayout {
-  const w = Math.max(280, containerWidth);
-  const h = Math.max(280, containerHeight);
+  const w = Math.max(300, containerWidth);
+  const h = Math.max(400, containerHeight);
 
   const { mode, nodeWidth, nodeHeight, iconSize, fontSize, showIpOnNode, isVertical } = getPresentationMode(w, h);
 
@@ -151,19 +152,15 @@ export function computeTopologyLayout(
 
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-  // Build children map & parent map
-  const childrenMap = new Map<string, string[]>();
+  // Build parent-child relationships
   const parentMap = new Map<string, string>();
-
   for (const n of nodes) {
     if (n.parentId && nodeMap.has(n.parentId) && n.parentId !== n.id) {
       parentMap.set(n.id, n.parentId);
-      if (!childrenMap.has(n.parentId)) childrenMap.set(n.parentId, []);
-      childrenMap.get(n.parentId)!.push(n.id);
     }
   }
 
-  // Infer parent-child connections from links
+  // Infer parent-child connections from links if parentId was omitted
   for (const link of links) {
     if (!nodeMap.has(link.source) || !nodeMap.has(link.target)) continue;
     const src = nodeMap.get(link.source)!;
@@ -173,10 +170,6 @@ export function computeTopologyLayout(
 
     if (srcDefault < tgtDefault && !parentMap.has(tgt.id)) {
       parentMap.set(tgt.id, src.id);
-      if (!childrenMap.has(src.id)) childrenMap.set(src.id, []);
-      if (!childrenMap.get(src.id)!.includes(tgt.id)) {
-        childrenMap.get(src.id)!.push(tgt.id);
-      }
     }
   }
 
@@ -207,93 +200,129 @@ export function computeTopologyLayout(
   const sortedDepths = [...levels.keys()].sort((a, b) => a - b);
   const numLevels = Math.max(1, sortedDepths.length);
 
-  const padX = 50;
-  const padY = 50;
-
-  let requiredW = w;
-  let requiredH = h;
   const positions = new Map<string, LayoutedNode>();
 
   if (!isVertical) {
-    // ── Horizontal Layout (Desktop / Laptop) ──────────────────────────
-    const colGap = 180;
-    const rowGap = 45;
-    
-    const maxNodesInCol = Math.max(1, ...Array.from(levels.values()).map(arr => arr.length));
-    
-    requiredW = Math.max(w, padX * 2 + nodeWidth + (numLevels > 1 ? numLevels - 1 : 0) * colGap);
-    requiredH = Math.max(h, padY * 2 + maxNodesInCol * nodeHeight + (maxNodesInCol > 1 ? maxNodesInCol - 1 : 0) * rowGap);
+    // ══════════════════════════════════════════════════════════════════════
+    // DESKTOP & LAPTOP HORIZONTAL LAYOUT (Fills 100% of card naturally)
+    // ══════════════════════════════════════════════════════════════════════
+    const padX = clamp(w * 0.05, 35, 60);
+    const padY = 30;
+    const usableW = w - padX * 2 - nodeWidth;
+    const colStep = numLevels > 1 ? usableW / (numLevels - 1) : 0;
 
     sortedDepths.forEach((d, colIndex) => {
       const colNodes = levels.get(d) ?? [];
       const count = colNodes.length;
-      const x = padX + nodeWidth / 2 + colIndex * colGap;
+      const baseX = padX + nodeWidth / 2 + colIndex * colStep;
 
-      const totalColH = count * nodeHeight + (count > 1 ? count - 1 : 0) * rowGap;
-      const startY = (requiredH - totalColH) / 2 + nodeHeight / 2;
+      if (count <= 5) {
+        // Single vertical stack centered nicely in board height
+        const totalHeight = count * nodeHeight + (count > 1 ? (count - 1) * 20 : 0);
+        const startY = Math.max(padY + nodeHeight / 2, (h - totalHeight) / 2 + nodeHeight / 2);
+        const stepY = count > 1 ? (totalHeight - nodeHeight) / (count - 1) : 0;
 
-      colNodes.forEach((n, idx) => {
-        const y = startY + idx * (nodeHeight + rowGap);
-        positions.set(n.id, {
-          id: n.id,
-          x: round1(x),
-          y: round1(y),
-          depth: d,
+        colNodes.forEach((n, idx) => {
+          const y = count > 1 ? startY + idx * stepY : h / 2;
+          positions.set(n.id, { id: n.id, x: round1(baseX), y: round1(y), depth: d });
         });
-      });
+      } else {
+        // High density column (e.g. 6-12 containers): arrange into 2 staggered sub-columns
+        // so it never forces huge canvas expansion and never squashes zoom!
+        const rows = Math.ceil(count / 2);
+        const totalHeight = rows * nodeHeight + (rows > 1 ? (rows - 1) * 16 : 0);
+        const startY = Math.max(padY + nodeHeight / 2, (h - totalHeight) / 2 + nodeHeight / 2);
+        const stepY = rows > 1 ? (totalHeight - nodeHeight) / (rows - 1) : 0;
+        const subColOffset = nodeWidth * 0.58;
+
+        colNodes.forEach((n, idx) => {
+          const r = Math.floor(idx / 2);
+          const c = idx % 2; // 0 = left sub-col, 1 = right sub-col
+          const x = c === 0 ? baseX - subColOffset : baseX + subColOffset;
+          const y = rows > 1 ? startY + r * stepY : h / 2;
+          positions.set(n.id, { id: n.id, x: round1(x), y: round1(y), depth: d });
+        });
+      }
     });
   } else {
-    // ── Vertical Layout (Smartphone / Tablet) ─────────────────────────
-    const rowGap = 80;
-    const colGap = 35;
-    
-    const maxNodesInRow = Math.max(1, ...Array.from(levels.values()).map(arr => arr.length));
-    
-    requiredH = Math.max(h, padY * 2 + nodeHeight + (numLevels > 1 ? numLevels - 1 : 0) * rowGap);
-    requiredW = Math.max(w, padX * 2 + maxNodesInRow * nodeWidth + (maxNodesInRow > 1 ? maxNodesInRow - 1 : 0) * colGap);
+    // ══════════════════════════════════════════════════════════════════════
+    // SMARTPHONE VERTICAL LAYOUT (Clean top-to-bottom natural hierarchy)
+    // ══════════════════════════════════════════════════════════════════════
+    const padY = 25;
+    const padX = 15;
+    const usableH = h - padY * 2 - nodeHeight;
+    const rowStep = numLevels > 1 ? usableH / (numLevels - 1) : 0;
 
     sortedDepths.forEach((d, rowIndex) => {
       const rowNodes = levels.get(d) ?? [];
       const count = rowNodes.length;
-      const y = padY + nodeHeight / 2 + rowIndex * (nodeHeight + rowGap);
+      const baseY = padY + nodeHeight / 2 + rowIndex * rowStep;
 
-      const totalRowW = count * nodeWidth + (count > 1 ? count - 1 : 0) * colGap;
-      const startX = (requiredW - totalRowW) / 2 + nodeWidth / 2;
+      if (count <= 2) {
+        // 1 or 2 nodes centered horizontally
+        const totalW = count * nodeWidth + (count > 1 ? 16 : 0);
+        const startX = (w - totalW) / 2 + nodeWidth / 2;
+        const stepX = count > 1 ? nodeWidth + 16 : 0;
 
-      rowNodes.forEach((n, idx) => {
-        const x = startX + idx * (nodeWidth + colGap);
-        positions.set(n.id, {
-          id: n.id,
-          x: round1(x),
-          y: round1(y),
-          depth: d,
+        rowNodes.forEach((n, idx) => {
+          const x = count > 1 ? startX + idx * stepX : w / 2;
+          positions.set(n.id, { id: n.id, x: round1(x), y: round1(baseY), depth: d });
         });
-      });
+      } else {
+        // Multi-node row on mobile (e.g. 3-6 containers): 2 compact sub-rows
+        const cols = Math.ceil(count / 2);
+        const totalW = cols * nodeWidth + (cols > 1 ? (cols - 1) * 8 : 0);
+        const startX = Math.max(padX + nodeWidth / 2, (w - totalW) / 2 + nodeWidth / 2);
+        const stepX = cols > 1 ? (totalW - nodeWidth) / (cols - 1) : 0;
+        const subRowOffset = nodeHeight * 0.55;
+
+        rowNodes.forEach((n, idx) => {
+          const colIdx = Math.floor(idx / 2);
+          const rowSub = idx % 2; // 0 = upper, 1 = lower
+          const x = cols > 1 ? startX + colIdx * stepX : w / 2;
+          const y = rowSub === 0 ? baseY - subRowOffset : baseY + subRowOffset;
+          positions.set(n.id, { id: n.id, x: round1(x), y: round1(y), depth: d });
+        });
+      }
     });
   }
 
-  // Calculate cable paths
+  // ══════════════════════════════════════════════════════════════════════
+  // PRECISE BEZIER CABLE COMPUTATION (Connects 100% of nodes & containers)
+  // ══════════════════════════════════════════════════════════════════════
   const cables = new Map<string, CableLayout>();
+
   for (const link of links) {
     const a = positions.get(link.source);
     const b = positions.get(link.target);
     if (!a || !b) continue;
 
     let dIn = '';
-    let dOut = '';
 
     if (!isVertical) {
-      // Smooth horizontal Bezier curves
-      const dx = Math.abs(b.x - a.x);
-      const hx = clamp(dx * 0.45, 25, 110);
-      dIn = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
-      dOut = `M ${a.x} ${a.y} C ${round1(a.x + hx)} ${a.y}, ${round1(b.x - hx)} ${b.y}, ${b.x} ${b.y}`;
+      // Horizontal mode
+      if (Math.abs(b.x - a.x) > 10) {
+        const dx = Math.abs(b.x - a.x);
+        const dir = b.x > a.x ? 1 : -1;
+        const hx = clamp(dx * 0.5, 20, 100);
+        dIn = `M ${a.x} ${a.y} C ${round1(a.x + dir * hx)} ${a.y}, ${round1(b.x - dir * hx)} ${b.y}, ${b.x} ${b.y}`;
+      } else {
+        // Same column / sub-column: arc gently out
+        const dy = b.y - a.y;
+        dIn = `M ${a.x} ${a.y} C ${round1(a.x + 35)} ${round1(a.y + dy * 0.3)}, ${round1(b.x + 35)} ${round1(b.y - dy * 0.3)}, ${b.x} ${b.y}`;
+      }
     } else {
-      // Smooth vertical Bezier curves for narrow viewports
-      const dy = Math.abs(b.y - a.y);
-      const hy = clamp(dy * 0.45, 20, 80);
-      dIn = `M ${a.x} ${a.y} C ${a.x} ${round1(a.y + hy)}, ${b.x} ${round1(b.y - hy)}, ${b.x} ${b.y}`;
-      dOut = `M ${a.x} ${a.y} C ${a.x} ${round1(a.y + hy)}, ${b.x} ${round1(b.y - hy)}, ${b.x} ${b.y}`;
+      // Vertical mode (mobile)
+      if (Math.abs(b.y - a.y) > 10) {
+        const dy = Math.abs(b.y - a.y);
+        const dir = b.y > a.y ? 1 : -1;
+        const hy = clamp(dy * 0.5, 15, 60);
+        dIn = `M ${a.x} ${a.y} C ${a.x} ${round1(a.y + dir * hy)}, ${b.x} ${round1(b.y - dir * hy)}, ${b.x} ${b.y}`;
+      } else {
+        // Same row: arc gently down
+        const dx = b.x - a.x;
+        dIn = `M ${a.x} ${a.y} C ${round1(a.x + dx * 0.3)} ${round1(a.y + 25)}, ${round1(b.x - dx * 0.3)} ${round1(b.y + 25)}, ${b.x} ${b.y}`;
+      }
     }
 
     const mx = round1((a.x + b.x) / 2);
@@ -301,7 +330,7 @@ export function computeTopologyLayout(
 
     cables.set(link.id, {
       dIn,
-      dOut,
+      dOut: dIn,
       x1: a.x,
       y1: a.y,
       x2: b.x,
@@ -312,8 +341,8 @@ export function computeTopologyLayout(
   }
 
   return {
-    width: requiredW,
-    height: requiredH,
+    width: w,
+    height: h,
     metrics: { nodeWidth, nodeHeight, iconSize, fontSize, isVertical, mode, showIpOnNode },
     nodes: positions,
     cables,

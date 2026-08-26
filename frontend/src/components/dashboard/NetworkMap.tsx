@@ -498,13 +498,25 @@ function buildRoutePath(nodeIds: string[], positions: Map<string, LayoutedNode>,
     if (i === 0) d += `M ${a.x} ${a.y} `;
     
     if (!isVertical) {
-      const dx = Math.abs(b.x - a.x);
-      const hx = Math.max(Math.min(dx * 0.45, 110), 25);
-      d += `C ${Math.round(a.x + (b.x > a.x ? hx : -hx))} ${a.y}, ${Math.round(b.x - (b.x > a.x ? hx : -hx))} ${b.y}, ${b.x} ${b.y} `;
+      if (Math.abs(b.x - a.x) > 10) {
+        const dx = Math.abs(b.x - a.x);
+        const dir = b.x > a.x ? 1 : -1;
+        const hx = Math.max(Math.min(dx * 0.5, 100), 20);
+        d += `C ${Math.round(a.x + dir * hx)} ${a.y}, ${Math.round(b.x - dir * hx)} ${b.y}, ${b.x} ${b.y} `;
+      } else {
+        const dy = b.y - a.y;
+        d += `C ${Math.round(a.x + 35)} ${Math.round(a.y + dy * 0.3)}, ${Math.round(b.x + 35)} ${Math.round(b.y - dy * 0.3)}, ${b.x} ${b.y} `;
+      }
     } else {
-      const dy = Math.abs(b.y - a.y);
-      const hy = Math.max(Math.min(dy * 0.45, 80), 20);
-      d += `C ${a.x} ${Math.round(a.y + (b.y > a.y ? hy : -hy))}, ${b.x} ${Math.round(b.y - (b.y > a.y ? hy : -hy))}, ${b.x} ${b.y} `;
+      if (Math.abs(b.y - a.y) > 10) {
+        const dy = Math.abs(b.y - a.y);
+        const dir = b.y > a.y ? 1 : -1;
+        const hy = Math.max(Math.min(dy * 0.5, 60), 15);
+        d += `C ${a.x} ${Math.round(a.y + dir * hy)}, ${b.x} ${Math.round(b.y - dir * hy)}, ${b.x} ${b.y} `;
+      } else {
+        const dx = b.x - a.x;
+        d += `C ${Math.round(a.x + dx * 0.3)} ${Math.round(a.y + 25)}, ${Math.round(b.x - dx * 0.3)} ${Math.round(b.y + 25)}, ${b.x} ${b.y} `;
+      }
     }
   }
   return d;
