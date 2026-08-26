@@ -158,7 +158,7 @@ export function NetworkMap() {
         <div
           ref={containerRef}
           className="relative w-full overflow-hidden"
-          style={{ height: 500 }}
+          style={{ height: layout.metrics.isVertical ? 600 : 560 }}
         >
           {/* ═══════════════════════════════════════════════════════════
               PERFECTLY CENTERED TOPOLOGY CANVAS
@@ -221,8 +221,8 @@ export function NetworkMap() {
                     );
                   })}
 
-                  {/* Animated Moving Light Packets (Back & Forth) */}
-                  <MovingLightPackets nodes={nodes} links={links} positions={finalPositions} isVertical={layout.metrics.isVertical} />
+                  {/* Animated Moving Light Packets (High-speed 60FPS streams) */}
+                  <MovingLightPackets links={links} cables={cables} />
                 </svg>
 
                 {/* ── HTML Layer (Device Cards) ──────────────────── */}
@@ -486,84 +486,54 @@ export function NetworkMap() {
   );
 }
 
-// ─── Moving Light Packets Effect (Fast, Unsynced Multi-Stream Data Flow) ───
-
-function buildRoutePath(nodeIds: string[], positions: Map<string, LayoutedNode>, isVertical: boolean): string {
-  let d = '';
-  for (let i = 0; i < nodeIds.length - 1; i++) {
-    const a = positions.get(nodeIds[i]);
-    const b = positions.get(nodeIds[i+1]);
-    if (!a || !b) continue;
-    
-    if (i === 0) d += `M ${a.x} ${a.y} `;
-    
-    if (!isVertical) {
-      if (Math.abs(b.x - a.x) > 10) {
-        const dx = Math.abs(b.x - a.x);
-        const dir = b.x > a.x ? 1 : -1;
-        const hx = Math.max(Math.min(dx * 0.5, 100), 20);
-        d += `C ${Math.round(a.x + dir * hx)} ${a.y}, ${Math.round(b.x - dir * hx)} ${b.y}, ${b.x} ${b.y} `;
-      } else {
-        const dy = b.y - a.y;
-        d += `C ${Math.round(a.x + 35)} ${Math.round(a.y + dy * 0.3)}, ${Math.round(b.x + 35)} ${Math.round(b.y - dy * 0.3)}, ${b.x} ${b.y} `;
-      }
-    } else {
-      if (Math.abs(b.y - a.y) > 10) {
-        const dy = Math.abs(b.y - a.y);
-        const dir = b.y > a.y ? 1 : -1;
-        const hy = Math.max(Math.min(dy * 0.5, 60), 15);
-        d += `C ${a.x} ${Math.round(a.y + dir * hy)}, ${b.x} ${Math.round(b.y - dir * hy)}, ${b.x} ${b.y} `;
-      } else {
-        const dx = b.x - a.x;
-        d += `C ${Math.round(a.x + dx * 0.3)} ${Math.round(a.y + 25)}, ${Math.round(b.x - dx * 0.3)} ${Math.round(b.y + 25)}, ${b.x} ${b.y} `;
-      }
-    }
-  }
-  return d;
-}
+// ─── Moving Light Packets Effect (Fast 60FPS Multi-Stream Data Flow) ───
 
 function MovingLightPackets({
-  nodes,
   links,
-  positions,
-  isVertical,
+  cables,
 }: {
-  nodes: NetworkNode[];
   links: NetworkLink[];
-  positions: Map<string, LayoutedNode>;
-  isVertical: boolean;
+  cables: Map<string, CableLayout>;
 }) {
-  const events = useMemo(() => generateTraffic(nodes, links), [nodes, links]);
-
   return (
     <g className="pointer-events-none">
-      {events.map((evt, idx) => {
-        const dPath = buildRoutePath(evt.path, positions, isVertical);
-        if (!dPath) return null;
+      {links.map((link, idx) => {
+        const cab = cables.get(link.id);
+        if (!cab) return null;
+        const st = normalizeStatus(link.status);
+        if (st === 'critical') return null;
 
-        const isOutbound = evt.direction === 'outbound';
-        const color = isOutbound ? '#3B82F6' : '#00F0FF';
-        
+        const isWarning = st === 'warning';
+        const colorIn = isWarning ? '#F59E0B' : '#00F0FF';
+        const colorOut = isWarning ? '#F59E0B' : '#3B82F6';
+
+        // High-speed smooth streams with zero heavy GPU filter repaint overhead
+        const dur1 = `${(0.45 + (idx * 0.11) % 0.35).toFixed(2)}s`;
+        const dur2 = `${(0.55 + (idx * 0.13) % 0.35).toFixed(2)}s`;
+        const begin1 = `${(idx * 0.17) % 0.6}s`;
+        const begin2 = `${((idx * 0.23) + 0.3) % 0.7}s`;
+
         return (
-          <g key={evt.id}>
-            {Array.from({ length: evt.count }).map((_, i) => {
-              const stagger = (i / evt.count) * (evt.dur / 1000);
-              const beginStr = `${evt.begin / 1000 + stagger}s`;
-              
-              return (
-                <g key={`${evt.id}-${i}`} style={{ filter: `drop-shadow(0 0 8px ${color})` }}>
-                  <circle r={3} fill={color}>
-                    <animateMotion
-                      path={dPath}
-                      begin={beginStr}
-                      dur={`${evt.dur / 1000}s`}
-                      repeatCount="indefinite"
-                      calcMode="linear"
-                    />
-                  </circle>
-                </g>
-              );
-            })}
+          <g key={`flow-${link.id}`}>
+            {/* Forward pulse (Source -> Target) */}
+            <g>
+              <circle r={2.5} fill={colorIn}>
+                <animateMotion path={cab.dIn} begin={begin1} dur={dur1} repeatCount="indefinite" calcMode="linear" />
+              </circle>
+              <circle r={5.5} fill={colorIn} opacity={0.35}>
+                <animateMotion path={cab.dIn} begin={begin1} dur={dur1} repeatCount="indefinite" calcMode="linear" />
+              </circle>
+            </g>
+
+            {/* Reverse pulse (Target -> Source) */}
+            <g>
+              <circle r={2.2} fill={colorOut}>
+                <animateMotion path={cab.dIn} begin={begin2} dur={dur2} keyPoints="1;0" keyTimes="0;1" repeatCount="indefinite" calcMode="linear" />
+              </circle>
+              <circle r={5} fill={colorOut} opacity={0.3}>
+                <animateMotion path={cab.dIn} begin={begin2} dur={dur2} keyPoints="1;0" keyTimes="0;1" repeatCount="indefinite" calcMode="linear" />
+              </circle>
+            </g>
           </g>
         );
       })}
