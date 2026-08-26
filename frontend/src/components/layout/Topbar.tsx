@@ -7,6 +7,7 @@ import { useClock } from '@/hooks/useClock';
 import { useTelemetry } from '@/hooks/useTelemetry';
 import { useNotificationStore } from '@/store/notifications';
 import { useAuthStore } from '@/store/auth';
+import { useQuery } from '@tanstack/react-query';
 import { endpoints } from '@/api/endpoints';
 import { formatClock, formatDate, relativeTime, cn } from '@/lib/utils';
 import { SEVERITY_META } from '@/lib/constants';
@@ -26,7 +27,10 @@ export function Topbar() {
   const markRead = useNotificationStore((s) => s.markRead);
   const authStatus = useAuthStore((s) => s.status);
   const authUser = useAuthStore((s) => s.user);
+  const modes = useAuthStore((s) => s.modes);
   const logout = useAuthStore((s) => s.logout);
+  const { data: healthData } = useQuery({ queryKey: ['health'], queryFn: endpoints.health, staleTime: 30_000 });
+  const isDemo = modes?.mockMode ?? healthData?.mockMode ?? false;
 
   useNotifications(12);
 
@@ -92,7 +96,7 @@ export function Topbar() {
           {connected ? (
             <span className="flex items-center gap-1.5 text-xs text-accent">
               <Wifi className="h-3.5 w-3.5" />
-              <span className="font-medium">Live</span>
+              <span className="font-medium">{isDemo ? 'Live Demo' : 'Live'}</span>
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-xs text-warn">

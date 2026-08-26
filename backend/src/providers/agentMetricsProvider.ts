@@ -75,7 +75,13 @@ export class AgentMetricsProvider implements MetricsProvider, TelemetryBroadcast
   }
 
   getServer(id: string): ServerRuntime | undefined {
-    return this.runtimes.find(s => s.spec.id === id);
+    return this.runtimes.find((s) =>
+      s.spec.id === id ||
+      `docker-${s.spec.id}` === id ||
+      `docker-${s.spec.name}` === id ||
+      s.spec.name === id ||
+      s.spec.hostname === id,
+    );
   }
 
   getHistory(serverId: string, range: HistoryRange) {

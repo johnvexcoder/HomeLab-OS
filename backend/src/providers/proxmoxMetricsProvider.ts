@@ -16,7 +16,7 @@ import type {
   ServerStatus,
 } from '../types';
 import type { HistoryPoint, HistoryRange, StatsHistoryPoint, ProviderDiagnostics } from './types';
-import { countMetrics } from '../db/database';
+import { countMetrics, insertMetrics } from '../db/database';
 import { historyForServer, statsHistoryFor } from './history';
 import { NotificationGenerator } from '../telemetry/notification-generator';
 import { uuid } from '../mock-data/servers';
@@ -642,6 +642,9 @@ export class ProxmoxMetricsProvider {
     }));
 
     const notifications = this.generator.generate(snapshots, now);
+    if (snapshots.length > 0) {
+      insertMetrics(snapshots);
+    }
     this.tickListeners.forEach((l) => l(snapshots));
     if (notifications.length > 0) this.notifListeners.forEach((l) => l(notifications));
   }

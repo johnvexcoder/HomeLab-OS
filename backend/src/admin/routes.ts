@@ -37,6 +37,7 @@ import { verifyPassword, sha256, randomBytes } from '../security/crypto';
 import { assertSensitiveAllowed } from '../security/rateLimit';
 import { passwordStrength } from '../security/passwordPolicy';
 import { notifyDispatcher } from '../services/notifyDispatch';
+import { config } from '../config';
 import { listQuickActions, saveQuickActions } from '../services/quickActions';
 
 /**
@@ -83,6 +84,17 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
 }
 
+function checkDemoRestriction(_req: Request, res: Response, next: () => void): void {
+  if (config.mockMode) {
+    res.status(403).json({
+      error: 'demo_mode_restricted',
+      message: 'Configuration, user, and credential changes are disabled in Demo Mode.',
+    });
+    return;
+  }
+  next();
+}
+
 export function createAdminRouter(): Router {
   const router = Router();
 
@@ -104,7 +116,7 @@ export function createAdminRouter(): Router {
     res.json({ settings, writable: [...WRITABLE_SETTINGS] });
   });
 
-  router.put('/settings', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+  router.put('/settings', requireAuth, checkDemoRestriction, requirePermission('settings.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     if (!assertSensitiveAllowed(req)) {
       res.status(429).json({ error: 'too_many_requests' });
@@ -157,7 +169,7 @@ export function createAdminRouter(): Router {
     res.json({ features: publicFeatureStatus() });
   });
 
-  router.put('/features/:id', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+  router.put('/features/:id', requireAuth, checkDemoRestriction, requirePermission('settings.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const feature = FEATURES.find((f) => f.id === req.params.id);
     if (!feature) {
@@ -182,7 +194,7 @@ export function createAdminRouter(): Router {
     res.json({ users: listUsers(), roles: ROLES });
   });
 
-  router.post('/users', requireAuth, requirePermission('users.manage'), (req: Request, res: Response) => {
+  router.post('/users', requireAuth, checkDemoRestriction, requirePermission('users.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     if (!assertSensitiveAllowed(req)) {
       res.status(429).json({ error: 'too_many_requests' });
@@ -224,7 +236,7 @@ export function createAdminRouter(): Router {
     }
   });
 
-  router.put('/users/:id', requireAuth, requirePermission('users.manage'), (req: Request, res: Response) => {
+  router.put('/users/:id', requireAuth, checkDemoRestriction, requirePermission('users.manage'), (req: Request, res: Response) => {
     const actor = req.auth!.user;
     const target = getUserById(req.params.id);
     if (!target) {
@@ -286,7 +298,7 @@ export function createAdminRouter(): Router {
     res.json({ user: updated });
   });
 
-  router.delete('/users/:id', requireAuth, requirePermission('users.manage'), (req: Request, res: Response) => {
+  router.delete('/users/:id', requireAuth, checkDemoRestriction, requirePermission('users.manage'), (req: Request, res: Response) => {
     const actor = req.auth!.user;
     const target = getUserById(req.params.id);
     if (!target) {
@@ -357,7 +369,7 @@ export function createAdminRouter(): Router {
     res.json({ snapshots: listSnapshots() });
   });
 
-  router.post('/snapshots', requireAuth, requireAnyPermission(['settings.manage', 'recovery.manage']), (req: Request, res: Response) => {
+  router.post('/snapshots', requireAuth, checkDemoRestriction, requireAnyPermission(['settings.manage', 'recovery.manage']), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const meta = captureSnapshot(String(req.body?.name ?? `manual-${Date.now()}`).slice(0, 120), user.username, req.body?.note ? String(req.body.note) : undefined);
     audit({ ts: Date.now(), userId: user.id, username: user.username, role: user.role, ip: req.ip, userAgent: req.headers['user-agent'], action: 'snapshot.created', target: meta.name, result: 'success' });
@@ -373,7 +385,7 @@ export function createAdminRouter(): Router {
     res.json({ snapshot: data });
   });
 
-  router.post('/snapshots/:id/restore', requireAuth, requirePermission('recovery.manage'), (req: Request, res: Response) => {
+  router.post('/snapshots/:id/restore', requireAuth, checkDemoRestriction, requirePermission('recovery.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const result = restoreSnapshot(req.params.id, user.username);
     if (!result.restored) {
@@ -384,7 +396,7 @@ export function createAdminRouter(): Router {
     res.json({ ok: true, integrationsRestored: result.integrationCount });
   });
 
-  router.delete('/snapshots/:id', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+  router.delete('/snapshots/:id', requireAuth, checkDemoRestriction, requirePermission('settings.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     if (!deleteSnapshot(req.params.id)) {
       res.status(404).json({ error: 'snapshot not found' });
@@ -409,7 +421,7 @@ export function createAdminRouter(): Router {
     });
   });
 
-  router.post('/integrations', requireAuth, requirePermission('integrations.manage'), (req: Request, res: Response) => {
+  router.post('/integrations', requireAuth, checkDemoRestriction, requirePermission('integrations.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const kind = String(req.body?.kind ?? '') as IntegrationKind;
     if (!(kind in INTEGRATION_SECRET_FIELDS)) {
@@ -428,7 +440,7 @@ export function createAdminRouter(): Router {
     res.json({ integration });
   });
 
-  router.put('/integrations/:id', requireAuth, requirePermission('integrations.manage'), (req: Request, res: Response) => {
+  router.put('/integrations/:id', requireAuth, checkDemoRestriction, requirePermission('integrations.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const existing = getIntegration(req.params.id);
     if (!existing) {
@@ -447,7 +459,7 @@ export function createAdminRouter(): Router {
     res.json({ integration });
   });
 
-  router.delete('/integrations/:id', requireAuth, requirePermission('integrations.manage'), (req: Request, res: Response) => {
+  router.delete('/integrations/:id', requireAuth, checkDemoRestriction, requirePermission('integrations.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     if (!deleteIntegration(req.params.id)) {
       res.status(404).json({ error: 'integration not found' });
@@ -473,7 +485,7 @@ export function createAdminRouter(): Router {
     res.json({ backups: listBackups(), status: backupStatus() });
   });
 
-  router.post('/backups', requireAuth, requirePermission('backups.manage'), async (req: Request, res: Response) => {
+  router.post('/backups', requireAuth, checkDemoRestriction, requirePermission('backups.manage'), async (req: Request, res: Response) => {
     const user = req.auth!.user;
     try {
       const backup = await createBackup('manual', req.body?.note ? String(req.body.note) : undefined, user.username);
@@ -485,7 +497,7 @@ export function createAdminRouter(): Router {
     }
   });
 
-  router.delete('/backups/:id', requireAuth, requirePermission('backups.manage'), (req: Request, res: Response) => {
+  router.delete('/backups/:id', requireAuth, checkDemoRestriction, requirePermission('backups.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     if (!deleteBackup(req.params.id)) {
       res.status(404).json({ error: 'backup not found' });
@@ -495,7 +507,7 @@ export function createAdminRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/backups/:id/restore', requireAuth, requirePermission('recovery.manage'), async (req: Request, res: Response) => {
+  router.post('/backups/:id/restore', requireAuth, checkDemoRestriction, requirePermission('recovery.manage'), async (req: Request, res: Response) => {
     const user = req.auth!.user;
     const row = getDb().prepare('SELECT file FROM backups WHERE id = ?').get(req.params.id) as { file: string } | undefined;
     if (!row) {
@@ -509,7 +521,7 @@ export function createAdminRouter(): Router {
   });
 
   // --- Emergency controls ---
-  router.post('/lock', requireAuth, requireRole('SUPER_ADMIN', 'ADMIN'), requirePermission('recovery.manage'), (req: Request, res: Response) => {
+  router.post('/lock', requireAuth, checkDemoRestriction, requireRole('SUPER_ADMIN', 'ADMIN'), requirePermission('recovery.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     setSetting('security.emergencyLock', 'true');
     const revoked = revokeAllSessions(req.auth!.sessionId);
@@ -517,7 +529,7 @@ export function createAdminRouter(): Router {
     res.json({ ok: true, revoked });
   });
 
-  router.post('/unlock', requireAuth, requireRole('SUPER_ADMIN'), (req: Request, res: Response) => {
+  router.post('/unlock', requireAuth, checkDemoRestriction, requireRole('SUPER_ADMIN'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const row = getUserById(user.id)!;
     const password = String(req.body?.password ?? '');
@@ -531,7 +543,7 @@ export function createAdminRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/safe-mode', requireAuth, requirePermission('system.manage'), (req: Request, res: Response) => {
+  router.post('/safe-mode', requireAuth, checkDemoRestriction, requirePermission('system.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const enabled = Boolean(req.body?.enabled);
     setSetting('security.safeMode', String(enabled));
@@ -562,7 +574,7 @@ export function createAdminRouter(): Router {
     res.json({ agents: rows });
   });
 
-  router.post('/agents', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+  router.post('/agents', requireAuth, checkDemoRestriction, requirePermission('settings.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const body = req.body as Record<string, unknown>;
     const hostId = String(body.hostId ?? '').trim();
@@ -595,7 +607,7 @@ export function createAdminRouter(): Router {
     res.json({ agentId: id, hostId, hostName, apiKey: plain });
   });
 
-  router.delete('/agents/:id', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+  router.delete('/agents/:id', requireAuth, checkDemoRestriction, requirePermission('settings.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const db = getDb();
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;
@@ -609,7 +621,7 @@ export function createAdminRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/agents/:id/rotate-key', requireAuth, requirePermission('settings.manage'), (req: Request, res: Response) => {
+  router.post('/agents/:id/rotate-key', requireAuth, checkDemoRestriction, requirePermission('settings.manage'), (req: Request, res: Response) => {
     const user = req.auth!.user;
     const db = getDb();
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;

@@ -27,6 +27,7 @@ let base = '';
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'homelab-test-'));
 
 before(async () => {
+  process.env.MOCK_MODE = 'false';
   process.env.DATA_DIR = DATA_DIR;
   process.env.ADMIN_INITIAL_PASSWORD = ADMIN_PASSWORD;
   process.env.SECRET_ENCRYPTION_KEY = 'test-encryption-key-1234567890';

@@ -24,7 +24,7 @@ function ensureAdminUser(): void {
   const fromEnv = process.env.ADMIN_INITIAL_PASSWORD;
   const isMock = config.mockMode;
 
-  if (isMock && countUsers() > 0) {
+  if (isMock && !fromEnv && countUsers() > 0) {
     const db = getDb();
     const row = db.prepare('SELECT id, password_salt, password_hash FROM users WHERE username = ?').get('admin') as { id: string; password_salt: string; password_hash: string } | undefined;
     if (row) {
@@ -37,7 +37,7 @@ function ensureAdminUser(): void {
 
   if (countUsers() > 0) return;
 
-  const password = isMock ? 'homelab-demo' : (fromEnv && fromEnv.length >= 10 ? fromEnv : randomBytes(18).toString('base64url'));
+  const password = fromEnv && fromEnv.length >= 10 ? fromEnv : (isMock ? 'homelab-demo' : randomBytes(18).toString('base64url'));
 
   const admin = createUser({
     username: 'admin',
@@ -47,7 +47,7 @@ function ensureAdminUser(): void {
     mustChangePassword: false,
   });
 
-  if (isMock) {
+  if (isMock && !fromEnv) {
     console.log('[homelab] Demo credentials: admin / homelab-demo');
   } else if (!fromEnv) {
     const file = path.join(config.dataDir, '.admin-initial-password');

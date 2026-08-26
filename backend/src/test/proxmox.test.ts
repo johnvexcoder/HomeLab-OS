@@ -65,6 +65,7 @@ before(async () => {
     if (req.includes('rrddata')) return [];
     if (req.endsWith('/sensors')) return [];
     if (req.endsWith('/network')) return [];
+    if (req.endsWith('/storage')) return [];
     throw new Error(`unexpected path ${req}`);
   };
 

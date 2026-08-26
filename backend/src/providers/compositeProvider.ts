@@ -61,13 +61,40 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         sensors: s.sensors,
       }));
 
-      if (enrichedSnapshots.length > 0) {
-        insertMetrics(enrichedSnapshots);
+      const snapIds = new Set(enrichedSnapshots.map((s) => s.serverId));
+      for (const s of snapshots) {
+        if (!snapIds.has(s.serverId)) {
+          enrichedSnapshots.unshift({
+            ...s,
+            timestamp: s.timestamp || Date.now(),
+            cpu: s.cpu || 0,
+            cpuCores: s.cpuCores || 0,
+            ramUsedGb: s.ramUsedGb || 0,
+            ramTotalGb: s.ramTotalGb || 0,
+            diskUsedGb: s.diskUsedGb || 0,
+            diskTotalGb: s.diskTotalGb || 0,
+            tempC: s.tempC || 0,
+            netUpMbps: s.netUpMbps || 0,
+            netDownMbps: s.netDownMbps || 0,
+            load: s.load || 0,
+            uptimeSeconds: s.uptimeSeconds || 0,
+            processes: s.processes || 0,
+            status: s.status || 'online',
+            reachability: s.reachability || 'accessible',
+            health: s.health || 100,
+            sensors: s.sensors || [],
+          });
+          snapIds.add(s.serverId);
+        }
       }
 
       const dockerSnap = this.docker?.getHostSnapshot();
-      if (dockerSnap) {
-        insertMetrics([dockerSnap]);
+      if (dockerSnap && !snapIds.has(dockerSnap.serverId)) {
+        enrichedSnapshots.push(dockerSnap);
+      }
+
+      if (enrichedSnapshots.length > 0) {
+        insertMetrics(enrichedSnapshots);
       }
 
       listener(enrichedSnapshots);
@@ -119,17 +146,6 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
         if (claimedGuestIds.has(result[i].spec.id)) {
           result.splice(i, 1);
         }
-      }
-    }
-
-    // ── Remove agent-less Proxmox guests ──
-    // Proxmox guests have IDs like "pve-pve0-g100". Only keep guests that
-    // were enriched by a matching agent. VMs without agents (e.g. debian01,
-    // debian02) should not appear on the dashboard.
-    for (let i = result.length - 1; i >= 0; i--) {
-      const id = result[i].spec.id;
-      if (/^.*-g\d+$/.test(id) && !enrichedGuestIds.has(id)) {
-        result.splice(i, 1);
       }
     }
 
@@ -280,7 +296,13 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
 
   getServer(id: string): ServerRuntime | undefined {
     // Use getServers() which applies agent enrichment to Proxmox servers
-    return this.getServers().find((s) => s.spec.id === id);
+    return this.getServers().find((s) =>
+      s.spec.id === id ||
+      `docker-${s.spec.id}` === id ||
+      `docker-${s.spec.name}` === id ||
+      s.spec.name === id ||
+      s.spec.hostname === id,
+    );
   }
 
   getHistory(serverId: string, range: HistoryRange) {
@@ -330,12 +352,18 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
 
     const activeVms = servers.filter((s) => s.spec.role === 'vm' || s.spec.role === 'lxc').length;
+    const primaryQuickStats = this.primary.getQuickStats?.() ?? [];
+    const primaryContainersVal = Number(primaryQuickStats.find((s) => s.id === 'containers')?.value) || 0;
+    const totalVmCount = Math.max(activeVms, primaryContainersVal);
 
     const localContainers = this.docker?.getContainers() ?? [];
     const guestMap = this.getGuestMap();
     const agentProfiles = getAgentDockerHostProfiles(guestMap);
     const agentContainerCount = agentProfiles.reduce((sum, p) => sum + p.containers.filter((c) => c.running).length, 0);
-    const runningContainers = Math.max(localContainers.filter((c) => c.running).length + agentContainerCount, servers.reduce((a, s) => a + (s.spec.profile?.containers ?? 0), 0));
+    const localRunningCount = localContainers.filter((c) => c.running).length;
+    const runningContainers = localContainers.length > 0
+      ? (localRunningCount + agentContainerCount)
+      : (agentContainerCount || servers.reduce((a, s) => a + (s.spec.profile?.containers ?? 0), 0));
 
     const bw = getNetworkBandwidth();
     // Fallback/blend with server aggregate network bandwidth if host /proc/net/dev is muted or 0
@@ -347,7 +375,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     return [
       { id: 'servers', label: 'Nodes', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
       { id: 'online', label: 'Online', value: h.onlineServers, unit: '', delta: 0, tone: 'good' },
-      { id: 'containers', label: 'VMs & CTs', value: activeVms || 0, unit: '', delta: 0, tone: 'neutral',
+      { id: 'containers', label: 'VMs & CTs', value: totalVmCount + runningContainers, unit: '', delta: 0, tone: 'neutral',
         value2: runningContainers || 0, label2: 'CTs', unit2: '' },
       { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0, tone: h.avgCpu > 70 ? 'warn' : 'good' },
       { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0, tone: 'good' },
@@ -382,23 +410,6 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
       }
     }
 
-    // ── Remove agent-less Proxmox guests from network map ──
-    // Proxmox guests have IDs like "pve-pve0-g100". Only keep guests that
-    // were enriched by a matching agent. VMs without agents (debian01,
-    // debian02) should not appear on the topology.
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      const nid = nodes[i].id;
-      if (/^.*-g\d+$/.test(nid) && !enrichedGuestIds.has(nid)) {
-        nodes.splice(i, 1);
-      }
-    }
-    // Remove links connected to removed guest nodes
-    const remainingNodeIds = new Set(nodes.map((n) => n.id));
-    for (let i = links.length - 1; i >= 0; i--) {
-      if (!remainingNodeIds.has(links[i].source) || !remainingNodeIds.has(links[i].target)) {
-        links.splice(i, 1);
-      }
-    }
     for (const s of agentServers) {
       if (existingIds.has(s.spec.id)) continue;
       const parentNode = s.spec.clusterId && nodes.some((n) => n.id === s.spec.clusterId)
@@ -516,17 +527,54 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     }
 
     // Fallback: if the backend host has Docker containers but no agent data,
-    // use the DockerMetricsProvider containers matched by IP
+    // use the DockerMetricsProvider containers matched by IP, hostname, or topology hierarchy
     const localDockerContainers = this.docker?.getContainers() ?? [];
     if (localDockerContainers.length > 0) {
       const hostRuntime = this.docker?.getHostRuntime();
-      const hostIp = hostRuntime?.spec.ip;
-      if (hostIp && !agentContainersByIp.has(hostIp)) {
-        agentContainersByIp.set(hostIp, localDockerContainers);
+      const hostIp = hostRuntime?.spec.ip || '';
+      const hostName = hostRuntime?.spec.hostname || 'docker';
+
+      // Find parent node for local Docker socket
+      let parentNode = nodes.find((n) => hostIp && n.ip === hostIp);
+      if (!parentNode) {
+        parentNode = nodes.find((n) => n.label && n.label.toLowerCase().includes(hostName.toLowerCase()));
+      }
+      if (!parentNode) {
+        parentNode = nodes.find((n) => n.id.startsWith('g') || n.type === 'vm' || n.type === 'lxc' || n.type === 'container');
+      }
+      if (!parentNode) {
+        parentNode = nodes.find((n) => n.type === 'hypervisor') || nodes[0];
+      }
+
+      if (parentNode) {
+        for (const c of localDockerContainers.slice(0, 40)) {
+          const id = `docker-${c.id}`;
+          if (nodes.some((n) => n.id === id)) continue;
+          nodes.push({
+            id,
+            label: c.name,
+            type: 'docker',
+            status: c.running ? 'online' : 'offline',
+            x: 50, y: 50,
+            parentId: parentNode.id,
+            ip: hostIp || parentNode.ip,
+            health: c.running ? 100 : 0,
+          });
+          links.push({
+            id: `${parentNode.id}-${id}`,
+            source: parentNode.id,
+            target: id,
+            status: c.running ? 'healthy' : 'warning',
+            latencyMs: 0,
+            throughputMbps: 0,
+            jitterMs: 0,
+            packetLoss: 0,
+          });
+        }
       }
     }
 
-    // Create container nodes for every server that has containers
+    // Create container nodes for every server that has agent-reported containers
     for (const [hostIp, containers] of agentContainersByIp) {
       // Find the parent network node for this host IP
       const parentNode = nodes.find((n) => n.ip === hostIp);

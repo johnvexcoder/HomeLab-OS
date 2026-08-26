@@ -8,19 +8,18 @@ import type {
   QuickStat,
   ServerRuntime,
 } from '../types';
-import type { HistoryPoint, HistoryRange, StatsHistoryPoint, DockerHostProfile } from './types';
+import type { HistoryPoint, HistoryRange, StatsHistoryPoint, DockerHostProfile, DockerContainerInfo } from './types';
 import type { MetricsProvider } from './types';
 import { TelemetryEngine } from '../telemetry/engine';
-import { NotificationGenerator } from '../telemetry/notification-generator';
 import { countMetrics } from '../db/database';
-import { SERVER_SPECS, CLUSTER_NAMES } from '../mock-data/servers';
+import { SERVER_SPECS, CLUSTER_NAMES, MOCK_SERVER_CONTAINERS } from '../mock-data/servers';
 import { clamp, round } from '../telemetry/random';
 import { historyForServer, statsHistoryFor } from './history';
 
 /**
- * Mock implementation of MetricsProvider. Reads from the live simulation engine
- * and the SQLite history store. Swapping this for real integrations keeps the
- * whole API surface identical.
+ * Mock implementation of MetricsProvider.
+ * Serves a realistic 3-node Proxmox Cluster with VMs, Docker hosts, TrueNAS storage,
+ * and OPNsense firewall running on simulated infrastructure.
  */
 export class MockMetricsProvider implements MetricsProvider {
   constructor(readonly engine: TelemetryEngine) {}
@@ -30,7 +29,14 @@ export class MockMetricsProvider implements MetricsProvider {
   }
 
   getServer(id: string): ServerRuntime | undefined {
-    return this.engine.servers.get(id);
+    return this.engine.servers.get(id) ??
+      [...this.engine.servers.values()].find((s) =>
+        s.spec.id === id ||
+        `docker-${s.spec.id}` === id ||
+        `docker-${s.spec.name}` === id ||
+        s.spec.name === id ||
+        s.spec.hostname === id,
+      );
   }
 
   getHistory(serverId: string, range: HistoryRange): HistoryPoint[] {
@@ -84,15 +90,17 @@ export class MockMetricsProvider implements MetricsProvider {
     const totalRam = servers.reduce((a, s) => a + s.spec.ramTotalGb, 0);
     const totalDown = servers.reduce((a, s) => a + s.netDownMbps, 0);
     const totalUp = servers.reduce((a, s) => a + s.netUpMbps, 0);
-    const containers = servers.reduce((a, s) => a + s.spec.profile.containers, 0);
+
+    const activeVms = servers.filter((s) => s.spec.parentId).length;
+    const runningContainers = servers.reduce((a, s) => a + (s.containers ? s.containers.filter((c) => c.running).length : 0), 0);
 
     return [
-      { id: 'servers', label: 'Servers', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
+      { id: 'servers', label: 'Nodes', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
       { id: 'online', label: 'Online', value: h.onlineServers, unit: '', delta: 0, tone: 'good' },
-      { id: 'containers', label: 'VMs & CTs', value: containers, unit: '', delta: 2, tone: 'neutral',
-        value2: 0, label2: 'CTs', unit2: '' },
-      { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 1.2, tone: h.avgCpu > 70 ? 'warn' : 'good' },
-      { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0.4, tone: 'good' },
+      { id: 'containers', label: 'VMs & CTs', value: activeVms, unit: '', delta: 0, tone: 'neutral',
+        value2: runningContainers, label2: 'CTs', unit2: '' },
+      { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0.8, tone: h.avgCpu > 70 ? 'warn' : 'good' },
+      { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0.2, tone: 'good' },
       { id: 'download', label: 'Download', value: round(totalDown, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
       { id: 'upload', label: 'Upload', value: round(totalUp, 1), unit: 'Mbps', delta: 0, tone: 'neutral' },
       { id: 'uptime', label: 'Uptime', value: totalUptimeSeconds, unit: 'sec', delta: 0.1, tone: 'good' },
@@ -103,12 +111,14 @@ export class MockMetricsProvider implements MetricsProvider {
     return this.engine.getNetwork();
   }
 
-  /** Aggregate the fleet into clusters. Standalone nodes (no clusterId) are excluded. */
+  /** Aggregate the fleet into clusters (Proxmox cluster: pve0, pve1, pve2). */
   getClusters(): ClusterInfo[] {
     const byCluster = new Map<string, ServerRuntime[]>();
     for (const srv of this.getServers()) {
       const clusterId = srv.spec.clusterId;
       if (!clusterId) continue;
+      // Only include hypervisors in the Proxmox cluster definition
+      if (srv.spec.role !== 'hypervisor') continue;
       const list = byCluster.get(clusterId) ?? [];
       list.push(srv);
       byCluster.set(clusterId, list);
@@ -141,27 +151,46 @@ export class MockMetricsProvider implements MetricsProvider {
     };
   }
 
+  getDockerContainers(): DockerContainerInfo[] {
+    const list: DockerContainerInfo[] = [];
+    for (const [hostId, containers] of Object.entries(MOCK_SERVER_CONTAINERS)) {
+      for (const c of containers) {
+        list.push({
+          id: c.id,
+          name: c.name,
+          running: c.running,
+          image: c.image,
+          ports: c.ports,
+        });
+      }
+    }
+    return list;
+  }
+
   getDockerHostProfiles(): DockerHostProfile[] {
-    return [
-      {
-        hostName: 'docker02',
-        hostIp: '192.168.1.33',
-        netDownMbps: 45.2,
-        netUpMbps: 12.8,
-        containers: [
-          { id: 'c06a1b2c3d53', name: 'jellyfin', running: true, image: 'jellyfin/jellyfin:latest', ports: ['8096->8096/tcp'] },
-          { id: 'c07a1b2c3d54', name: 'jellyfin-transcode', running: true, image: 'jellyfin/jellyfin:latest', ports: [] },
-          { id: 'c08a1b2c3d55', name: 'uptime-kuma', running: true, image: 'louislam/uptime-kuma:latest', ports: ['3001->3001/tcp'] },
-          { id: 'c09a1b2c3d56', name: 'homelab-frontend', running: false, image: 'homelab/frontend:latest', ports: [] },
-          { id: 'c10a1b2c3d57', name: 'homelab-backend', running: true, image: 'homelab/backend:latest', ports: ['4000->4000/tcp'] },
-          { id: 'c11a1b2c3d58', name: 'nginx-proxy', running: true, image: 'nginx:alpine', ports: ['80->80/tcp', '443->443/tcp'] },
-          { id: 'c12a1b2c3d59', name: 'redis', running: true, image: 'redis:7-alpine', ports: ['6379->6379/tcp'] },
-          { id: 'c13a1b2c3d5a', name: 'postgres', running: true, image: 'postgres:16-alpine', ports: ['5432->5432/tcp'] },
-          { id: 'c14a1b2c3d5b', name: 'grafana', running: true, image: 'grafana/grafana:latest', ports: ['3002->3000/tcp'] },
-          { id: 'c15a1b2c3d5c', name: 'prometheus', running: true, image: 'prom/prometheus:latest', ports: ['9090->9090/tcp'] },
-        ],
-      },
-    ];
+    const servers = this.getServers();
+    const profiles: DockerHostProfile[] = [];
+
+    for (const [hostId, containers] of Object.entries(MOCK_SERVER_CONTAINERS)) {
+      const srv = servers.find((s) => s.spec.id === hostId);
+      if (!srv) continue;
+
+      profiles.push({
+        hostName: srv.spec.name,
+        hostIp: srv.spec.ip,
+        netDownMbps: srv.netDownMbps,
+        netUpMbps: srv.netUpMbps,
+        containers: containers.map((c) => ({
+          id: c.id,
+          name: c.name,
+          running: c.running,
+          image: c.image,
+          ports: c.ports,
+        })),
+      });
+    }
+
+    return profiles;
   }
 
   private readonly bootStartedAt = Date.now();

@@ -24,6 +24,7 @@ export interface Modes {
   emergencyLock: boolean;
   safeMode: boolean;
   guest: boolean;
+  mockMode?: boolean;
 }
 
 export interface SessionInfo {

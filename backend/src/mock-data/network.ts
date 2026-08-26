@@ -1,5 +1,5 @@
 import type { NetworkLink, NetworkNode, ServerRuntime, ServerSpec } from '../types';
-import { SERVER_SPECS } from './servers';
+import { SERVER_SPECS, MOCK_SERVER_CONTAINERS } from './servers';
 import { calculateHierarchicalLayout, type LayoutNode } from '../providers/hierarchicalLayout';
 
 export const NETWORK_NODE_ICONS: Record<string, string> = {
@@ -25,18 +25,15 @@ export const NETWORK_NODE_ICONS: Record<string, string> = {
 };
 
 /**
- * Fixed infrastructure spine (internet + the node hosting the gateway role and
- * the switch role). Everything else is derived at runtime from the fleet model:
- * server nodes, their children (VMs/CTs) and the links between them — so the
- * topology stays correct as servers are added/removed, instead of hand-drawn.
+ * Fixed infrastructure spine: Internet -> Gateway -> Core Switch.
  */
 const SPINE: Array<{ id: string; label: string; type: NetworkNode['type'] }> = [
   { id: 'internet', label: 'Internet', type: 'internet' },
-  { id: 'gateway', label: 'Gateway', type: 'gateway' },
-  { id: 'switch', label: 'Switch', type: 'switch' },
+  { id: 'gateway', label: 'Gateway (Edge Router)', type: 'gateway' },
+  { id: 'switch01', label: 'Switch01 (UniFi Core)', type: 'switch' },
 ];
 
-/** Maps a fleet role onto the network-node type (gateway/switch reuse the spine). */
+/** Maps a fleet role onto the network-node type. */
 const ROLE_TO_TYPE: Record<ServerSpec['role'], NetworkNode['type']> = {
   hypervisor: 'hypervisor',
   docker: 'docker',
@@ -46,13 +43,12 @@ const ROLE_TO_TYPE: Record<ServerSpec['role'], NetworkNode['type']> = {
   gateway: 'gateway',
   switch: 'switch',
   network: 'gateway',
-  server: 'container',
+  server: 'physical',
 };
 
-/** Server id hosting the gateway/switch spine roles. */
 export const NODE_TO_SERVER: Record<string, string> = {
   gateway: 'gateway',
-  switch: 'switch01',
+  switch01: 'switch01',
 };
 
 const LINK_BASE: Record<string, { latencyMs: number | null; throughputMbps: number | null; jitterMs: number | null; packetLoss: number | null }> = {
@@ -64,11 +60,7 @@ const LINK_BASE: Record<string, { latencyMs: number | null; throughputMbps: numb
 };
 
 /**
- * Build the full topology from the fleet model. Uses hierarchical layout algorithm
- * to automatically calculate node positions based on the infrastructure hierarchy.
- * `getRuntime` resolves a server id to its live runtime (status/health/ip).
- * Links follow relationships: a node links to its `parentId` when one exists,
- * otherwise to the switch.
+ * Build the full topology from the unified mock infrastructure fleet model.
  */
 export function buildTopology(
   getRuntime: (serverId: string) => ServerRuntime | undefined,
@@ -92,10 +84,12 @@ export function buildTopology(
       label,
       type,
       status: runtime?.status ?? 'online',
-      x: 50, // Temporary, will be calculated by layout algorithm
-      y: 50, // Temporary, will be calculated by layout algorithm
+      x: 50,
+      y: 50,
       parentId,
       health: runtime?.health ?? 100,
+      tempC: runtime?.tempC ?? spec?.profile?.baseTemp,
+      cpuPercent: runtime?.cpu ?? spec?.profile?.baseCpu,
     };
     if (spec?.ip) node.ip = spec.ip;
     nodesBeforeLayout.push(node);
@@ -103,60 +97,96 @@ export function buildTopology(
     return node;
   };
 
-  const mkLink = (
-    id: string,
-    source: string,
-    target: string,
-    kind: keyof typeof LINK_BASE,
-  ): NetworkLink => {
-    const base = LINK_BASE[id] ?? LINK_BASE[kind];
-    return {
-      id,
-      source,
-      target,
-      status: 'healthy',
-      ...base,
-    };
-  };
+  // 1. Spine (Internet -> Gateway -> Switch)
+  mkNode('internet', undefined, 'Internet', 'internet');
+  mkNode('gateway', 'gateway', 'Gateway', 'gateway', 'internet');
+  mkNode('switch01', 'switch01', 'Switch01', 'switch', 'gateway');
 
-  // Spine (internet + gateway/switch hosts when they exist in the fleet).
-  for (const spine of SPINE) {
-    const serverId = NODE_TO_SERVER[spine.id];
-    const spec = serverId ? specById.get(serverId) : undefined;
-    mkNode(spine.id, serverId, spec?.name ?? spine.label, spine.type);
+  links.push({
+    id: 'internet-gateway',
+    source: 'internet',
+    target: 'gateway',
+    status: 'healthy',
+    latencyMs: 12.4,
+    throughputMbps: 940,
+    jitterMs: 1.2,
+    packetLoss: 0,
+  });
+
+  links.push({
+    id: 'gateway-switch01',
+    source: 'gateway',
+    target: 'switch01',
+    status: 'healthy',
+    latencyMs: 0.2,
+    throughputMbps: 1000,
+    jitterMs: 0.05,
+    packetLoss: 0,
+  });
+
+  // 2. Proxmox Hypervisor Nodes (pve0, pve1, pve2) -> attached to core switch
+  for (const spec of SERVER_SPECS) {
+    if (spec.role !== 'hypervisor') continue;
+
+    mkNode(spec.id, spec.id, spec.name, 'hypervisor', 'switch01');
+    links.push({
+      id: `switch01-${spec.id}`,
+      source: 'switch01',
+      target: spec.id,
+      status: 'healthy',
+      latencyMs: 0.3,
+      throughputMbps: 1000,
+      jitterMs: 0.05,
+      packetLoss: 0,
+    });
   }
 
-  // Fleet nodes + their relationships.
+  // 3. Virtual Machines (docker01, docker02 under pve0; docker03, firewall01 under pve1; nas01, backup01 under pve2)
   for (const spec of SERVER_SPECS) {
-    if (spec.role === 'gateway' || spec.role === 'switch') continue;
+    if (spec.role === 'hypervisor' || spec.role === 'gateway' || spec.role === 'switch') continue;
 
     const type = ROLE_TO_TYPE[spec.role];
-    mkNode(spec.id, spec.id, spec.name, type, spec.parentId);
+    const parentNodeId = spec.parentId || 'switch01';
 
-    // Uplink: to parent (relationship) when present, else straight to the switch.
-    const parentIsServer = spec.parentId ? specById.has(spec.parentId) : false;
-    const uplinkSource = parentIsServer ? (spec.parentId as string) : 'switch';
-    const kind = parentIsServer ? 'peer' : 'uplink';
-    links.push({ id: `${spec.id}-uplink`, source: uplinkSource, target: spec.id, status: 'healthy', ...LINK_BASE[kind] });
+    mkNode(spec.id, spec.id, spec.name, type, parentNodeId);
+    links.push({
+      id: `${parentNodeId}-${spec.id}`,
+      source: parentNodeId,
+      target: spec.id,
+      status: 'healthy',
+      latencyMs: 0.1,
+      throughputMbps: 10000,
+      jitterMs: 0.02,
+      packetLoss: 0,
+    });
 
-    // VMs/CTs: compute nodes expose a child workload node.
-    if (spec.role === 'hypervisor' || spec.role === 'docker') {
-      mkNode(`${spec.id}-containers`, undefined, 'VMs & CTs', 'container', spec.id);
-      links.push({ 
-        id: `${spec.id}-containers`, 
-        source: spec.id, 
-        target: `${spec.id}-containers`, 
-        status: 'healthy', 
-        ...LINK_BASE.virtual 
+    // 4. Docker Containers attached directly to their parent Docker VM
+    const containers = MOCK_SERVER_CONTAINERS[spec.id] || [];
+    for (const c of containers) {
+      const containerNodeId = `docker-${c.id}`;
+      mkNode(containerNodeId, undefined, c.name, 'container', spec.id);
+      
+      const node = nodeById.get(containerNodeId);
+      if (node) {
+        node.ip = spec.ip;
+        node.status = c.running ? 'online' : 'offline';
+        node.health = c.running ? 100 : 0;
+      }
+
+      links.push({
+        id: `${spec.id}-${containerNodeId}`,
+        source: spec.id,
+        target: containerNodeId,
+        status: c.running ? 'healthy' : 'warning',
+        latencyMs: 0.05,
+        throughputMbps: 1000,
+        jitterMs: 0.01,
+        packetLoss: 0,
       });
     }
   }
 
-  // Spine links.
-  links.push({ ...mkLink('internet-gateway', 'internet', 'gateway', 'internet-router') });
-  links.push({ ...mkLink('gateway-switch', 'gateway', 'switch', 'router-switch') });
-
-  // Apply hierarchical layout algorithm to calculate positions
+  // Apply hierarchical layout algorithm to calculate relative positions
   const layoutNodes: LayoutNode[] = nodesBeforeLayout.map((n) => ({
     id: n.id,
     label: n.label,

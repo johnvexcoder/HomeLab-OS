@@ -43,6 +43,7 @@ import { getBoolSetting, getIntSetting, getJsonSetting } from '../security/setti
 import { permissionsForRole, guestPermissionsFor, type Role } from '../security/permissions';
 import { passwordStrength } from '../security/passwordPolicy';
 import { smtpConfigured, sendOtpEmail } from '../security/smtp';
+import { config } from '../config';
 import { notifyDispatcher } from '../services/notifyDispatch';
 
 type TwoFactorMethod = 'totp' | 'email' | 'question';
@@ -180,12 +181,24 @@ function consumeResetToken(token: string): ResetEntry | null {
   return entry;
 }
 
+function checkDemoRestriction(_req: Request, res: Response, next: () => void): void {
+  if (config.mockMode) {
+    res.status(403).json({
+      error: 'demo_mode_restricted',
+      message: 'Password and credential modifications are disabled in Demo Mode.',
+    });
+    return;
+  }
+  next();
+}
+
 function modePayload() {
   return {
     readOnly: getBoolSetting('security.readOnly'),
     emergencyLock: getBoolSetting('security.emergencyLock'),
     safeMode: getBoolSetting('security.safeMode'),
     guest: getBoolSetting('access.guest.enabled'),
+    mockMode: config.mockMode,
   };
 }
 
@@ -369,7 +382,7 @@ export function createAuthRouter(): Router {
     });
   });
 
-  router.post('/change-password', requireAuth, (req: Request, res: Response) => {
+  router.post('/change-password', requireAuth, checkDemoRestriction, (req: Request, res: Response) => {
     const user = req.auth!.user;
     const current = String(req.body?.currentPassword ?? '');
     const next = String(req.body?.newPassword ?? '');
@@ -396,7 +409,7 @@ export function createAuthRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/2fa/setup', requireAuth, (req: Request, res: Response) => {
+  router.post('/2fa/setup', requireAuth, checkDemoRestriction, (req: Request, res: Response) => {
     const user = req.auth!.user;
     const password = String(req.body?.password ?? '');
     const row = getUserById(user.id)!;
@@ -425,7 +438,7 @@ export function createAuthRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/2fa/disable', requireAuth, (req: Request, res: Response) => {
+  router.post('/2fa/disable', requireAuth, checkDemoRestriction, (req: Request, res: Response) => {
     const user = req.auth!.user;
     const password = String(req.body?.password ?? '');
     const row = getUserById(user.id)!;
@@ -520,7 +533,7 @@ export function createAuthRouter(): Router {
     });
   });
 
-  router.post('/2fa/email/enable', requireAuth, (req: Request, res: Response) => {
+  router.post('/2fa/email/enable', requireAuth, checkDemoRestriction, (req: Request, res: Response) => {
     const user = req.auth!.user;
     const password = String(req.body?.password ?? '');
     const email = String(req.body?.email ?? '').trim();
@@ -538,7 +551,7 @@ export function createAuthRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/2fa/email/disable', requireAuth, (req: Request, res: Response) => {
+  router.post('/2fa/email/disable', requireAuth, checkDemoRestriction, (req: Request, res: Response) => {
     const user = req.auth!.user;
     const password = String(req.body?.password ?? '');
     const row = getUserById(user.id)!;
@@ -551,7 +564,7 @@ export function createAuthRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/security-questions/setup', requireAuth, (req: Request, res: Response) => {
+  router.post('/security-questions/setup', requireAuth, checkDemoRestriction, (req: Request, res: Response) => {
     const user = req.auth!.user;
     const password = String(req.body?.password ?? '');
     const questions = Array.isArray(req.body?.questions) ? (req.body.questions as Array<{ question: string; answer: string }>) : [];
@@ -572,7 +585,7 @@ export function createAuthRouter(): Router {
     res.json({ ok: true });
   });
 
-  router.post('/security-questions/clear', requireAuth, (req: Request, res: Response) => {
+  router.post('/security-questions/clear', requireAuth, checkDemoRestriction, (req: Request, res: Response) => {
     const user = req.auth!.user;
     const password = String(req.body?.password ?? '');
     const row = getUserById(user.id)!;

@@ -114,6 +114,14 @@ export default function SettingsPage() {
       </div>
 
       {/* Alerts */}
+      {modes?.mockMode && (
+        <div className="flex items-center gap-3 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-text-primary">
+          <Shield className="h-4 w-4 shrink-0 text-accent" />
+          <div>
+            <span className="font-semibold text-accent">Demo Mode Active:</span> HomeLab-OS is currently running on simulated infrastructure. Theme & visual preferences can be customized freely, but modifying passwords, user accounts, and infrastructure credentials is disabled.
+          </div>
+        </div>
+      )}
       {mustChange && (
         <div className="flex items-center gap-3 rounded-xl border border-warn/25 bg-warn/10 px-4 py-3 text-sm text-warn">
           <AlertTriangle className="h-4 w-4 shrink-0" />
