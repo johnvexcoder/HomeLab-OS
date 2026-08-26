@@ -30,16 +30,16 @@ export default function NetworkPage() {
 
       <NetworkMap />
 
-      <div className="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-3 lg:grid-cols-3 items-start">
         {/* Link table */}
-        <Card className="md:col-span-2 lg:col-span-2 flex flex-col h-full min-h-0">
+        <Card className="md:col-span-2 lg:col-span-2 flex flex-col h-[680px]">
           <div className="mb-4 flex items-center justify-between shrink-0">
             <h3 className="text-sm font-semibold text-text-primary">Link Status</h3>
             <span className="text-xs text-text-muted">{links.length} links</span>
           </div>
           
           {/* Desktop table view */}
-          <div className="hidden sm:block flex-1 min-h-0 overflow-y-auto pr-1 max-h-[580px] scrollbar-thin">
+          <div className="hidden sm:block flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-surface-border text-[10px] uppercase tracking-widest text-text-muted">
@@ -79,7 +79,7 @@ export default function NetworkPage() {
           </div>
 
           {/* Mobile card view */}
-          <div className="sm:hidden flex flex-col gap-3">
+          <div className="sm:hidden flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin flex flex-col gap-3">
             {links.map((l) => (
               <div key={l.id} className="rounded-lg border border-surface-border bg-surface-input p-3">
                 <div className="mb-2 flex items-center justify-between">
@@ -120,7 +120,7 @@ export default function NetworkPage() {
         </Card>
 
         {/* Hosts */}
-        <Card className="flex flex-col h-full min-h-0">
+        <Card className="flex flex-col h-[680px]">
           <div className="mb-4 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-text-primary">Hosts</h3>
@@ -136,7 +136,7 @@ export default function NetworkPage() {
               return (
                 <div
                   key={node.id}
-                  className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5 transition-all"
+                  className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5 transition-all shrink-0"
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-black/40">
                     {IconComponent ? <IconComponent size={18} /> : <span>{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>}
