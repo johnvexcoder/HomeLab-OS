@@ -1,4 +1,7 @@
+import { useMemo } from 'react';
 import { useNetwork } from '@/hooks/useQueries';
+import { useTelemetryStore, selectServers } from '@/store/telemetry';
+import { useShallow } from 'zustand/react/shallow';
 import { NetworkMap } from '@/components/dashboard/NetworkMap';
 import { ProviderDiagnosticsBanner } from '@/components/provider/ProviderDiagnosticsBanner';
 import { Card } from '@/components/ui/Card';
@@ -11,9 +14,10 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 
 export default function NetworkPage() {
   const { topology } = useNetwork();
-
+  const servers = useTelemetryStore(useShallow(selectServers));
   const links = topology?.links ?? [];
-  const totalDown = links.reduce((a, l) => a + (l.throughputMbps ?? 0), 0);
+  const totalDown = useMemo(() => Math.round(servers.reduce((a, s) => a + (s.netDownMbps || 0), 0) * 10) / 10, [servers]);
+  const totalUp = useMemo(() => Math.round(servers.reduce((a, s) => a + (s.netUpMbps || 0), 0) * 10) / 10, [servers]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -155,14 +159,14 @@ export default function NetworkPage() {
               <div className="flex items-center gap-1">
                 <ArrowDown className="h-3.5 w-3.5 text-success" />
                 <span className="font-display text-lg font-bold tabular text-accent">
-                  <AnimatedNumber value={Math.round(totalDown * 0.6 * 10) / 10} />
+                  <AnimatedNumber value={totalDown} />
                 </span>
                 <span className="text-xs text-text-muted">Mb/s</span>
               </div>
               <div className="flex items-center gap-1">
                 <ArrowUp className="h-3.5 w-3.5 text-info" />
                 <span className="font-display text-lg font-bold tabular text-accent">
-                  <AnimatedNumber value={Math.round(totalDown * 0.4 * 10) / 10} />
+                  <AnimatedNumber value={totalUp} />
                 </span>
                 <span className="text-xs text-text-muted">Mb/s</span>
               </div>

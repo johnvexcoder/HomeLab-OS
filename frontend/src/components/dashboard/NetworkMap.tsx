@@ -132,7 +132,10 @@ export function NetworkMap() {
     return Math.min(Math.max(Math.min(scaleX, scaleY), 0.3), 1.0);
   }, [boardWidth, boardHeight, layoutW, layoutH]);
 
-  const totalTx = useMemo(() => links.reduce((a, l) => a + (l.throughputMbps || 0), 0), [links]);
+  const totalTx = useMemo(
+    () => Math.round(servers.reduce((a, s) => a + (s.netDownMbps || 0) + (s.netUpMbps || 0), 0) * 10) / 10,
+    [servers],
+  );
 
   return (
     <Card className="h-full">

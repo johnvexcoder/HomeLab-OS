@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { useNetwork } from '@/hooks/useQueries';
+import { useTelemetryStore, selectServers } from '@/store/telemetry';
+import { useShallow } from 'zustand/react/shallow';
 import { Card } from '@/components/ui/Card';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { StatusDot } from '@/components/ui/Status';
@@ -11,11 +13,10 @@ import { Power, AlertCircle, ArrowDown, ArrowUp, Thermometer } from 'lucide-reac
 
 export function Hosts({ className }: { className?: string }) {
   const { topology } = useNetwork();
-  const links = topology?.links ?? [];
+  const servers = useTelemetryStore(useShallow(selectServers));
   const nodes = topology?.nodes ?? [];
-  const totalThroughput = links.reduce((a, l) => a + (l.throughputMbps ?? 0), 0);
-  const totalDown = Math.round(totalThroughput * 0.6 * 10) / 10;
-  const totalUp = Math.round(totalThroughput * 0.4 * 10) / 10;
+  const totalDown = useMemo(() => Math.round(servers.reduce((a, s) => a + (s.netDownMbps || 0), 0) * 10) / 10, [servers]);
+  const totalUp = useMemo(() => Math.round(servers.reduce((a, s) => a + (s.netUpMbps || 0), 0) * 10) / 10, [servers]);
 
   const count = nodes.length;
   const numCols = count <= 10 ? 1 : count <= 20 ? 2 : 3;

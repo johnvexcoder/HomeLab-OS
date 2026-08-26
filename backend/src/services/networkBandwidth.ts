@@ -18,32 +18,39 @@ let hasEma = false;
 const POLL_INTERVAL_MS = 1000;
 
 function readProcNetDev(): InterfaceCounters | null {
-  try {
-    const content = fs.readFileSync('/proc/net/dev', 'utf8');
-    const lines = content.split('\n').slice(2);
+  const paths = ['/host/proc/net/dev', '/host-proc/net/dev', '/proc/net/dev'];
+  for (const p of paths) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const content = fs.readFileSync(p, 'utf8');
+      const lines = content.split('\n').slice(2);
 
-    let totalRx = 0;
-    let totalTx = 0;
+      let totalRx = 0;
+      let totalTx = 0;
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
 
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx === -1) continue;
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx === -1) continue;
 
-      const iface = trimmed.slice(0, colonIdx).trim();
-      if (iface === 'lo' || iface.startsWith('veth') || iface.startsWith('br-') || iface.startsWith('docker')) continue;
+        const iface = trimmed.slice(0, colonIdx).trim();
+        if (iface === 'lo' || iface.startsWith('veth') || iface.startsWith('br-') || iface.startsWith('docker')) continue;
 
-      const fields = trimmed.slice(colonIdx + 1).trim().split(/\s+/);
-      totalRx += Number(fields[0]) || 0;
-      totalTx += Number(fields[8]) || 0;
+        const fields = trimmed.slice(colonIdx + 1).trim().split(/\s+/);
+        totalRx += Number(fields[0]) || 0;
+        totalTx += Number(fields[8]) || 0;
+      }
+
+      if (totalRx > 0 || totalTx > 0) {
+        return { rxBytes: totalRx, txBytes: totalTx };
+      }
+    } catch {
+      // try next path
     }
-
-    return { rxBytes: totalRx, txBytes: totalTx };
-  } catch {
-    return null;
   }
+  return null;
 }
 
 function poll(): void {
