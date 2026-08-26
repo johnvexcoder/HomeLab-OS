@@ -8,6 +8,9 @@ import { NETWORK_NODE_ICONS } from '../mock-data/network';
 import { requireAuth, requirePermission, requireAuthOrGuest } from '../security/middleware';
 import { featureEnabled, applySensorFlags } from '../security/features';
 import { listQuickActions } from '../services/quickActions';
+import { listUsers, getUserByUsername } from '../security/users';
+import { notifyDispatcher } from '../services/notifyDispatch';
+import crypto from 'node:crypto';
 
 export interface ApiContext {
   metrics: MetricsProvider;
@@ -160,6 +163,78 @@ export function createRouter(ctx: ApiContext): Router {
   router.get('/docker/hosts', requireAuthOrGuest('servers.view', 'serverStatus'), (_req: Request, res: Response) => {
     const profiles = metrics.getDockerHostProfiles?.() ?? [];
     res.json({ profiles });
+  });
+
+  router.get('/users/recipients', requireAuthOrGuest('dashboard.view', 'serverStatus'), (req: Request, res: Response) => {
+    const users = listUsers().map((u) => ({
+      id: u.id,
+      username: u.username,
+      name: u.name,
+    }));
+    res.json({ users });
+  });
+
+  router.post('/notifications/dispatch-note', requireAuthOrGuest('dashboard.view', 'serverStatus'), (req: Request, res: Response) => {
+    const user = req.auth?.user;
+    const isGuest = !user;
+    const authorName = isGuest ? 'Guest' : (user?.name || user?.username || 'Unknown');
+    
+    const { type, title, to, content, severity } = req.body;
+    
+    if (isGuest && to) {
+      // Guests can send but cannot receive (handled by UI, but we don't prevent them from specifying recipients here).
+    }
+
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ error: 'content_required' });
+    }
+
+    const isIssue = type === 'issue';
+    const finalSeverity = isIssue && ['info', 'warning', 'critical'].includes(severity) ? severity : 'info';
+    
+    const displayTitle = isIssue ? (title ? `Issue: ${title}` : 'Issue') : 'Notes';
+    const actionStr = isIssue ? (severity === 'critical' ? 'Critical' : severity === 'warning' ? 'Major' : 'Minor') : 'None';
+    const message = [
+      `Sent to: ${to && to.length > 0 ? to.join(', ') : 'None'}`,
+      '',
+      'Content:',
+      content,
+      '',
+      `Date: ${new Date().toLocaleString()}`,
+      `Action: ${actionStr}`,
+    ].join('\n');
+
+    // Create a local notification for the dashboard
+    const n = {
+      id: `ntf-${type}-${crypto.randomUUID()}`,
+      title: displayTitle,
+      message,
+      severity: finalSeverity as any,
+      timestamp: Date.now(),
+      read: false,
+    };
+    notifications.ingest(n);
+    
+    // Resolve emails for target users
+    const emails: string[] = [];
+    if (to && Array.isArray(to)) {
+      if (to.includes('All')) {
+        const allUsers = listUsers();
+        allUsers.forEach(u => {
+          if (u.email && u.username !== user?.username) emails.push(u.email);
+        });
+      } else {
+        to.forEach(username => {
+          const u = getUserByUsername(username);
+          if (u && u.email) emails.push(u.email);
+        });
+      }
+    }
+
+    // Dispatch to Telegram/Email
+    notifyDispatcher.notifyCustomNoteOrIssue(displayTitle, message, finalSeverity as any, emails);
+
+    res.json({ ok: true });
   });
 
   return router;

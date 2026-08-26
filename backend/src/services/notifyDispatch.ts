@@ -419,6 +419,36 @@ class NotifyDispatcher {
       ).catch(() => {}),
     );
   }
+
+  notifyCustomNoteOrIssue(title: string, message: string, severity: 'info' | 'warning' | 'critical' = 'info', emails: string[] = []): void {
+    this.enqueue(async () => {
+      await dispatchToChannels(title, message, severity).catch(() => {});
+      
+      // Also send to specific user emails if provided
+      if (emails.length > 0) {
+        try {
+          const { smtpConfigured, sendEmail, getSmtpConfig } = await import('../security/smtp');
+          if (smtpConfigured()) {
+            const cfg = getSmtpConfig();
+            for (const email of emails) {
+              await sendEmail({
+                host: cfg.host,
+                port: cfg.port,
+                user: cfg.user,
+                password: cfg.password,
+                from: cfg.from,
+                to: email,
+                subject: `[HomeLab] ${title}`,
+                text: message,
+              }).catch(() => {});
+            }
+          }
+        } catch (err) {
+          // ignore
+        }
+      }
+    });
+  }
 }
 
 /** Singleton dispatcher instance shared across the application. */

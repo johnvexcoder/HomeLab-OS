@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bell, LogIn, LogOut, Menu, Search, Settings, Wifi, WifiOff, CheckCheck } from 'lucide-react';
+import { Bell, LogIn, LogOut, Menu, Search, Settings, Wifi, WifiOff, CheckCheck, Pencil } from 'lucide-react';
 import { useUiStore } from '@/store/ui';
 import { useClock } from '@/hooks/useClock';
 import { useTelemetry } from '@/hooks/useTelemetry';
@@ -12,6 +12,8 @@ import { endpoints } from '@/api/endpoints';
 import { formatClock, formatDate, relativeTime, cn } from '@/lib/utils';
 import { SEVERITY_META } from '@/lib/constants';
 import { useNotifications } from '@/hooks/useNotifications';
+
+import { DispatchModal } from './DispatchModal';
 
 export function Topbar() {
   const now = useClock();
@@ -31,6 +33,8 @@ export function Topbar() {
   const logout = useAuthStore((s) => s.logout);
   const { data: healthData } = useQuery({ queryKey: ['health'], queryFn: endpoints.health, staleTime: 30_000 });
   const isDemo = modes?.mockMode ?? healthData?.mockMode ?? false;
+
+  const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
 
   useNotifications(12);
 
@@ -87,6 +91,15 @@ export function Topbar() {
           <kbd className="ml-2 hidden rounded-md border border-surface-border bg-base px-1.5 py-0.5 text-[10px] font-semibold text-text-muted sm:inline">
             ⌘K
           </kbd>
+        </button>
+        <button
+          type="button"
+          onClick={() => setDispatchModalOpen(true)}
+          className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl border border-surface-border bg-surface text-text-secondary transition-all hover:border-accent/40 hover:text-accent cursor-pointer"
+          aria-label="New Note or Issue"
+          title="New Note or Issue"
+        >
+          <Pencil className="h-4 w-4" />
         </button>
       </div>
 
@@ -222,6 +235,8 @@ export function Topbar() {
           </AnimatePresence>
         </div>
       </div>
+      
+      <DispatchModal open={dispatchModalOpen} onOpenChange={setDispatchModalOpen} />
     </header>
   );
 }

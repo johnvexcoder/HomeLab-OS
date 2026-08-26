@@ -115,6 +115,10 @@ export default function ServersPage() {
             </div>
           )}
         </>
+      ) : filter === 'docker' ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <DockerProfileCards />
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {visible.map((server, i) => (

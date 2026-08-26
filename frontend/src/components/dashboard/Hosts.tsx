@@ -77,14 +77,14 @@ export function Hosts({ className }: { className?: string }) {
         <div className="mt-1 flex items-center gap-3">
           <div className="flex items-center gap-1">
             <ArrowDown className="h-3.5 w-3.5 text-success" />
-            <span className="font-display text-base sm:text-lg font-bold tabular text-accent">
+            <span className="font-display text-base sm:text-lg font-bold tabular text-text-primary">
               <AnimatedNumber value={totalDown} />
             </span>
             <span className="text-xs text-text-muted">Mb/s</span>
           </div>
           <div className="flex items-center gap-1">
             <ArrowUp className="h-3.5 w-3.5 text-info" />
-            <span className="font-display text-base sm:text-lg font-bold tabular text-accent">
+            <span className="font-display text-base sm:text-lg font-bold tabular text-text-primary">
               <AnimatedNumber value={totalUp} />
             </span>
             <span className="text-xs text-text-muted">Mb/s</span>
