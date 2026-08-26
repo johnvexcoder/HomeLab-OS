@@ -32,14 +32,14 @@ export default function NetworkPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-3 lg:grid-cols-3">
         {/* Link table */}
-        <Card className="md:col-span-2 lg:col-span-2">
-          <div className="mb-4 flex items-center justify-between">
+        <Card className="md:col-span-2 lg:col-span-2 flex flex-col h-full min-h-0">
+          <div className="mb-4 flex items-center justify-between shrink-0">
             <h3 className="text-sm font-semibold text-text-primary">Link Status</h3>
             <span className="text-xs text-text-muted">{links.length} links</span>
           </div>
           
           {/* Desktop table view */}
-          <div className="hidden sm:block overflow-x-auto">
+          <div className="hidden sm:block flex-1 min-h-0 overflow-y-auto pr-1 max-h-[580px] scrollbar-thin">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-surface-border text-[10px] uppercase tracking-widest text-text-muted">
@@ -130,10 +130,7 @@ export default function NetworkPage() {
             </div>
             <span className="text-xs text-text-muted">L2/L3 devices</span>
           </div>
-          <div className={cn(
-            "flex flex-col gap-2 min-h-0",
-            (topology?.nodes ?? []).length > 10 ? "max-h-[460px] overflow-y-auto pr-1 scrollbar-thin" : ""
-          )}>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin flex flex-col gap-2">
             {(topology?.nodes ?? []).map((node) => {
               const IconComponent = INFRA_ICON_COMPONENTS[node.type];
               return (
