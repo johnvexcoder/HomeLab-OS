@@ -12,13 +12,13 @@ export default function DashboardPage() {
 
       <QuickStats />
 
-      <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-[1fr_1.4fr]">
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-[1fr_1.4fr] items-stretch">
         <div className="flex flex-col gap-5 sm:gap-6">
           <HealthScore />
           <QuickActions />
         </div>
-        <div>
-          <Hosts />
+        <div className="flex h-full min-h-0">
+          <Hosts className="h-full w-full" />
         </div>
       </div>
 

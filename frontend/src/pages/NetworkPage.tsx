@@ -6,7 +6,7 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { StatusDot } from '@/components/ui/Status';
 import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import { NETWORK_NODE_ICONS_FRONTEND } from '@/lib/constants';
-import { formatMbps } from '@/lib/utils';
+import { formatMbps, cn } from '@/lib/utils';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 
 export default function NetworkPage() {
@@ -116,18 +116,26 @@ export default function NetworkPage() {
         </Card>
 
         {/* Hosts */}
-        <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-text-primary">Hosts</h3>
+        <Card className="flex flex-col h-full min-h-0">
+          <div className="mb-4 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-text-primary">Hosts</h3>
+              <span className="rounded-full bg-surface-border/60 px-2 py-0.5 text-[10px] font-mono text-text-muted">
+                {(topology?.nodes ?? []).length} devices
+              </span>
+            </div>
             <span className="text-xs text-text-muted">L2/L3 devices</span>
           </div>
-          <div className="flex flex-col gap-2">
+          <div className={cn(
+            "flex flex-col gap-2 min-h-0",
+            (topology?.nodes ?? []).length > 10 ? "max-h-[460px] overflow-y-auto pr-1 scrollbar-thin" : ""
+          )}>
             {(topology?.nodes ?? []).map((node) => {
               const IconComponent = INFRA_ICON_COMPONENTS[node.type];
               return (
                 <div
                   key={node.id}
-                  className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5"
+                  className="flex items-center gap-3 rounded-xl border border-surface-border/70 bg-surface-input px-3 py-2.5 transition-all"
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-black/40">
                     {IconComponent ? <IconComponent size={18} /> : <span>{NETWORK_NODE_ICONS_FRONTEND[node.type] ?? '📦'}</span>}
