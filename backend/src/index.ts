@@ -6,6 +6,7 @@ import { MockMetricsProvider } from './providers/mockMetricsProvider';
 import { ProxmoxMetricsProvider } from './providers/proxmoxMetricsProvider';
 import { DockerMetricsProvider } from './providers/dockerMetricsProvider';
 import { CompositeProvider } from './providers/compositeProvider';
+import { AgentMetricsProvider } from './providers/agentMetricsProvider';
 import { MockNotificationsProvider } from './providers/mockNotificationsProvider';
 import type { MetricsProvider, TelemetryBroadcaster } from './providers/types';
 import type { Notification } from './types';
@@ -106,14 +107,11 @@ async function bootstrap(): Promise<void> {
 
     // 3. Fallback/Composite logic
     if (liveProviders.length === 0) {
-      console.warn('[homelab] No LIVE metrics providers configured or started. Running in degraded mode.');
-      // No-op provider as fallback
-      metrics = {
-        collect: async () => ({ snapshots: [], errors: [] }),
-        onNotifications: () => {},
-        onTick: () => {},
-      } as any;
-      broadcaster = metrics as any;
+      console.warn('[homelab] No Proxmox or Docker configured. Running with AgentMetricsProvider.');
+      const agentProvider = new AgentMetricsProvider();
+      await agentProvider.start();
+      metrics = agentProvider;
+      broadcaster = agentProvider;
     } else {
       // Always use CompositeProvider to ensure agent reconciliation runs
       metrics = new (CompositeProvider as any)(liveProviders[0], liveProviders[1]) as any;

@@ -168,7 +168,7 @@ export default function ServerDetailPage() {
         <LiveMetric label="CPU" icon={Cpu} value={server.cpu} unit="%" color="var(--accent)" spark={sparklines?.cpu} />
         <LiveMetric label="Memory" icon={MemoryStick} value={ramPct} unit="%" color="#60A5FA" sub={`${formatBytes(server.ramUsedGb)} / ${formatBytes(s.ramTotalGb)}`} spark={sparklines?.ram} />
         <LiveMetric label="Storage" icon={HardDrive} value={diskPct} unit="%" color="#F59E0B" sub={`${formatBytes(server.diskUsedGb)} / ${formatBytes(s.diskTotalGb)}`} spark={sparklines?.disk} />
-        <LiveMetric label="Temperature" icon={Thermometer} value={server.tempC} unit="°C" color="#F97316" spark={sparklines?.temp} />
+        <LiveMetric label="Temperature" icon={Thermometer} value={server.tempC > 0 ? server.tempC : 'N/A' as any} unit={server.tempC > 0 ? "°C" : ""} color="#F97316" spark={sparklines?.temp} />
       </div>
 
       {/* Single tabbed chart card */}

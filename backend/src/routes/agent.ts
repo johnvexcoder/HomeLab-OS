@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'node:crypto';
 import { getDb } from '../db/database';
@@ -188,6 +189,33 @@ function extractFlatMetrics(body: Record<string, unknown>): Record<string, unkno
   return metrics;
 }
 
+
+const AgentReportSchema = z.object({
+  hostInfo: z.object({
+    hostId: z.string(),
+    hostName: z.string(),
+    ip: z.string(),
+    os: z.string().optional(),
+    osId: z.string().optional(),
+    kernel: z.string().optional(),
+    arch: z.string().optional(),
+    hostType: z.string().optional(),
+    hypervisor: z.string().optional(),
+    platform: z.string().optional(),
+    manufacturer: z.string().optional(),
+    product: z.string().optional(),
+    machineId: z.string().optional(),
+    uptimeSeconds: z.number().nonnegative().optional(),
+  }).optional(),
+  capabilities: z.array(z.string()).optional(),
+  plugins: z.array(z.object({
+    plugin: z.string(),
+    collectedAt: z.number().positive(),
+    data: z.record(z.string(), z.unknown()),
+  })).optional(),
+  events: z.array(z.any()).optional(),
+}).passthrough();
+
 export function createAgentRouter(): Router {
   const router = Router();
 
@@ -195,7 +223,13 @@ export function createAgentRouter(): Router {
   router.post('/report', requireAgentAuth, (req: Request, res: Response) => {
     try {
       const agent = (req as any).agent as Record<string, unknown>;
-      const body = req.body as Record<string, unknown>;
+      
+      const parsed = AgentReportSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: 'invalid_payload', details: parsed.error.issues });
+        return;
+      }
+      const body = parsed.data;
       const now = Date.now();
       const db = getDb();
 
@@ -208,8 +242,21 @@ export function createAgentRouter(): Router {
       // Extract flat metrics for the agents table columns
       const flat = extractFlatMetrics(body);
 
-      // Build the full plugin payload for plugins_json
-      const pluginsJson = plugins ? JSON.stringify(plugins) : null;
+      // Build the full plugin payload for plugins_json (Merge deltas)
+      let mergedPlugins: Array<{ plugin: string; collectedAt: number; data: Record<string, unknown> }> = [];
+      if (agent.plugins_json) {
+        try {
+          mergedPlugins = JSON.parse(String(agent.plugins_json));
+        } catch {}
+      }
+      if (plugins) {
+        for (const p of plugins) {
+          const idx = mergedPlugins.findIndex(mp => mp.plugin === p.plugin);
+          if (idx !== -1) mergedPlugins[idx] = p;
+          else mergedPlugins.push(p);
+        }
+      }
+      const pluginsJson = mergedPlugins.length > 0 ? JSON.stringify(mergedPlugins) : null;
       const capabilitiesJson = capabilities ? JSON.stringify(capabilities) : null;
 
       // Use hostInfo values if present (v2), otherwise fall back to flat body (v1)

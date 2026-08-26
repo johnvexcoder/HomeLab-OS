@@ -44,7 +44,7 @@ export function HealthScore() {
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-text-primary">Infrastructure Health</h3>
+            <h3 className="text-sm font-semibold text-text-primary">Heuristic Health Score</h3>
             <p className="text-xs text-text-muted">
               <AnimatedNumber value={health.score} decimals={1} /> / 100
             </p>
@@ -62,7 +62,7 @@ export function HealthScore() {
         title="Click for details"
         aria-label="Infrastructure health breakdown - click for details"
       >
-        <ProgressRing value={health.score} size={148} stroke={10} label="Health" sublabel="Score" />
+        <ProgressRing value={health.score} size={148} stroke={10} label="Heuristic" sublabel="Health" />
       </button>
 
       <div className="grid grid-cols-3 gap-2">
@@ -90,7 +90,7 @@ export function HealthScore() {
             >
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="font-display text-lg font-bold text-text-primary">Infrastructure Health</h3>
+                  <h3 className="font-display text-lg font-bold text-text-primary">Heuristic Health Score</h3>
                   <p className="text-sm text-text-muted">
                     <AnimatedNumber value={health.score} decimals={1} /> / 100 —{' '}
                     <span className="text-text-secondary">{health.status}</span>
