@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, StickyNote, AlertTriangle, User, Check, Users } from 'lucide-react';
@@ -84,9 +85,9 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
     },
   });
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && (
         <>
@@ -95,18 +96,18 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-[999] bg-black/75 backdrop-blur-md"
             onClick={() => onOpenChange(false)}
           />
 
-          {/* Modal Card */}
-          <div className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-5 pointer-events-none">
+          {/* Modal Card Centered in Viewport */}
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3 sm:p-6 pointer-events-none">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 14 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 14 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full max-w-xl rounded-2xl border border-surface-border bg-[#0C101A] shadow-2xl pointer-events-auto flex flex-col max-h-[90vh] overflow-hidden"
+              className="w-full max-w-xl rounded-2xl border border-surface-border bg-[#0C101A] shadow-2xl pointer-events-auto flex flex-col max-h-[92vh] overflow-hidden"
             >
               {/* Header with NOTE | ISSUE Tab Selector */}
               <div className="flex items-center justify-between border-b border-surface-border/80 bg-[#111726]/80 px-4 py-3.5 sm:px-5 shrink-0">
@@ -291,6 +292,7 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
           </div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
