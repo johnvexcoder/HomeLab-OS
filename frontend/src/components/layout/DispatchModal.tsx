@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, StickyNote, AlertTriangle, User, Check, Users } from 'lucide-react';
+import { X, Send, StickyNote, AlertTriangle, User, Users, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { endpoints } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
 
 interface DispatchModalProps {
@@ -22,14 +23,23 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
   const authUser = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
 
-  // Fetch all recipients from backend
+  // Close modal when Escape key is pressed
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onOpenChange(false);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onOpenChange]);
+
+  // Fetch all recipients securely via API client with CSRF token
   const { data: recipientData } = useQuery({
     queryKey: ['users-recipients'],
-    queryFn: async () => {
-      const res = await fetch('/api/users/recipients');
-      if (!res.ok) return { users: [] };
-      return res.json() as Promise<{ users: Array<{ id: string; username: string; name: string }> }>;
-    },
+    queryFn: endpoints.users.recipients,
     enabled: open,
     staleTime: 60_000,
   });
@@ -46,31 +56,28 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
   const mutation = useMutation({
     mutationFn: async () => {
       const isIssue = tab === 'issue';
-      const actionLabel = isIssue ? (severity === 'critical' ? 'Critical' : severity === 'warning' ? 'Major' : 'Minor') : 'None';
-      
-      const res = await fetch('/api/notifications/dispatch-note', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: tab,
-          title: isIssue ? title.trim() : undefined,
-          content: content.trim(),
-          to: selectedUser === 'All' ? ['All'] : [selectedUser],
-          severity,
-          priority: actionLabel,
-          fromName: authorName,
-        }),
-      });
+      const actionLabel = isIssue
+        ? severity === 'critical'
+          ? 'Critical'
+          : severity === 'warning'
+          ? 'Major'
+          : 'Minor'
+        : 'None';
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to dispatch');
-      }
-      return res.json();
+      return endpoints.notifications.dispatchNote({
+        type: tab,
+        title: isIssue ? title.trim() : undefined,
+        content: content.trim(),
+        to: selectedUser === 'All' ? ['All'] : [selectedUser],
+        severity,
+        priority: actionLabel,
+        fromName: authorName,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      setStatusMessage({ text: `${tab === 'note' ? 'Note' : 'Issue'} sent successfully!` });
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+      setStatusMessage({ text: `${tab === 'note' ? 'Note' : 'Issue'} dispatched successfully!` });
       setTimeout(() => {
         onOpenChange(false);
         setTitle('');
@@ -78,10 +85,10 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
         setSelectedUser('All');
         setTab('note');
         setStatusMessage(null);
-      }, 1000);
+      }, 900);
     },
     onError: (err: Error) => {
-      setStatusMessage({ text: err.message || 'Failed to send', error: true });
+      setStatusMessage({ text: err.message || 'Failed to send note/issue', error: true });
     },
   });
 
@@ -100,26 +107,26 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
             onClick={() => onOpenChange(false)}
           />
 
-          {/* Modal Card Centered in Viewport */}
+          {/* Centered Modal Container */}
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3 sm:p-6 pointer-events-none">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 14 }}
+              initial={{ opacity: 0, scale: 0.95, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 14 }}
+              exit={{ opacity: 0, scale: 0.95, y: 16 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full max-w-xl rounded-2xl border border-surface-border bg-[#0C101A] shadow-2xl pointer-events-auto flex flex-col max-h-[92vh] overflow-hidden"
+              className="w-full max-w-xl rounded-2xl border border-surface-border bg-surface-elevated shadow-2xl pointer-events-auto flex flex-col max-h-[92vh] overflow-hidden"
             >
               {/* Header with NOTE | ISSUE Tab Selector */}
-              <div className="flex items-center justify-between border-b border-surface-border/80 bg-[#111726]/80 px-4 py-3.5 sm:px-5 shrink-0">
-                <div className="flex items-center gap-1 rounded-xl border border-surface-border bg-black/40 p-1">
+              <div className="flex items-center justify-between border-b border-surface-border bg-surface px-4 py-3.5 sm:px-5 shrink-0">
+                <div className="flex items-center gap-1 rounded-xl border border-surface-border bg-surface-input p-1">
                   <button
                     type="button"
                     onClick={() => { setTab('note'); setStatusMessage(null); }}
                     className={cn(
-                      'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer',
+                      'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer',
                       tab === 'note'
                         ? 'bg-accent text-white shadow-sm'
-                        : 'text-text-muted hover:text-text-primary hover:bg-white/5',
+                        : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated',
                     )}
                   >
                     <StickyNote className="h-3.5 w-3.5" /> NOTE
@@ -128,10 +135,10 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
                     type="button"
                     onClick={() => { setTab('issue'); setStatusMessage(null); }}
                     className={cn(
-                      'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer',
+                      'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer',
                       tab === 'issue'
                         ? 'bg-warn text-white shadow-sm'
-                        : 'text-text-muted hover:text-text-primary hover:bg-white/5',
+                        : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated',
                     )}
                   >
                     <AlertTriangle className="h-3.5 w-3.5" /> ISSUE
@@ -141,8 +148,9 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
-                  className="rounded-xl border border-surface-border/60 p-1.5 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary cursor-pointer"
+                  className="rounded-xl border border-surface-border/60 p-1.5 text-text-muted transition-colors hover:bg-surface hover:text-text-primary cursor-pointer"
                   aria-label="Close"
+                  title="Close (Esc)"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -176,9 +184,9 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
                       onChange={(e) => setSelectedUser(e.target.value)}
                       className="w-full rounded-xl border border-surface-border bg-surface-input px-3 py-2 text-xs font-semibold text-text-primary outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 cursor-pointer"
                     >
-                      <option value="All">All Users</option>
+                      <option value="All" className="bg-surface-elevated text-text-primary">All Users</option>
                       {availableUsers.map((u) => (
-                        <option key={u.id} value={u.username}>
+                        <option key={u.id} value={u.username} className="bg-surface-elevated text-text-primary">
                           {u.name || u.username} ({u.username})
                         </option>
                       ))}
@@ -190,13 +198,13 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
                     <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
                       <User className="h-3.5 w-3.5 text-info" /> FROM:
                     </label>
-                    <div className="w-full rounded-xl border border-surface-border bg-surface-input/60 px-3 py-2 text-xs font-semibold text-text-secondary select-none">
+                    <div className="w-full rounded-xl border border-surface-border bg-surface-input px-3 py-2 text-xs font-semibold text-text-secondary select-none">
                       {authorName}
                     </div>
                   </div>
                 </div>
 
-                {/* If ISSUE tab: Title & Priority / Action Quota */}
+                {/* If ISSUE tab: Title & Priority */}
                 {tab === 'issue' && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
                     {/* TITLE */}
@@ -213,7 +221,7 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
                       />
                     </div>
 
-                    {/* ACTION QUOTA / SEVERITY */}
+                    {/* ACTION / SEVERITY */}
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
                         PRIORITY:
@@ -230,9 +238,9 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
                             : 'border-info/50 bg-info/15 text-info focus:border-info',
                         )}
                       >
-                        <option value="critical" className="bg-[#0C101A] text-crit">Critical / Urgent</option>
-                        <option value="warning" className="bg-[#0C101A] text-warn">Major / High</option>
-                        <option value="info" className="bg-[#0C101A] text-info">Minor / Low</option>
+                        <option value="critical" className="bg-surface-elevated text-crit">Critical / Urgent</option>
+                        <option value="warning" className="bg-surface-elevated text-warn">Major / High</option>
+                        <option value="info" className="bg-surface-elevated text-info">Minor / Low</option>
                       </select>
                     </div>
                   </div>
@@ -258,16 +266,16 @@ export function DispatchModal({ open, onOpenChange }: DispatchModalProps) {
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-between border-t border-surface-border/80 bg-[#111726]/80 px-4 py-3 sm:px-5 shrink-0">
+              <div className="flex items-center justify-between border-t border-surface-border bg-surface px-4 py-3 sm:px-5 shrink-0">
                 <span className="text-[11px] text-text-muted">
-                  Dispatches to Dashboard alerts, Email & Telegram
+                  Dispatches to Dashboard, Email & Telegram
                 </span>
 
                 <div className="flex items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => onOpenChange(false)}
-                    className="rounded-xl border border-surface-border px-3.5 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-elevated hover:text-text-primary cursor-pointer"
+                    className="rounded-xl border border-surface-border px-3.5 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary cursor-pointer"
                   >
                     Cancel
                   </button>

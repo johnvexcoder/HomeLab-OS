@@ -68,6 +68,19 @@ export const endpoints = {
     unreadCount: () => api.get<{ count: number }>('/notifications/unread-count'),
     read: (ids: string[]) => api.post<{ ok: true; count: number }>('/notifications/read', { ids }),
     readAll: () => api.post<{ ok: true }>('/notifications/read-all'),
+    dispatchNote: (body: {
+      type: 'note' | 'issue';
+      title?: string;
+      content: string;
+      to: string[];
+      severity?: 'info' | 'warning' | 'critical';
+      priority?: string;
+      fromName?: string;
+    }) => api.post<{ ok: true; notification?: Notification }>('/notifications/dispatch-note', body),
+  },
+
+  users: {
+    recipients: () => api.get<{ users: Array<{ id: string; username: string; name: string }> }>('/users/recipients'),
   },
 
   search: (q: string) => api.get<SearchResults>(`/search?q=${encodeURIComponent(q)}`),

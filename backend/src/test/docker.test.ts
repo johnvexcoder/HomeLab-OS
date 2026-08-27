@@ -150,7 +150,8 @@ test('composite: containers attach under the Docker-hosting guest (docker01)', (
   assert.equal(net.links.length, 2);
 
   const stats = composite.getQuickStats();
-  assert.equal(stats.find((s) => s.id === 'containers')?.value, 3); // 2 guests + 1 running container
+  assert.equal(stats.find((s) => s.id === 'containers')?.value, 2); // 2 guests
+  assert.equal(stats.find((s) => s.id === 'containers')?.value2, 1); // 1 running container
 });
 
 test('composite: without a matching guest, containers attach under the first guest', () => {

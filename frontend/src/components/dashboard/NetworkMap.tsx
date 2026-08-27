@@ -154,9 +154,9 @@ export function NetworkMap() {
         }
       />
 
-      <div className="relative overflow-hidden rounded-xl border border-surface-border bg-[#000000]">
-        <div className="grid-backdrop absolute inset-0" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-black/40" />
+      <div className="relative overflow-hidden rounded-xl border border-surface-border bg-base/80">
+        <div className="grid-backdrop absolute inset-0 opacity-40" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-base/60" />
 
         <div
           ref={containerRef}
@@ -251,10 +251,10 @@ export function NetworkMap() {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.3, ease: 'easeOut' }}
                         className={cn(
-                          'group flex cursor-pointer items-center gap-2 rounded-xl border bg-[#111625]/90 px-2.5 py-1.5 text-left shadow-lg backdrop-blur-md transition-all duration-200 select-none outline-none',
+                          'group flex cursor-pointer items-center gap-2 rounded-xl border bg-surface-elevated/90 px-2.5 py-1.5 text-left shadow-lg backdrop-blur-md transition-all duration-200 select-none outline-none',
                           isHovered || isSelected
                             ? 'border-accent ring-2 ring-accent/30 shadow-accent/20 translate-y-[-2px]'
-                            : 'border-surface-border hover:border-surface-border/80 hover:bg-[#161C2E]',
+                            : 'border-surface-border hover:border-surface-border/80 hover:bg-surface-input',
                         )}
                         style={{
                           width: layout.metrics.nodeWidth,
@@ -280,7 +280,7 @@ export function NetworkMap() {
                           )}
                           {/* Status Indicator Dot */}
                           <span
-                            className="absolute -right-1 -top-1 h-2 w-2 rounded-full border-2 border-[#090C15]"
+                            className="absolute -right-1 -top-1 h-2 w-2 rounded-full border-2 border-surface-elevated"
                             style={{ backgroundColor: statusColor }}
                           />
                         </div>
@@ -380,7 +380,7 @@ export function NetworkMap() {
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-[#0E1322]/95 p-4 shadow-2xl backdrop-blur-md"
+                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-surface-elevated/95 p-4 shadow-2xl backdrop-blur-md"
               >
                 <div className="mb-3 flex items-center justify-between border-b border-surface-border pb-2.5">
                   <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
@@ -410,7 +410,7 @@ export function NetworkMap() {
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-[#0E1322]/95 p-4 shadow-2xl backdrop-blur-md"
+                className="absolute bottom-3 right-3 z-30 w-80 rounded-xl border border-surface-border bg-surface-elevated/95 p-4 shadow-2xl backdrop-blur-md"
               >
                 <div className="mb-3 flex items-center justify-between border-b border-surface-border pb-2.5">
                   <span className="text-xs font-bold uppercase tracking-wider text-text-muted">

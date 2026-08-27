@@ -375,7 +375,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
     return [
       { id: 'servers', label: 'Nodes', value: h.totalServers, unit: '', delta: 0, tone: 'neutral' },
       { id: 'online', label: 'Online', value: h.onlineServers, unit: '', delta: 0, tone: 'good' },
-      { id: 'containers', label: 'VMs & CTs', value: totalVmCount + runningContainers, unit: '', delta: 0, tone: 'neutral',
+      { id: 'containers', label: 'VMs & CTs', value: totalVmCount || 0, unit: '', delta: 0, tone: 'neutral',
         value2: runningContainers || 0, label2: 'CTs', unit2: '' },
       { id: 'cpu', label: 'Avg CPU', value: h.avgCpu, unit: '%', delta: 0, tone: h.avgCpu > 70 ? 'warn' : 'good' },
       { id: 'ram', label: 'Memory', value: round((totalRamUsed / Math.max(totalRam, 1)) * 100, 1), unit: '%', delta: 0, tone: 'good' },
