@@ -1,5 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0A0A0A"/>
-  <path d="M18 44 L32 18 L46 44 Z" fill="none" stroke="#34D399" stroke-width="5" stroke-linejoin="round"/>
-  <circle cx="32" cy="32" r="26" fill="none" stroke="#1E1E1E" stroke-width="2"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#181818"/>
+      <stop offset="1" stop-color="#0A0A0A"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6EE7B7"/>
+      <stop offset="0.5" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4ADE80"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Card -->
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+
+  <!-- Server rack rails -->
+  <rect x="12" y="13" width="40" height="4" rx="2" fill="#2b2b2b"/>
+  <rect x="12" y="31" width="40" height="4" rx="2" fill="#2b2b2b"/>
+  <rect x="12" y="49" width="40" height="4" rx="2" fill="#2b2b2b"/>
+
+  <!-- Accent bars on each rail slot -->
+  <rect x="17" y="15.5" width="22" height="3" rx="1.5" fill="url(#rail)"/>
+  <rect x="17" y="33.5" width="14" height="3" rx="1.5" fill="url(#accent)"/>
+  <rect x="17" y="51.5" width="26" height="3" rx="1.5" fill="url(#rail)"/>
+
+  <!-- Slot LED indicators -->
+  <circle cx="43" cy="17" r="1.6" fill="#34D399"/>
+  <circle cx="43" cy="35" r="1.6" fill="#34D399" opacity="0.5"/>
+  <circle cx="43" cy="53" r="1.6" fill="#34D399"/>
+
+  <!-- Glow behind the ring -->
+  <circle cx="32" cy="32" r="26" fill="none" stroke="#34D399" stroke-opacity="0.18" stroke-width="4"/>
+  <circle cx="32" cy="32" r="26" fill="none" stroke="#0A0A0A" stroke-width="2"/>
 </svg>

@@ -3,7 +3,7 @@
   "version": "1.0.17",
   "private": true,
   "description": "John Vex Coder HomeLab OS - a premium self-hosted infrastructure dashboard",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "workspaces": [
     "frontend",
     "backend"
