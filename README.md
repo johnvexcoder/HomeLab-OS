@@ -10,10 +10,10 @@ Not a homepage. Not a link aggregator. A real-time observability surface with an
 
 **v1.0.17**
 
-[![React](https://img.shields.io/badge/React_18-TypeScript_5-Vite_6-34D399)](https://react.dev)
-[![Express](https://img.shields.io/badge/Express-WebSocket-SQLite-34D399)](https://expressjs.com)
-[![Tailwind](https://img.shields.io/badge/Tailwind-Framer_Motion-ECharts-34D399)](https://tailwindcss.com)
-[![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge&logo=gnu)](LICENSE)
+[![React 18](https://img.shields.io/static/v1?style=for-the-badge&label=React%2018&message=TypeScript%205%20%7C%20Vite%206&color=34D399)](https://react.dev)
+[![Express](https://img.shields.io/static/v1?style=for-the-badge&label=Express&message=WebSocket%20%7C%20SQLite&color=34D399)](https://expressjs.com)
+[![Tailwind](https://img.shields.io/static/v1?style=for-the-badge&label=Tailwind&message=Framer%20Motion%20%7C%20ECharts&color=34D399)](https://tailwindcss.com)
+[![License](https://img.shields.io/static/v1?style=for-the-badge&label=License&message=GPLv3&color=blue&logo=gnu&logoColor=white)](LICENSE)
 
 </div>
 
@@ -82,22 +82,21 @@ It ships in **demo mode** with a simulated 6-host fleet so the whole UI works ou
 ## System Architecture
 
 ```
-┌────────────────────────────┐        ┌────────────────────────────────────────┐
-│   Frontend (Vite + React)   │        │             Backend (Express)           │
-│  pages · components         │  REST  │  routes/  servers · stats · history ·   │
-│  store/  (zustand)          │◀──────▶│           network · notifications ·     │
-│  api/    (client · ws)      │        │           search · health · admin ·     │
-│  lib/sensors (registry)     │   WS   │           agent                        │
-│  charts  (ECharts)          │◀──────▶│  ws/  broadcast every 2 s ───────┐      │
-└────────────────────────────┘        │  providers/ (abstraction)         │      │
-                                       │    └─ ProxmoxMetricsProvider      │      │
-┌────────────────────────────┐        │    └─ MockMetricsProvider         │      │
-│   HomeLab Agent (optional)  │  REST  │  telemetry/engine (simulation) ◀──┘      │
-│   plugin-based, per-plugin  │───────▶│  telemetry/notification-generator       │
-│   poll intervals            │  auth  │  db/ (SQLite: history + notifications)  │
-└────────────────────────────┘        │  security/ auth · 2FA · SMTP · locks    │
-                                       │  services/ networkBandwidth reader       │
-                                       └────────────────────────────────────────┘
+┌──────────────────────────┐      ┌──────────────────────────────────────────────┐
+│  Frontend (Vite + React) │      │            Backend (Express)                 │
+│  pages · components      │      │  routes/ servers · stats · history ·         │
+│  store/  (zustand)       │      │          network · notifications ·           │
+│  api/    (client · ws)   │      │          search · health · admin · agent     │
+│  lib/    sensors registry│      │  ws/   broadcast every 2 s ──────────────┐   │
+│  charts  (ECharts)       │      │  providers/ (abstraction)               │    │
+└──────────────────────────┘      │    └─ ProxmoxMetricsProvider            │    │
+                                  │    └─ MockMetricsProvider               │    │
+┌──────────────────────────┐      │  telemetry/engine (simulation)◀──────────┘   │
+│ HomeLab Agent (optional) │      │  telemetry/notification-generator            │
+│ plugin-based · per-plugin│      │  db/   SQLite history + notifications        │
+│ poll intervals      auth │      │  security/ auth · 2FA · SMTP · locks         │
+└──────────────────────────┘      │  services/ networkBandwidth reader           │
+                                  └──────────────────────────────────────────────┘
 ```
 
 ### Live data flow
@@ -409,8 +408,8 @@ Append to `QUICK_ACTIONS` in `backend/src/routes/index.ts` and it flows into `�
 
 Built with care by **[John Vex Coder](https://github.com/johnvexcoder)** ✨
 
-[![GitHub](https://img.shields.io/badge/GitHub-@johnvexcoder-181717?style=for-the-badge&logo=github)](https://github.com/johnvexcoder)
-[![Ko-Fi](https://img.shields.io/badge/Support%20me-Ko--Fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/johnvexcoder)
+[![GitHub](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub&message=@johnvexcoder&color=181717&logo=github&logoColor=white)](https://github.com/johnvexcoder)
+[![Ko-Fi](https://img.shields.io/static/v1?style=for-the-badge&label=Support%20me&message=Ko-Fi&color=FF5E5B&logo=kofi&logoColor=white)](https://ko-fi.com/johnvexcoder)
 
 **Part of the HomeLab OS ecosystem** — [HomeLab Agent](https://github.com/johnvexcoder/HomeLab-Agent), the companion node telemetry agent.
 
