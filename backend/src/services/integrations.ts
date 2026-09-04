@@ -312,19 +312,50 @@ function findActiveIntegration(kind: IntegrationKind): IntegrationRow | null {
   return row ?? null;
 }
 
+/** Escape text for Telegram's HTML parse_mode (avoids 400 "can't parse entities"). */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+}
+
 /** Send a plain-text message via the Telegram Bot API. */
-export function sendTelegramMessage(text: string): Promise<boolean> {
-  return new Promise<boolean>(async (resolve) => {
-    const row = findActiveIntegration('telegram');
-    if (!row) { resolve(false); return; }
-    const token = secretValue(row.id, 'botToken');
-    const config = row.config ? JSON.parse(row.config) : {};
-    const chatId = config.chatId;
-    if (!token || !chatId) { resolve(false); return; }
+export async function sendTelegramMessage(text: string): Promise<boolean> {
+  const row = findActiveIntegration('telegram');
+  if (!row) return false;
+  const token = secretValue(row.id, 'botToken');
+  const config = row.config ? JSON.parse(row.config) : {};
+  const chatId = config.chatId;
+  if (!token || !chatId) return false;
 
-    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
-    const url = new URL(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`);
+  const payload = JSON.stringify({ chat_id: chatId, text: escapeHtml(text), parse_mode: 'HTML' });
+  const url = new URL(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`);
 
+  let lastError: string | null = null;
+  // Retry the transient DNS/network failures the host experiences (getaddrinfo EAI_AGAIN).
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 500 * attempt));
+    const result = await postJson(url, payload);
+    if (result.ok) {
+      getDb()
+        .prepare('UPDATE integrations SET status = ?, last_success_at = ?, last_error_at = ?, last_error = ? WHERE id = ?')
+        .run('ok', Date.now(), null, null, row.id);
+      return true;
+    }
+    lastError = result.error ?? null;
+    // Don't retry definitive API rejections (e.g. 400/401/auth failures) — only transient transport/DNS errors.
+    if (result.fatal) break;
+  }
+  markIntegrationError(row.id, `Telegram send failed: ${lastError ?? 'unknown error'}`);
+  return false;
+}
+
+/**
+ * POST JSON to a URL. Keep family:4 — api.telegram.org's IPv4 edge is reliably
+ * reachable, whereas happy-eyeballs can stall on the IPv6 AAAA record when the
+ * host has no IPv6 route. Transient DNS errors (EAI_AGAIN/ENOTFOUND) are handled
+ * by sendTelegramMessage's retry loop.
+ */
+function postJson(url: URL, payload: string): Promise<{ ok: boolean; fatal: boolean; error?: string }> {
+  return new Promise((resolve) => {
     const req = https.request(
       {
         hostname: url.hostname,
@@ -340,22 +371,18 @@ export function sendTelegramMessage(text: string): Promise<boolean> {
         res.on('data', (chunk) => (body += chunk));
         res.on('end', () => {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            getDb()
-              .prepare('UPDATE integrations SET status = ?, last_success_at = ?, last_error_at = ?, last_error = ? WHERE id = ?')
-              .run('ok', Date.now(), null, null, row.id);
-            resolve(true);
+            resolve({ ok: true, fatal: false });
           } else {
-            markIntegrationError(row.id, `Telegram API ${res.statusCode}: ${body.slice(0, 200)}`);
-            resolve(false);
+            resolve({ ok: false, fatal: true, error: `Telegram API ${res.statusCode}: ${body.slice(0, 200)}` });
           }
         });
       },
     );
     req.on('error', (err) => {
-      markIntegrationError(row.id, `Telegram send failed: ${err.message}`);
-      resolve(false);
+      // ENOTFOUND/EAI_AGAIN are transient DNS failures worth retrying; stay non-fatal so the loop retries.
+      resolve({ ok: false, fatal: false, error: err.message });
     });
-    req.on('timeout', () => { req.destroy(); markIntegrationError(row.id, 'Telegram send timed out'); resolve(false); });
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, fatal: false, error: 'Telegram send timed out' }); });
     req.write(payload);
     req.end();
   });
