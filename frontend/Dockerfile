@@ -8,7 +8,7 @@ ENV VITE_WS_URL=$VITE_WS_URL
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/package.json
 COPY frontend/package.json ./frontend/package.json
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY frontend/ ./frontend/
 RUN npm run build -w frontend
 
