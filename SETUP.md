@@ -208,11 +208,11 @@ You should see:
     > - The `docker01 → containers` layer needs the Docker provider — enable it with `DOCKER_ENABLED=true`
     >   (see §2.6) and turn on the **Docker Monitoring** feature flag in Configuration → Features.
 3. The **Dashboard** stats switch to Nodes / VMs & CTs / Avg CPU / Memory / Network — all live.
-4. Check the backend health endpoint — it reports the provider and the last poll error (see troubleshooting):
+4. Check the public liveness endpoint:
 
    ```bash
-   curl -s http://localhost:4000/api/health
-   # {"status":"ok","mockMode":false,"provider":"proxmox","lastPollError":null,...}
+   curl -s http://localhost:3000/api/health
+   # {"status":"ok","mockMode":false,"demoCredentials":false,...}
    ```
 
 > **Not seeing your nodes?** If `mockMode` is still `true`, the `.env` change didn’t reach the container —
@@ -228,27 +228,9 @@ Cause: the node list endpoint (`/nodes`) is readable with minimal privileges, bu
 that carry CPU model, memory, disk, uptime, guests and sensors need `Sys.Audit` / `VM.Audit`. A
 privilege-separated token (or a token whose user lacks `PVEAuditor`) gets exactly this partial view.
 
-1. Check the backend health endpoint — failed PVE requests are now reported per-endpoint:
-
-   ```bash
-   curl -s http://localhost:4000/api/health
-   ```
-
-   ```json
-   {
-     "status": "ok",
-     "mockMode": false,
-     "provider": "proxmox",
-     "diagnostics": {
-       "endpointErrors": {
-         "/nodes/pve1/status": "PVE 403 /nodes/pve1/status: permission denied",
-         "/nodes/pve1/qemu":    "PVE 403 /nodes/pve1/qemu: permission denied"
-       }
-     }
-   }
-   ```
-
-   The same failures show as an amber banner on the **Servers** and **Network** pages.
+1. Sign in and inspect the provider diagnostics banner on the **Servers** or **Network** page. Detailed
+   diagnostics are served by authenticated `/api/diagnostics`; the public `/api/health` endpoint intentionally
+   exposes only coarse liveness information.
 2. In Proxmox open **Datacenter → Permissions → API Tokens**, edit the token:
    - **Privilege Separation**: untick it, **or**
    - Add ACL entries granting `Sys.Audit` and `VM.Audit` on `/` (or on the specific node path).
@@ -257,34 +239,12 @@ privilege-separated token (or a token whose user lacks `PVEAuditor`) gets exactl
 
 ### 2.6 Optional — Docker container monitoring
 
-The backend can read the Docker Engine directly and draw a `docker01 → containers` layer on the Network Map.
+For production, install HomeLab Agent on the Docker host. The supplied dashboard Compose file deliberately
+does not mount `/var/run/docker.sock`, because access to that socket is equivalent to host control. Leave the
+backend's direct `DOCKER_ENABLED=false`; agent reports are merged into the same topology and container cards.
 
-> ⚠️ **SECURITY WARNING:** Mounting the Docker socket (`/var/run/docker.sock`) into a container gives that container **full root-level access** to the host machine. Only enable this feature if you trust this dashboard and understand the security implications.
-
-1. Mount the Docker socket into the backend container. In `docker-compose.yml`, under the **backend** service
-   (this mounts the socket from the *same host the dashboard runs on* — e.g. `docker01`):
-
-   ```yaml
-   services:
-     backend:
-       volumes:
-         - /var/run/docker.sock:/var/run/docker.sock
-   ```
-
-2. In `.env`, enable the provider:
-
-   ```dotenv
-   DOCKER_ENABLED=true
-   # DOCKER_HOST=/var/run/docker.sock    # unix socket (default)
-   # DOCKER_HOST_GUEST=docker            # PVE guest whose name contains "docker"
-   ```
-
-3. `docker compose up -d backend` and in the dashboard turn on **Configuration → Features → Docker
-   Monitoring**. Containers appear under the `docker01` guest on the map (🐳, green = running, grey = stopped),
-   and the dashboard's **VMs & CTs** counter includes running containers.
-
-> No socket? Leave `DOCKER_ENABLED=false` — the map still shows `docker01` as a PVE VM. Pointing
-> `DOCKER_HOST` at a `tcp://host:2375` daemon is supported but **not recommended** without TLS.
+The legacy direct provider remains available for development, but it must use a constrained socket proxy or
+mutually authenticated TLS endpoint. Never expose an unauthenticated Docker TCP socket.
 
 ### 2.7 Optional — temperature / fan sensors
 
@@ -428,7 +388,7 @@ docker compose up -d --build
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `/api/health` shows `mockMode: true` | `.env` change didn't reach the container | `docker compose up -d --force-recreate backend` |
-| `lastPollError` is not `null` | Token wrong, host unreachable, or 401 | Check the message; recreate the token in Proxmox; verify `PROXMOX_HOST` has the port (`…:8006`) |
+| Provider diagnostics show `lastPollError` | Token wrong, host unreachable, or 401 | Check the authenticated diagnostics banner; recreate the token; verify `PROXMOX_HOST` includes port 8006 |
 | All nodes show **offline** | Backend can't reach Proxmox (network/firewall) | Allow the dashboard's IP to reach port 8006 on Proxmox (`pve-firewall` / datacenter firewall) |
 | `401 unable to authenticate` | Token ID/secret mismatch | Token IDs are `user@realm!name`; recreate the token to get a fresh secret |
 | VMs/CTs missing from Network Map | Guests stopped | Stopped guests still appear (grey); if entire map is empty, check `lastPollError` |
@@ -446,7 +406,7 @@ docker compose up -d --build
 
 ## Appendix A — Run without Docker
 
-Needs Node.js ≥ 20 and npm ≥ 9 on the machine.
+Needs Node.js ≥ 24 and npm ≥ 11 on the machine.
 
 ```bash
 git clone https://github.com/johnvexcoder/HomeLab-OS.git && cd HomeLab-OS
@@ -469,8 +429,11 @@ development with hot reload: `npm run dev` (frontend at :5173, proxies to backen
 | `PORT` | `4000` | Backend port |
 | `HOST` | `0.0.0.0` | Backend bind address |
 | `CORS_ORIGIN` | `http://localhost:5173` | Allowed browser origins |
+| `DEPLOYMENT_PROFILE` | `development` | `development`, private-LAN `lan`, or TLS `hardened` |
+| `DASHBOARD_BIND_ADDRESS` | `127.0.0.1` | Published Compose bind address; use `0.0.0.0` only with a LAN firewall |
 | `DATA_DIR` | `./data` | SQLite, backups, secrets |
 | `MOCK_MODE` | `true` | `true` demo data · `false` live Proxmox |
+| `DEMO_RESET_ADMIN` | `false` | Explicit disposable-demo admin reset; development profile only |
 | `TELEMETRY_INTERVAL_MS` | `2000` | Demo-mode tick rate |
 | `HISTORY_RETENTION_HOURS` | `24` | Demo history window |
 | `PROXMOX_HOST` | — | Proxmox API host (`host:8006`) |
@@ -485,6 +448,6 @@ development with hot reload: `npm run dev` (frontend at :5173, proxies to backen
 | `SECRET_ENCRYPTION_KEY` | — | Encrypts stored credentials (set it!) |
 | `ADMIN_INITIAL_PASSWORD` | — | First-boot admin password (random if empty) |
 | `COOKIE_SECURE` | `false` | `Secure` session cookie (behind HTTPS) |
-| `NODE_ENV` | `development` | `production` behind HTTPS |
+| `NODE_ENV` | `production` | Runtime optimization flag; transport policy is controlled separately |
 
 Full list with comments: `.env.example` at the repo root.

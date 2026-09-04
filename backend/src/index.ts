@@ -11,7 +11,7 @@ import { MockNotificationsProvider } from './providers/mockNotificationsProvider
 import type { MetricsProvider, TelemetryBroadcaster } from './providers/types';
 import type { Notification } from './types';
 import { attachWebSocket } from './ws';
-import { config } from './config';
+import { config, validateProductionConfig } from './config';
 import { getDb, insertMetrics, queryMetrics, countMetrics } from './db/database';
 import { bootstrapSecurity } from './security/boot';
 import { startBackupScheduler } from './services/backupScheduler';
@@ -22,6 +22,7 @@ import { startUptimeKumaMonitor } from './services/uptimeKumaMonitor';
 import { startNetworkBandwidth } from './services/networkBandwidth';
 
 async function bootstrap(): Promise<void> {
+  validateProductionConfig();
   getDb();
   bootstrapSecurity();
 

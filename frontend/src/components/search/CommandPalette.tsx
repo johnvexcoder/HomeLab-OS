@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Search, CornerDownLeft, Server, Bell, Zap, Activity } from 'lucide-react';
@@ -72,6 +72,11 @@ export function CommandPalette() {
 
   useEffect(() => setActive(0), [query]);
 
+  const run = useCallback((item: FlatItem) => {
+    setOpen(false);
+    if (item.route) navigate(item.route);
+  }, [navigate, setOpen]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!open) return;
@@ -90,12 +95,7 @@ export function CommandPalette() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, items, active]);
-
-  function run(item: FlatItem) {
-    setOpen(false);
-    if (item.route) navigate(item.route);
-  }
+  }, [open, items, active, run, setOpen]);
 
   return (
     <AnimatePresence>

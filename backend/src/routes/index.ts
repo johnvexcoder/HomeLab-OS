@@ -31,6 +31,15 @@ export function createRouter(ctx: ApiContext): Router {
     res.json({
       status: 'ok',
       mockMode: config.mockMode,
+      demoCredentials: config.demoResetAdmin && config.mockMode,
+      timestamp: Date.now(),
+    });
+  });
+
+  router.get('/diagnostics', requireAuth, requirePermission('settings.view'), (_req: Request, res: Response) => {
+    res.json({
+      status: 'ok',
+      mockMode: config.mockMode,
       provider: metrics.getSourceName?.() ?? (config.mockMode ? 'mock' : 'proxmox'),
       lastPollError: metrics.getLastPollError?.() ?? null,
       diagnostics: metrics.getDiagnostics?.() ?? null,
@@ -165,7 +174,7 @@ export function createRouter(ctx: ApiContext): Router {
     res.json({ profiles });
   });
 
-  router.get('/users/recipients', requireAuthOrGuest('dashboard.view', 'serverStatus'), (req: Request, res: Response) => {
+  router.get('/users/recipients', requireAuth, requirePermission('dashboard.view'), (_req: Request, res: Response) => {
     const users = listUsers().map((u) => ({
       id: u.id,
       username: u.username,
@@ -174,17 +183,10 @@ export function createRouter(ctx: ApiContext): Router {
     res.json({ users });
   });
 
-  router.post('/notifications/dispatch-note', requireAuthOrGuest('dashboard.view', 'serverStatus'), (req: Request, res: Response) => {
+  router.post('/notifications/dispatch-note', requireAuth, requirePermission('dashboard.view'), (req: Request, res: Response) => {
     const user = req.auth?.user;
-    const isGuest = !user;
-    const authorName = isGuest ? 'Guest' : (user?.name || user?.username || 'Unknown');
-    
     const { type, title, to, content, severity } = req.body;
     
-    if (isGuest && to) {
-      // Guests can send but cannot receive (handled by UI, but we don't prevent them from specifying recipients here).
-    }
-
     if (!content || typeof content !== 'string') {
       return res.status(400).json({ error: 'content_required' });
     }

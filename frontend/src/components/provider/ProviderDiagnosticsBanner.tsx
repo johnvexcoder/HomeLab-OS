@@ -10,7 +10,7 @@ import { endpoints } from '@/api/endpoints';
 export function ProviderDiagnosticsBanner() {
   const { data } = useQuery({
     queryKey: ['health'],
-    queryFn: endpoints.health,
+    queryFn: endpoints.diagnostics,
     refetchInterval: 30_000,
     staleTime: 15_000,
   });

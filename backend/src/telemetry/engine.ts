@@ -85,7 +85,7 @@ export class TelemetryEngine {
       ramUsedGb = clamp(ramUsedGb, 0.5, spec.ramTotalGb * 0.95);
 
       // --- Disk: slow steady baseline ---------------------------------------
-      let diskUsedGb = srv.diskUsedGb;
+      const diskUsedGb = srv.diskUsedGb;
 
       // --- Temperature: hypervisors calculate from CPU; VMs inherit from parent
       let tempC = srv.tempC;

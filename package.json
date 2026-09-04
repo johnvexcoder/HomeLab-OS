@@ -14,12 +14,26 @@
     "start": "npm run start -w backend",
     "test": "npm test -w backend",
     "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
-    "lint": "npm run lint -w frontend"
+    "lint": "eslint backend/src frontend/src"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.1.0",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.6",
+    "globals": "^17.12.0",
+    "typescript-eslint": "^8.69.0"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true
   }
 }

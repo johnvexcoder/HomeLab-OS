@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -41,13 +41,14 @@ export function ProgressRing({
   className,
 }: ProgressRingProps) {
   const [display, setDisplay] = useState(0);
+  const displayRef = useRef(0);
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const resolvedColor = color ?? healthColor(value);
 
   useEffect(() => {
     const target = value;
-    const start = display;
+    const start = displayRef.current;
     const startTime = performance.now();
     const duration = 900;
 
@@ -55,7 +56,9 @@ export function ProgressRing({
     const step = (now: number) => {
       const t = Math.min(1, (now - startTime) / duration);
       const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(start + (target - start) * eased);
+      const next = start + (target - start) * eased;
+      displayRef.current = next;
+      setDisplay(next);
       if (t < 1) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);

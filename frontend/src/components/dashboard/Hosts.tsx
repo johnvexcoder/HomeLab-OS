@@ -14,7 +14,7 @@ import { Power, AlertCircle, ArrowDown, ArrowUp, Thermometer } from 'lucide-reac
 export function Hosts({ className }: { className?: string }) {
   const { topology } = useNetwork();
   const servers = useTelemetryStore(useShallow(selectServers));
-  const nodes = topology?.nodes ?? [];
+  const nodes = useMemo(() => topology?.nodes ?? [], [topology?.nodes]);
   const totalDown = useMemo(() => Math.round(servers.reduce((a, s) => a + (s.netDownMbps || 0), 0) * 10) / 10, [servers]);
   const totalUp = useMemo(() => Math.round(servers.reduce((a, s) => a + (s.netUpMbps || 0), 0) * 10) / 10, [servers]);
 

@@ -30,7 +30,7 @@ const METHOD_LABELS: Record<TwoFactorMethod, string> = {
 export function LoginModal() {
   const login = useAuthStore((s) => s.login);
   const { data: health } = useQuery({ queryKey: ['health'], queryFn: endpoints.health, staleTime: 30_000 });
-  const mockMode = health?.mockMode ?? false;
+  const demoCredentials = health?.demoCredentials ?? false;
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -259,7 +259,7 @@ export function LoginModal() {
         </div>
 
         <div className="mt-4 flex items-center justify-center">
-          {mockMode ? (
+          {demoCredentials ? (
             <span className="text-[11px] text-text-muted">Demo: admin / homelab-demo</span>
           ) : (
             <span className="text-[11px] text-text-muted">Forgot your password? Contact your administrator.</span>

@@ -207,14 +207,46 @@ const AgentReportSchema = z.object({
     machineId: z.string().optional(),
     uptimeSeconds: z.number().nonnegative().optional(),
   }).optional(),
-  capabilities: z.array(z.string()).optional(),
+  capabilities: z.array(z.string().max(128)).max(100).optional(),
   plugins: z.array(z.object({
-    plugin: z.string(),
+    plugin: z.string().min(1).max(64),
     collectedAt: z.number().positive(),
     data: z.record(z.string(), z.unknown()),
-  })).optional(),
-  events: z.array(z.any()).optional(),
+  })).max(20).optional(),
+  events: z.array(z.unknown()).max(100).optional(),
 }).passthrough();
+
+const AgentRegistrationSchema = z.object({
+  hostId: z.string().min(1).max(128),
+  hostName: z.string().min(1).max(255),
+  ip: z.string().max(128),
+  os: z.string().max(255).optional(),
+  osId: z.string().max(128).optional(),
+  kernel: z.string().max(255).optional(),
+  arch: z.string().max(64).optional(),
+  hostType: z.string().max(64).optional(),
+  hypervisor: z.string().max(128).optional(),
+  platform: z.string().max(128).optional(),
+  manufacturer: z.string().max(255).optional(),
+  product: z.string().max(255).optional(),
+  machineId: z.string().max(255).optional(),
+  capabilities: z.array(z.string().max(128)).max(100).optional(),
+  plugins: z.array(z.string().max(64)).max(20).optional(),
+}).strict();
+
+const AgentEventsSchema = z.object({
+  hostId: z.string().min(1).max(128),
+  events: z.array(z.object({
+    id: z.string().min(1).max(255),
+    timestamp: z.number().int().nonnegative(),
+    severity: z.enum(['info', 'warning', 'critical']),
+    plugin: z.enum(['linux', 'docker', 'proxmox', 'sensors', 'smart', 'network']),
+    resource: z.string().max(512),
+    message: z.string().max(2048),
+    previousState: z.string().max(512),
+    currentState: z.string().max(512),
+  }).strict()).max(100),
+}).strict();
 
 export function createAgentRouter(): Router {
   const router = Router();
@@ -414,7 +446,12 @@ export function createAgentRouter(): Router {
   // ── Agent registration (called once on first boot) ──
   router.post('/register', requireAgentAuth, (req: Request, res: Response) => {
     const agent = (req as any).agent as Record<string, unknown>;
-    const body = req.body as Record<string, unknown>;
+    const parsed = AgentRegistrationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_payload', details: parsed.error.issues });
+      return;
+    }
+    const body = parsed.data as Record<string, unknown>;
     const now = Date.now();
     const db = getDb();
 
@@ -465,20 +502,29 @@ export function createAgentRouter(): Router {
   // ── Agent events (batched event reports) ──
   router.post('/events', requireAgentAuth, (req: Request, res: Response) => {
     const agent = (req as any).agent as Record<string, unknown>;
-    const body = req.body as { hostId: string; events: Array<Record<string, unknown>> };
+    const parsed = AgentEventsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_payload', details: parsed.error.issues });
+      return;
+    }
+    const body = parsed.data;
+    if (body.hostId !== String(agent.host_id)) {
+      res.status(403).json({ error: 'agent_identity_mismatch' });
+      return;
+    }
     const now = Date.now();
     const db = getDb();
 
     // Store events in the agent_events table
     const insert = db.prepare(`
-      INSERT INTO agent_events (id, agent_id, timestamp, severity, plugin, resource, message, previous_state, current_state)
+      INSERT OR IGNORE INTO agent_events (id, agent_id, timestamp, severity, plugin, resource, message, previous_state, current_state)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const tx = db.transaction(() => {
       for (const evt of body.events ?? []) {
         insert.run(
-          crypto.randomUUID(),
+          `${String(agent.id)}:${evt.id}`,
           agent.id,
           evt.timestamp ?? now,
           evt.severity ?? 'info',
@@ -492,7 +538,7 @@ export function createAgentRouter(): Router {
     });
     tx();
 
-    res.json({ ok: true, stored: (body.events ?? []).length });
+    res.json({ ok: true, accepted: body.events.length });
   });
 
   // ── Admin: list all agents ──

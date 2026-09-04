@@ -5,13 +5,16 @@ services:
       dockerfile: backend/Dockerfile
     container_name: homelab-backend
     restart: unless-stopped
-    network_mode: host
+    init: true
     environment:
       - PORT=4000
       - HOST=0.0.0.0
       - CORS_ORIGIN=http://localhost:3000
       - DATA_DIR=/data
+      - NODE_ENV=production
+      - DEPLOYMENT_PROFILE=${DEPLOYMENT_PROFILE:-lan}
       - MOCK_MODE=${MOCK_MODE:-true}
+      - DEMO_RESET_ADMIN=${DEMO_RESET_ADMIN:-false}
       - PROXMOX_HOST=${PROXMOX_HOST:-}
       - PROXMOX_TOKEN_ID=${PROXMOX_TOKEN_ID:-}
       - PROXMOX_TOKEN_SECRET=${PROXMOX_TOKEN_SECRET:-}
@@ -23,16 +26,27 @@ services:
       - DOCKER_POLL_INTERVAL_MS=${DOCKER_POLL_INTERVAL_MS:-10000}
       - SECRET_ENCRYPTION_KEY=${SECRET_ENCRYPTION_KEY:-}
       - ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
     volumes:
       - homelab-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /sys/class/thermal:/host-thermal:ro
+    expose:
+      - "4000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 2.0
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 3
-      start_period: 5s
+      start_period: 10s
 
   frontend:
     build:
@@ -43,14 +57,26 @@ services:
         VITE_WS_URL: ""
     container_name: homelab-frontend
     restart: unless-stopped
+    init: true
     depends_on:
-      - backend
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      backend:
+        condition: service_healthy
     ports:
-      - "3000:80"
+      - "${DASHBOARD_BIND_ADDRESS:-127.0.0.1}:${DASHBOARD_PORT:-3000}:8080"
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=32m,uid=101,gid=101
+      - /var/run:size=4m,uid=101,gid=101
+      - /tmp:size=16m,mode=1777,uid=101,gid=101
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
       interval: 10s
       timeout: 3s
       retries: 3

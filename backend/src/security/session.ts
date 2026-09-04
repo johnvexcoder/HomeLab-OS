@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { getDb } from '../db/database';
 import { createSessionToken, sha256 } from './crypto';
 import { getIntSetting } from './settings';
+import { config } from '../config';
 
 export const SESSION_COOKIE = 'homelab_session';
 
@@ -66,11 +67,10 @@ export function createSession(userId: string, req: Request): { token: string; ex
 }
 
 export function setSessionCookie(res: Response, token: string, maxAgeMs: number): void {
-  const isSecure = process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE === 'true';
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isSecure,
+    secure: config.cookieSecure,
     path: '/',
     maxAge: maxAgeMs,
   });

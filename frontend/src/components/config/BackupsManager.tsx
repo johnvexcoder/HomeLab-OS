@@ -69,11 +69,7 @@ export function BackupsManager() {
   async function restoreBackup(id: string) {
     setBusyId(id);
     await save.run(async () => {
-      try {
-        await endpoints.admin.backups.restore(id);
-      } catch (err) {
-        throw err;
-      }
+      await endpoints.admin.backups.restore(id);
     });
     setBusyId(null);
   }
@@ -98,11 +94,7 @@ export function BackupsManager() {
   async function restoreSnapshot(id: string) {
     setBusyId(`snap-${id}`);
     await save.run(async () => {
-      try {
-        await endpoints.admin.snapshots.restore(id);
-      } catch (err) {
-        throw err;
-      }
+      await endpoints.admin.snapshots.restore(id);
     });
     setBusyId(null);
   }

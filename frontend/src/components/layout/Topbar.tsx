@@ -31,7 +31,7 @@ export function Topbar() {
   const authUser = useAuthStore((s) => s.user);
   const modes = useAuthStore((s) => s.modes);
   const logout = useAuthStore((s) => s.logout);
-  const { data: healthData } = useQuery({ queryKey: ['health'], queryFn: endpoints.health, staleTime: 30_000 });
+  const { data: healthData } = useQuery({ queryKey: ['diagnostics'], queryFn: endpoints.diagnostics, staleTime: 30_000 });
   const isDemo = modes?.mockMode ?? healthData?.mockMode ?? false;
 
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);

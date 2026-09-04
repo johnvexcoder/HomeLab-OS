@@ -147,7 +147,7 @@ A dark, premium NOC aesthetic:
 
 ### Prerequisites
 
-- Node.js ≥ 20, npm ≥ 9 (for local dev), or Docker + docker-compose (recommended).
+- Node.js ≥ 24, npm ≥ 11 (for local development), or Docker with the Compose plugin (recommended).
 - A valid **TMDB-free** stack — no external metadata service is required.
 
 ### Option A — Docker Compose (recommended)
@@ -160,7 +160,7 @@ docker compose up --build -d
 - Backend: http://localhost:4000 (WebSocket `ws://localhost:4000/ws`)
 - SQLite volume `homelab-data` persists history, notifications, backups, and settings.
 
-By default the app boots in **demo mode** (`MOCK_MODE=true`) with a simulated fleet. To go live, set `MOCK_MODE=false` and configure Proxmox env vars (see [SETUP.md](./SETUP.md)).
+By default the app boots with **mock telemetry** (`MOCK_MODE=true`) and a simulated fleet. Existing credentials are never rewritten unless the disposable development option `DEMO_RESET_ADMIN=true` is explicitly enabled. To go live, set `MOCK_MODE=false` and configure Proxmox env vars (see [SETUP.md](./SETUP.md)).
 
 ### Option B — Local development
 
@@ -221,6 +221,8 @@ When serving over HTTPS set `NODE_ENV=production` and `COOKIE_SECURE=true` on th
 | `CORS_ORIGIN` | `http://localhost:5173` | Comma-separated allowed origins |
 | `DATA_DIR` | `./data` | SQLite file location, backups, secrets |
 | `MOCK_MODE` | `true` | `true` = simulated telemetry, `false` = live Proxmox provider |
+| `DEPLOYMENT_PROFILE` | `development` | `development`, private-LAN `lan`, or TLS-enforcing `hardened` validation |
+| `DEMO_RESET_ADMIN` | `false` | Explicitly reset `admin` to the demo password; development profile only |
 | `TELEMETRY_INTERVAL_MS` | `2000` | Simulation tick / WS push cadence |
 | `HISTORY_RETENTION_HOURS` | `24` | Seeded history window |
 | `PROXMOX_HOST` | — | Proxmox API host (e.g. `https://192.168.1.10:8006`) |
@@ -247,7 +249,8 @@ A full `.env.example` with placeholders is committed at the repo root. **Never c
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/health` | Status, mock flag, provider name, boot stats |
+| GET | `/api/health` | Minimal liveness status and mock/demo flags |
+| GET | `/api/diagnostics` | Authenticated provider diagnostics and boot stats |
 | GET | `/api/servers` | All servers with live runtime |
 | GET | `/api/servers/:id` | Single server |
 | GET | `/api/servers/:id/history?range=` | Bucketed history points |
@@ -356,7 +359,7 @@ curl http://localhost:4000/api/health
 
 ### First sign-in
 
-- **Demo mode:** `admin` / `homelab-demo` (reset on every backend start).
+- **Disposable demo credentials:** set `DEPLOYMENT_PROFILE=development`, `MOCK_MODE=true`, and `DEMO_RESET_ADMIN=true` to use `admin` / `homelab-demo` and reset it on every backend start.
 - **Production mode:** on first boot the backend creates a super admin and writes credentials to `DATA_DIR/.admin-initial-password`. Set `ADMIN_INITIAL_PASSWORD` to pin your own.
 
 ---

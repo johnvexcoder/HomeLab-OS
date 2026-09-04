@@ -105,7 +105,7 @@ export function saveQuickActions(raw: unknown): { ok: true; actions: QuickAction
     if (!label) return { ok: false, error: 'label_required' };
     if (label.length > 60) return { ok: false, error: 'label_too_long' };
 
-    let id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : slugify(label);
+    const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : slugify(label);
     if (!ID_RE.test(id)) return { ok: false, error: 'invalid_id' };
     if (seen.has(id)) return { ok: false, error: 'duplicate_id' };
     seen.add(id);
