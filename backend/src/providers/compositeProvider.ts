@@ -36,7 +36,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
   ) {}
 
   onTick(listener: (snapshots: MetricSnapshot[]) => void): void {
-    this.primary.onTick((snapshots) => {
+    this.primary.onTick?.((snapshots) => {
       // Build a comprehensive snapshot list from ALL servers (Proxmox + Docker + Agent)
       // This ensures agent-enriched data and agent servers get written to the metrics DB
       const allServers = this.getServers();
@@ -102,7 +102,7 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
   }
 
   onNotifications(listener: (notifications: Notification[]) => void): void {
-    this.primary.onNotifications(listener);
+    this.primary.onNotifications?.(listener);
     this.docker?.onNotifications?.(listener);
   }
 

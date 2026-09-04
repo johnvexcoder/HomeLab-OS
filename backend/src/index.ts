@@ -107,8 +107,13 @@ async function bootstrap(): Promise<void> {
     }
 
     // 3. Fallback/Composite logic
-    if (liveProviders.length === 0) {
-      console.warn('[homelab] No Proxmox or Docker configured. Running with AgentMetricsProvider.');
+    const hasProxmox = liveProviders.some((p) => p instanceof ProxmoxMetricsProvider);
+    if (liveProviders.length === 0 || !hasProxmox) {
+      if (liveProviders.length > 0) {
+        console.warn('[homelab] No Proxmox provider available. Falling back to AgentMetricsProvider for primary metrics.');
+      } else {
+        console.warn('[homelab] No Proxmox or Docker configured. Running with AgentMetricsProvider.');
+      }
       const agentProvider = new AgentMetricsProvider();
       await agentProvider.start();
       metrics = agentProvider;
