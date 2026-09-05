@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Lock, ShieldOff, Users } from 'lucide-react';
+import { KeyRound, Lock, ShieldOff, Tags, Users } from 'lucide-react';
 import { endpoints } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
 import { Section, Row, SaveBar, useSave, humanError } from './shared';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
+import { SYSTEM_TAGS } from '@/lib/constants';
 
 const GUEST_SCOPES = [
   { id: 'serverStatus', label: 'Server status' },
@@ -35,6 +36,7 @@ export function AccessSettings() {
   const safeSave = useSave();
   const lockSave = useSave();
   const unlockSave = useSave();
+  const tagSave = useSave();
   const queryClient = useQueryClient();
 
   const [unlockPassword, setUnlockPassword] = useState('');
@@ -60,6 +62,23 @@ export function AccessSettings() {
       return [];
     }
   }, [settings]);
+
+  const selectedTags = useMemo(() => {
+    const raw = settings?.['system.tags'];
+    if (!raw) return [];
+    try {
+      return (JSON.parse(raw) as string[]).slice(0, 3);
+    } catch {
+      return [];
+    }
+  }, [settings]);
+
+  async function saveTags(next: string[]) {
+    await tagSave.run(async () => {
+      await endpoints.admin.settings.update({ 'system.tags': next });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+    });
+  }
 
   async function saveGuest(next: boolean) {
     await save.run(async () => {
@@ -161,6 +180,51 @@ export function AccessSettings() {
           </div>
           <div className="mt-2 text-[11px] text-text-muted">
             Each scope maps to a read-only permission. Guests never get operational or management access.
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="System tags"
+        subtitle="Up to 3 tags shown on every host, VM and LXC profile card"
+        icon={<Tags className="h-4 w-4" />}
+        action={<SaveBar busy={tagSave.busy} saved={tagSave.saved} error={tagSave.error} />}
+      >
+        <div className="rounded-xl border border-surface-border/70 bg-surface-input p-4">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
+            Select up to 3 tags
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {SYSTEM_TAGS.map((tag) => {
+              const checked = selectedTags.includes(tag.id);
+              const disabled = !checked && selectedTags.length >= 3;
+              return (
+                <label
+                  key={tag.id}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-text-secondary transition-colors hover:bg-overlay/5',
+                    disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-accent"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => {
+                      const next = checked
+                        ? selectedTags.filter((t) => t !== tag.id)
+                        : [...selectedTags, tag.id];
+                      void saveTags(next.slice(0, 3));
+                    }}
+                  />
+                  {tag.label}
+                </label>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[11px] text-text-muted">
+            {selectedTags.length}/3 selected · color coding on cards: <span className="text-text-primary">BLUE</span> = installed &amp; running, <span className="text-crit">RED</span> = installed but not running, <span className="text-text-muted">GREY</span> = not installed.
           </div>
         </div>
       </Section>

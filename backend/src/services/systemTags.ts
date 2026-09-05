@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import fsSync from 'node:fs';
 import { getJsonSetting } from '../security/settings';
 
 /**
@@ -69,13 +70,23 @@ function hasBin(bin: string): boolean {
   }
 }
 
-function serviceActive(unit: string): boolean {
+/** True when a process whose comm matches `name` exists on this host's /proc. */
+function processRunning(name: string): boolean {
   try {
-    const out = execSync(`systemctl is-active ${unit} 2>/dev/null`, { encoding: 'utf-8', timeout: 3000 }).trim();
-    return out === 'active';
+    const entries = fsSync.readdirSync('/proc');
+    for (const entry of entries) {
+      if (!/^\d+$/.test(entry)) continue;
+      try {
+        const comm = fsSync.readFileSync(`/proc/${entry}/comm`, 'utf-8').trim();
+        if (comm === name) return true;
+      } catch {
+        // PID vanished — skip
+      }
+    }
   } catch {
-    return false;
+    // /proc unavailable
   }
+  return false;
 }
 
 function sensorsReadable(): boolean {
@@ -100,12 +111,12 @@ export function detectLocalSystemTags(): SystemTagReport {
   const networkmanager = hasBin('NetworkManager');
 
   const report: SystemTagReport = {
-    dbus: { installed: dbus, running: dbus && serviceActive('dbus.service') },
-    docker: { installed: docker, running: docker && serviceActive('docker.service') },
+    dbus: { installed: dbus, running: dbus && processRunning('dbus-daemon') },
+    docker: { installed: docker, running: docker && processRunning('dockerd') },
     'lm-sensors': { installed: lm, running: lm && sensorsReadable() },
-    ssh: { installed: ssh, running: ssh && (serviceActive('ssh.service') || serviceActive('sshd.service')) },
-    containerd: { installed: containerd, running: containerd && serviceActive('containerd.service') },
-    networkmanager: { installed: networkmanager, running: networkmanager && serviceActive('NetworkManager.service') },
+    ssh: { installed: ssh, running: ssh && (processRunning('sshd') || processRunning('ssh')) },
+    containerd: { installed: containerd, running: containerd && processRunning('containerd') },
+    networkmanager: { installed: networkmanager, running: networkmanager && (processRunning('NetworkManager') || processRunning('networkmanager')) },
   };
 
   localCache = report;

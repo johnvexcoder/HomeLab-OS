@@ -135,12 +135,13 @@ export const CAPABILITY_META: Record<string, { label: string }> = {
 
 /**
  * Shared locked height for server + docker profile cards on the Servers page.
- * Measured from the live dashboard: every ServerCard renders at 424px. Locking
- * both card types to this height keeps the grid uniform regardless of how many
- * containers a host runs (with the container list scrolling past 5 entries).
+ * Measured from the live dashboard: a ServerCard with the full 3 System Tags
+ * (each in its own box under the status column) renders at 474px; DockerProfileCard
+ * is locked to the same height so the grid stays uniform regardless of how many
+ * containers a host runs (with the container list scrolling past its visible rows).
  * NOTE: this literal must stay a static class string so Tailwind JIT picks it up.
  */
-export const CARD_LOCKED_HEIGHT_CLASS = 'h-[424px]';
+export const CARD_LOCKED_HEIGHT_CLASS = 'h-[474px]';
 
 /** Selectable System Tags shown on host/VM/LXC profile cards (max 3). */
 export const SYSTEM_TAGS: Array<{ id: string; label: string }> = [
