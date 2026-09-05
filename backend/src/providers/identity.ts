@@ -1,5 +1,6 @@
 import type { ServerRuntime } from '../types';
 import { getDb } from '../db/database';
+import { resolveSystemTags, type SystemTagReport } from '../services/systemTags';
 
 const STALE_THRESHOLD_MS = 60_000;
 const PARENT_HEARTBEAT_TIMEOUT_MS = 90_000;
@@ -56,6 +57,7 @@ export interface AgentRow {
   running_count: number;
   unhealthy_count: number;
   process_count: number;
+  tags_json: string;
 }
 
 export interface ProxmoxGuest {
@@ -416,6 +418,9 @@ function enrichServerWithAgent(
   // Store the canonical container list for network topology
   server.containers = containers;
 
+  // System Tags resolved from the agent's report
+  server.tags = resolveSystemTags(safeJson<SystemTagReport>(agent.tags_json, {}));
+
   // ── History ──
   const cpuPct = server.cpu;
   const ramPct = agent.ram_total_gb > 0 ? (agent.ram_used_gb / agent.ram_total_gb) * 100 : 0;
@@ -534,6 +539,7 @@ export function buildAgentRuntime(agent: AgentRow, agentIsStale: boolean, parent
       load: ph('load', agentIsStale ? 0 : round(agent.load_1, 2)),
     },
     containers: agentIsStale ? containers.map(c => ({ ...c, running: false })) : containers,
+    tags: resolveSystemTags(safeJson<SystemTagReport>(agent.tags_json, {})),
   };
 }
 

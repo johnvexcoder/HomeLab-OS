@@ -83,6 +83,7 @@ const DEFAULTS: SettingsMap = {
   'security.smtpTo': '',
   'access.guest.enabled': 'false',
   'access.guest.scopes': JSON.stringify(['serverStatus', 'serviceStatus', 'containers', 'cpu', 'ram', 'storage', 'temp', 'uptime']),
+  'system.tags': JSON.stringify(['docker', 'ssh', 'containerd']),
   'backup.enabled': 'true',
   'backup.retentionDaily': '7',
   'backup.retentionWeekly': '4',

@@ -20,6 +20,7 @@ import { getAgentServers, getAgentDockerHostProfiles } from './agentServers';
 import { reconcileServers } from './identity';
 import { getNetworkBandwidth } from '../services/networkBandwidth';
 import { collectSelfMetrics, type SelfMonitorData } from './selfMonitor';
+import { resolveSystemTags, detectLocalSystemTags } from '../services/systemTags';
 import * as os from 'os';
 
 /**
@@ -188,6 +189,16 @@ export class CompositeProvider implements MetricsProvider, TelemetryBroadcaster 
           }
         }
       }
+    }
+
+    // ── System Tags fallback ──
+    // Agents attach selected tags via identity.ts. For servers without an agent
+    // (pure Proxmox hosts, or the backend's own HostLab-OS host) resolve the
+    // selected tags here — from local detection for the self host, else grey.
+    const ownIp = this.getOwnIp();
+    for (const s of result) {
+      if (s.tags && s.tags.length > 0) continue;
+      s.tags = resolveSystemTags(s.spec.ip === ownIp ? detectLocalSystemTags() : null);
     }
 
     return result;

@@ -244,6 +244,7 @@ function migrate(database: Database.Database): void {
   if (!hasAgentCol('mac_address')) database.exec("ALTER TABLE agents ADD COLUMN mac_address TEXT NOT NULL DEFAULT ''");
   if (!hasAgentCol('host_type_detected')) database.exec("ALTER TABLE agents ADD COLUMN host_type_detected TEXT NOT NULL DEFAULT ''");
   if (!hasAgentCol('hypervisor')) database.exec("ALTER TABLE agents ADD COLUMN hypervisor TEXT NOT NULL DEFAULT ''");
+  if (!hasAgentCol('tags_json')) database.exec("ALTER TABLE agents ADD COLUMN tags_json TEXT NOT NULL DEFAULT '{}'");
 
   // Agent events table.
   database.exec(`

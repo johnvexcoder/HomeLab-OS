@@ -133,6 +133,35 @@ export const CAPABILITY_META: Record<string, { label: string }> = {
   monitoring: { label: 'Monitoring' },
 };
 
+/**
+ * Shared locked height for server + docker profile cards on the Servers page.
+ * Measured from the live dashboard: every ServerCard renders at 424px. Locking
+ * both card types to this height keeps the grid uniform regardless of how many
+ * containers a host runs (with the container list scrolling past 5 entries).
+ * NOTE: this literal must stay a static class string so Tailwind JIT picks it up.
+ */
+export const CARD_LOCKED_HEIGHT_CLASS = 'h-[424px]';
+
+/** Selectable System Tags shown on host/VM/LXC profile cards (max 3). */
+export const SYSTEM_TAGS: Array<{ id: string; label: string }> = [
+  { id: 'dbus', label: 'DBUS' },
+  { id: 'docker', label: 'docker' },
+  { id: 'lm-sensors', label: 'lm-sensors' },
+  { id: 'ssh', label: 'SSH' },
+  { id: 'containerd', label: 'containerd' },
+  { id: 'networkmanager', label: 'NetworkManager' },
+];
+
+/**
+ * System Tag color coding (per requirement):
+ *   GREY = not installed, RED = installed but not running, BLUE = installed and running.
+ */
+export function systemTagToneClass(tag: { installed: boolean; running: boolean }): string {
+  if (tag.installed && tag.running) return 'border-info/30 bg-info/10 text-info';
+  if (tag.installed) return 'border-crit/30 bg-crit/10 text-crit';
+  return 'border-surface-border bg-surface-input text-text-muted';
+}
+
 export const NETWORK_NODE_ICONS_FRONTEND: Record<string, string> = {
   internet: '🌐',
   gateway: '🛡️',

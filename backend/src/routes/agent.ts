@@ -137,6 +137,10 @@ function extractFlatMetrics(body: Record<string, unknown>): Record<string, unkno
         if (procs) metrics.processCount = (procs.total as number) ?? 0;
         // Extract uptime from the Linux plugin (os.uptime() in seconds)
         if (d.uptime != null) metrics.uptimeSeconds = (d.uptime as number) ?? 0;
+        // System Tags: installed/running state per tag id.
+        if (d.tags !== undefined && d.tags !== null) {
+          metrics.tagsJson = JSON.stringify(typeof d.tags === 'object' ? d.tags : {});
+        }
         break;
       }
       case 'sensors': {
@@ -313,6 +317,7 @@ export function createAgentRouter(): Router {
       const unhealthyCount = flat.unhealthyCount !== undefined ? Number(flat.unhealthyCount) : Number(agent.unhealthy_count ?? 0);
       const processCount = flat.processCount !== undefined ? Number(flat.processCount) : Number(agent.process_count ?? 0);
       const containersJson = flat.containersJson !== undefined ? String(flat.containersJson) : String(agent.containers_json ?? '[]');
+      const tagsJson = flat.tagsJson !== undefined ? String(flat.tagsJson) : String(agent.tags_json ?? '{}');
 
       db.prepare(`
         UPDATE agents SET
@@ -322,6 +327,7 @@ export function createAgentRouter(): Router {
           temp_c = ?, load_1 = ?, containers_json = ?,
           plugins_json = CASE WHEN ? IS NOT NULL THEN ? ELSE plugins_json END,
           capabilities_json = CASE WHEN ? IS NOT NULL THEN ? ELSE capabilities_json END,
+          tags_json = CASE WHEN ? IS NOT NULL THEN ? ELSE tags_json END,
           vm_id = ?, parent_ip = ?, virt_type = ?,
           machine_id = CASE WHEN ? != '' THEN ? ELSE machine_id END,
           mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
@@ -349,6 +355,7 @@ export function createAgentRouter(): Router {
         containersJson,
         pluginsJson, pluginsJson,
         capabilitiesJson, capabilitiesJson,
+        tagsJson, tagsJson,
         String(hostInfo?.vmId ?? ''),
         String(hostInfo?.parentIp ?? ''),
         String(hostInfo?.virtType ?? ''),

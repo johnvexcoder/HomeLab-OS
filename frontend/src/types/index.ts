@@ -120,6 +120,17 @@ export interface ServerRuntime {
     'cpu' | 'ram' | 'disk' | 'temp' | 'netUp' | 'netDown' | 'load',
     number[]
   >;
+  /** Selected System Tags (max 3) with per-host installed/running state */
+  tags?: SystemTagState[];
+}
+
+export type SystemTagId = 'dbus' | 'docker' | 'lm-sensors' | 'ssh' | 'containerd' | 'networkmanager';
+
+export interface SystemTagState {
+  id: SystemTagId;
+  label: string;
+  installed: boolean;
+  running: boolean;
 }
 
 export interface Notification {

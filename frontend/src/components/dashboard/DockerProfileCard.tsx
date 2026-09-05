@@ -3,6 +3,8 @@ import { Card } from '@/components/ui/Card';
 import { StatusDot } from '@/components/ui/Status';
 import { useDockerHosts } from '@/hooks/useQueries';
 import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
+import { CARD_LOCKED_HEIGHT_CLASS } from '@/lib/constants';
+import { cn } from '@/lib/utils';
 import { Container, Power, Server, ArrowDown, ArrowUp, ArrowUpRight } from 'lucide-react';
 
 export function DockerProfileCards() {
@@ -25,7 +27,7 @@ export function DockerProfileCards() {
         const stopped = profile.containers.length - running;
 
         return (
-          <Link key={profile.hostName} to={`/servers/docker-${profile.hostName}`} className="block">
+          <Link key={profile.hostName} to={`/servers/docker-${profile.hostName}`} className={cn('block', CARD_LOCKED_HEIGHT_CLASS)}>
           <Card hover className="flex h-full flex-col p-4 sm:p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">

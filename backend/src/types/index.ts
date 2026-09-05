@@ -1,3 +1,5 @@
+import type { SystemTagState } from '../services/systemTags';
+
 export type ServerStatus = 'online' | 'degraded' | 'offline';
 export type Reachability = 'accessible' | 'degraded' | 'unreachable';
 export type ServerRole = 'hypervisor' | 'docker' | 'vm' | 'lxc' | 'storage' | 'network' | 'gateway' | 'switch' | 'server';
@@ -148,6 +150,8 @@ export interface ServerRuntime {
   >;
   /** Canonical container list from the agent (source of truth for topology) */
   containers?: Array<{ id: string; name: string; running: boolean; image: string; ports?: string[] }>;
+  /** Selected System Tags (max 3) with per-host installed/running state */
+  tags?: SystemTagState[];
 }
 
 export interface Notification {

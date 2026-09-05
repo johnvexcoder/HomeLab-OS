@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Thermometer, ArrowDown, ArrowUp, Layers } from 'lucide-react';
 import type { ServerRuntime } from '@/types';
-import { ROLE_META, REACH_META, CAPABILITY_META, statusTextClass, statusDotClass, compactClusterLabel, getSecondaryRole } from '@/lib/constants';
+import { ROLE_META, REACH_META, CAPABILITY_META, CARD_LOCKED_HEIGHT_CLASS, systemTagToneClass, statusTextClass, statusDotClass, compactClusterLabel, getSecondaryRole } from '@/lib/constants';
 import { INFRA_ICON_COMPONENTS } from '@/lib/icons';
 import { formatUptime, formatBytes, formatMbps, pct, cn } from '@/lib/utils';
 import { useTelemetryStore } from '@/store/telemetry';
@@ -65,6 +65,21 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
             <span className={cn('h-1.5 w-1.5 rounded-full', reach.dot)} />
             {reach.label}
           </div>
+          {(server.tags?.length ?? 0) > 0 && (
+            <div className="mt-0.5 flex flex-col items-end gap-1">
+              {server.tags!.map((t) => (
+                <span
+                  key={t.id}
+                  className={cn(
+                    'whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[11px] font-medium leading-none',
+                    systemTagToneClass(t),
+                  )}
+                >
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -129,7 +144,7 @@ export function ServerCard({ server, index }: { server: ServerRuntime; index: nu
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.4, delay: index * 0.05, ease: [0.16, 1, 0.3, 1] }}
     >
-      <Link to={`/servers/${s.id}`} className="card card-hover block h-full p-4 sm:p-5">
+      <Link to={`/servers/${s.id}`} className={cn('card card-hover block overflow-hidden p-4 sm:p-5', CARD_LOCKED_HEIGHT_CLASS)}>
         {row}
       </Link>
     </motion.div>

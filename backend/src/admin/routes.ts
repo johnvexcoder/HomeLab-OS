@@ -65,6 +65,7 @@ const WRITABLE_SETTINGS = new Set([
   'security.smtpTo',
   'access.guest.enabled',
   'access.guest.scopes',
+  'system.tags',
   'backup.enabled',
   'backup.retentionDaily',
   'backup.retentionWeekly',
